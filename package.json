@@ -2,7 +2,7 @@
   "name": "lumo",
   "description": "AI-powered browser sidebar assistant",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -41,6 +41,7 @@
     "autoprefixer": "^10.5.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "i18next": "^26.3.6",
     "lucide-react": "^1.28.0",
     "motion": "^12.43.0",

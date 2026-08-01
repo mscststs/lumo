@@ -238,6 +238,10 @@ export const zh: TranslationSchema = {
       noConversation: '手动 / 未知',
       totalFiles: '{{count}} 个文件',
       totalSize: '总大小：{{size}}',
+      fileCount: '{{count}} 个文件',
+      downloadFolder: '下载文件夹内所有文件',
+      deleteFolder: '删除文件夹',
+      deleteFolderConfirm: '确定要删除文件夹 "{{folder}}" 及其中的 {{count}} 个文件吗？',
     },
     preview: {
       title: '文件预览',

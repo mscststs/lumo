@@ -104,10 +104,12 @@ export const storage = {
 
   async getSystemPrompt(): Promise<SystemPromptSettings> {
     const result = await chrome.storage.local.get('systemPrompt');
-    return (
-      (result.systemPrompt as SystemPromptSettings | undefined) ||
-      DEFAULT_SYSTEM_PROMPT_SETTINGS
-    );
+    const saved = result.systemPrompt as SystemPromptSettings | undefined;
+    if (!saved) return DEFAULT_SYSTEM_PROMPT_SETTINGS;
+    return {
+      ...saved,
+      injectCurrentTime: saved.injectCurrentTime ?? true,
+    };
   },
 
   async setSystemPrompt(settings: SystemPromptSettings): Promise<void> {

@@ -94,7 +94,7 @@ export function SystemPromptSettingsPage() {
             </p>
           </div>
           <Switch
-            checked={settings.injectCurrentTime ?? false}
+            checked={settings.injectCurrentTime ?? true}
             onCheckedChange={handleToggleInjectTime}
             disabled={!settings.enabled}
             className="shrink-0 mt-0.5"

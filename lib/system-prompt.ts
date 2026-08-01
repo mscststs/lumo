@@ -22,6 +22,7 @@ Operating rules:
 export const DEFAULT_SYSTEM_PROMPT_SETTINGS: SystemPromptSettings = {
   enabled: true,
   prompt: DEFAULT_SYSTEM_PROMPT,
+  injectCurrentTime: true,
 };
 
 /** The prompt to actually send, or `undefined` when disabled or blank. */

@@ -239,6 +239,11 @@ export const en = {
       noConversation: 'Manual / Unknown',
       totalFiles: '{{count}} files',
       totalSize: 'Total size: {{size}}',
+      fileCount: '{{count}} files',
+      downloadFolder: 'Download all files in folder',
+      deleteFolder: 'Delete folder',
+      deleteFolderConfirm:
+        'Are you sure you want to delete folder "{{folder}}" and all {{count}} files in it?',
     },
     preview: {
       title: 'File Preview',

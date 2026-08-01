@@ -8,6 +8,7 @@ import type {
   AnyTool,
 } from './types';
 import { fileStorage, inferMimeType, getPreviewCategory } from './file-storage';
+import { downloadAsZip } from '@/lib/zip-download';
 
 /**
  * Apply a unified diff/patch to text content.
@@ -180,6 +181,25 @@ export class FileMcpServer implements IMcpServer {
           required: ['name'],
         },
       },
+      {
+        name: 'file_download',
+        description: 'Download one or more files from extension storage to the user\'s local disk via browser download. Multiple files are automatically bundled into a zip archive.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            names: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of file names to download',
+            },
+            zipName: {
+              type: 'string',
+              description: 'Custom zip file name when downloading multiple files (default: "files.zip")',
+            },
+          },
+          required: ['names'],
+        },
+      },
     ];
   }
 
@@ -208,7 +228,7 @@ export class FileMcpServer implements IMcpServer {
 
       file_write: tool({
         description:
-          'Write or create a file in the extension storage. If the file already exists, it will be overwritten. Returns the file metadata on success.',
+          'Write or create a file in the extension storage. If the file already exists, it will be overwritten. Returns the file metadata and a preview URL on success.',
         inputSchema: z.object({
           name: z.string().describe('File name (e.g. "notes.md", "data.json", "script.py")'),
           content: z.string().describe('File content to write'),
@@ -224,6 +244,14 @@ export class FileMcpServer implements IMcpServer {
           }
 
           const metadata = await fileStorage.writeFile(name, fileContent, { conversationId });
+
+          // Generate preview URL for previewable files
+          const category = getPreviewCategory(metadata.mimeType);
+          const previewUrl =
+            category !== 'unsupported'
+              ? chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`)
+              : undefined;
+
           return {
             success: true,
             name: metadata.name,
@@ -231,6 +259,7 @@ export class FileMcpServer implements IMcpServer {
             size: metadata.size,
             createdAt: metadata.createdAt,
             updatedAt: metadata.updatedAt,
+            previewUrl,
           };
         },
       }),
@@ -251,11 +280,19 @@ export class FileMcpServer implements IMcpServer {
           try {
             const patched = applyPatch(original, patch);
             const metadata = await fileStorage.writeFile(name, patched);
+
+            const category = getPreviewCategory(metadata.mimeType);
+            const previewUrl =
+              category !== 'unsupported'
+                ? chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`)
+                : undefined;
+
             return {
               success: true,
               name: metadata.name,
               size: metadata.size,
               updatedAt: metadata.updatedAt,
+              previewUrl,
             };
           } catch (err) {
             return {
@@ -331,6 +368,65 @@ export class FileMcpServer implements IMcpServer {
             success: true,
             message: `Opened preview for "${name}"`,
             url: previewUrl,
+          };
+        },
+      }),
+
+      file_download: tool({
+        description:
+          'Download one or more files from extension storage to the user\'s local disk. When multiple files are specified, they are automatically bundled into a zip archive for a single download. Single files are downloaded directly.',
+        inputSchema: z.object({
+          names: z
+            .array(z.string())
+            .min(1)
+            .describe('List of file names to download'),
+          zipName: z
+            .string()
+            .optional()
+            .describe('Custom zip file name when downloading multiple files (default: "files.zip")'),
+        }),
+        execute: async ({ names, zipName }) => {
+          // Single file: download directly
+          if (names.length === 1) {
+            const name = names[0]!;
+            const blob = await fileStorage.readFileAsBlob(name);
+            if (!blob) {
+              return { success: false, error: `File "${name}" not found` };
+            }
+
+            const url = URL.createObjectURL(blob);
+            const filename = name.includes('/') ? name.split('/').pop()! : name;
+
+            try {
+              const downloadId = await chrome.downloads.download({
+                url,
+                filename,
+                saveAs: false,
+              });
+              setTimeout(() => URL.revokeObjectURL(url), 10000);
+              return { success: true, message: `Downloaded "${filename}"`, downloadId };
+            } catch (err) {
+              URL.revokeObjectURL(url);
+              return {
+                success: false,
+                error: err instanceof Error ? err.message : String(err),
+              };
+            }
+          }
+
+          // Multiple files: bundle into zip
+          const result = await downloadAsZip(
+            names.map((name) => ({ name })),
+            zipName || 'files.zip',
+          );
+
+          return {
+            success: result.success,
+            message: result.success
+              ? `Downloaded ${result.totalFiles} file(s) as "${zipName || 'files.zip'}"`
+              : 'Failed to create zip archive',
+            totalFiles: result.totalFiles,
+            failedFiles: result.failedFiles.length > 0 ? result.failedFiles : undefined,
           };
         },
       }),
