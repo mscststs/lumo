@@ -1,9 +1,13 @@
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, Square, ImagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+
+export interface ChatInputHandle {
+  focus: () => void;
+}
 
 interface ChatInputProps {
   isStreaming: boolean;
@@ -12,11 +16,20 @@ interface ChatInputProps {
   onStop: () => void;
 }
 
-export function ChatInput({ isStreaming, isVisionModel, onSend, onStop }: ChatInputProps) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
+  { isStreaming, isVisionModel, onSend, onStop },
+  ref,
+) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      textareaRef.current?.focus();
+    },
+  }));
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (!isVisionModel) return;
@@ -177,4 +190,4 @@ export function ChatInput({ isStreaming, isVisionModel, onSend, onStop }: ChatIn
       </div>
     </div>
   );
-}
+});

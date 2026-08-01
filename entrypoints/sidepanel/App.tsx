@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence } from 'motion/react';
 import { ChatHeader } from '@/components/chat/ChatHeader';
-import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatInput, type ChatInputHandle } from '@/components/chat/ChatInput';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
 import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { ThemeInit } from '@/lib/theme';
@@ -11,6 +11,7 @@ import { useChatStream } from '@/store/useChatStream';
 
 export default function App() {
   const { t } = useTranslation();
+  const chatInputRef = useRef<ChatInputHandle>(null);
   const {
     currentModelValue,
     allModels,
@@ -51,6 +52,14 @@ export default function App() {
     chrome.runtime.openOptionsPage();
   };
 
+  const onNewChat = () => {
+    handleNewChat();
+    // 等待状态更新后聚焦输入框
+    requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
+  };
+
   const onSend = (input: string, images: string[]) => {
     void handleSend(input, images, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId);
   };
@@ -79,7 +88,7 @@ export default function App() {
         currentModelValue={currentModelValue}
         allModels={allModels}
         onModelChange={handleModelChange}
-        onNewChat={handleNewChat}
+        onNewChat={onNewChat}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenSettings={handleOpenSettings}
       />
@@ -97,6 +106,7 @@ export default function App() {
       />
 
       <ChatInput
+        ref={chatInputRef}
         isStreaming={isStreaming}
         isVisionModel={isVisionModel()}
         onSend={onSend}
