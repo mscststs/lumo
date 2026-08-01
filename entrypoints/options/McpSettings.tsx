@@ -249,7 +249,9 @@ export function McpSettings() {
             <Server className="h-4 w-4" />
             <span>{t('options.mcp.servers')}</span>
           </div>
-          <p className="text-2xl font-semibold mt-1">{states.length}</p>
+          <p className="text-2xl font-semibold mt-1">
+            {states.filter((s) => s.info.id !== 'webmcp').length + webmcp.tabStates.filter((ts) => ts.tools.length > 0).length}
+          </p>
         </div>
         <div className="border border-border rounded-lg p-3 bg-card">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -266,7 +268,7 @@ export function McpSettings() {
             <span>{t('options.mcp.status')}</span>
           </div>
           <p className="text-2xl font-semibold mt-1">
-            {states.filter((s) => s.status === 'connected').length}/{states.length}
+            {states.filter((s) => s.status === 'connected' && s.info.id !== 'webmcp').length + webmcp.tabStates.filter((ts) => ts.tools.length > 0).length}/{states.filter((s) => s.info.id !== 'webmcp').length + webmcp.tabStates.filter((ts) => ts.tools.length > 0).length}
           </p>
         </div>
       </div>
