@@ -196,17 +196,12 @@ export function FileManager() {
     const url = URL.createObjectURL(blob);
     // Extract just the filename (strip folder prefix)
     const filename = name.includes('/') ? name.split('/').pop()! : name;
-    try {
-      await chrome.downloads.download({ url, filename, saveAs: false });
-    } catch {
-      // Fallback: use anchor element if chrome.downloads is unavailable
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     // Revoke after a delay to allow download to start
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };

@@ -50,19 +50,16 @@ export async function downloadAsZip(
   const blob = new Blob([zipped], { type: 'application/zip' });
   const url = URL.createObjectURL(blob);
 
-  try {
-    await chrome.downloads.download({ url, filename: zipName, saveAs: false });
-  } catch {
-    // Fallback: anchor download
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = zipName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
+  // Use <a> download for UI pages (options/sidepanel) — blob URL is same-origin
+  // so the `download` attribute reliably sets the filename.
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = zipName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 
-  // Revoke after delay
+  // Revoke after delay to allow download to start
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 
   return {
