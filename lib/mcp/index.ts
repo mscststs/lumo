@@ -6,6 +6,7 @@ export { NetworkMonitorMcpServer } from './network-monitor-server';
 export { DevToolsAdvancedMcpServer } from './devtools-advanced-server';
 export { FileMcpServer } from './file-server';
 export { ExternalMcpServer } from './external-server';
+export { WebMcpServer } from './webmcp-server';
 export { fileStorage } from './file-storage';
 export type { FileMetadata, StoredFile } from './file-storage';
 export { inferMimeType, getPreviewCategory, getLanguageFromMime } from './file-storage';
@@ -17,6 +18,7 @@ export {
   type NetworkRequestRecord,
   type ConsoleMessageRecord,
 } from './session-store';
+export { WEBMCP_SESSION_KEY } from './webmcp-messages';
 
 import { mcpRegistry } from './registry';
 import { BrowserMcpServer } from './browser-server';
@@ -25,6 +27,7 @@ import { NetworkMonitorMcpServer } from './network-monitor-server';
 import { DevToolsAdvancedMcpServer } from './devtools-advanced-server';
 import { FileMcpServer } from './file-server';
 import { ExternalMcpServer } from './external-server';
+import { WebMcpServer } from './webmcp-server';
 import { storage } from '@/store/storage';
 import type { McpHttpServerConfig, McpExternalServerConfig } from './types';
 
@@ -46,6 +49,14 @@ export async function initBuiltinMcpServers(): Promise<void> {
   mcpRegistry.register(new NetworkMonitorMcpServer());
   mcpRegistry.register(new DevToolsAdvancedMcpServer());
   mcpRegistry.register(new FileMcpServer());
+
+  // Register WebMCP server (reads tab states from session storage)
+  // It's always registered but only provides tools when webmcpEnabled is on
+  const settings = await storage.getMcpSettings();
+  if (settings.webmcpEnabled) {
+    const webmcpServer = new WebMcpServer(() => mcpRegistry.notifyChange());
+    mcpRegistry.register(webmcpServer);
+  }
 
   // Load and register external MCP servers from storage
   await initExternalMcpServers();
@@ -104,6 +115,7 @@ export function unregisterExternalServer(id: string): void {
  * - Toggling `enabled` on/off for external servers
  * - Adding new external servers
  * - Removing external servers
+ * - Toggling WebMCP on/off
  */
 function setupMcpStorageSync(): void {
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -111,12 +123,13 @@ function setupMcpStorageSync(): void {
     if (!changes.mcpSettings) return;
 
     const newSettings = changes.mcpSettings.newValue as
-      | { servers: McpExternalServerConfig[]; disabledBuiltins: string[] }
+      | { servers: McpExternalServerConfig[]; disabledBuiltins: string[]; webmcpEnabled?: boolean }
       | undefined;
 
     if (!newSettings) return;
 
     syncExternalServers(newSettings.servers ?? []);
+    syncWebMcpServer(newSettings.webmcpEnabled ?? false);
   });
 }
 
@@ -177,4 +190,23 @@ async function syncExternalServers(
   }
 
   mcpRegistry.notifyChange();
+}
+
+/**
+ * Synchronize the WebMCP server registration based on the webmcpEnabled setting.
+ */
+function syncWebMcpServer(enabled: boolean): void {
+  const existing = mcpRegistry.getServer('webmcp');
+
+  if (enabled && !existing) {
+    // WebMCP was just enabled - register and connect the server
+    const webmcpServer = new WebMcpServer(() => mcpRegistry.notifyChange());
+    mcpRegistry.register(webmcpServer);
+    webmcpServer.connect();
+    mcpRegistry.notifyChange();
+  } else if (!enabled && existing) {
+    // WebMCP was just disabled - unregister the server
+    mcpRegistry.unregister('webmcp');
+    mcpRegistry.notifyChange();
+  }
 }

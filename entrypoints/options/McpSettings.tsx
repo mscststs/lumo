@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Globe,
+  Globe2,
   Wifi,
   WifiOff,
   AlertCircle,
@@ -17,19 +18,21 @@ import {
   PowerOff,
   Radio,
   RadioTower,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import type { McpServerState, McpToolDefinition, McpHttpServerConfig } from '@/lib/mcp/types';
+import type { McpServerState, McpToolDefinition, McpHttpServerConfig, WebMcpTabState } from '@/lib/mcp/types';
 import {
   mcpRegistry,
   initBuiltinMcpServers,
   registerExternalServer,
   unregisterExternalServer,
   ExternalMcpServer,
+  WEBMCP_SESSION_KEY,
 } from '@/lib/mcp';
 import { storage } from '@/store/storage';
 
@@ -137,6 +140,67 @@ function useExternalServers() {
   return { configs, addServer, removeServer, toggleServer, refresh: loadConfigs };
 }
 
+function useWebMcpSettings() {
+  const [enabled, setEnabled] = useState(false);
+  const [tabStates, setTabStates] = useState<WebMcpTabState[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadState = useCallback(async () => {
+    setLoading(true);
+    try {
+      const settings = await storage.getMcpSettings();
+      setEnabled(settings.webmcpEnabled);
+
+      // Load tab states from session storage
+      const result = await chrome.storage.session.get(WEBMCP_SESSION_KEY);
+      setTabStates(
+        (result[WEBMCP_SESSION_KEY] as WebMcpTabState[] | undefined) || [],
+      );
+    } catch (err) {
+      console.error('Failed to load WebMCP state:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadState();
+
+    // Listen for session storage changes (tab states updated by background)
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName === 'session' && WEBMCP_SESSION_KEY in changes) {
+        const newValue = changes[WEBMCP_SESSION_KEY].newValue as
+          | WebMcpTabState[]
+          | undefined;
+        setTabStates(newValue || []);
+      }
+      if (areaName === 'local' && 'mcpSettings' in changes) {
+        const newSettings = changes.mcpSettings.newValue as
+          | { webmcpEnabled?: boolean }
+          | undefined;
+        if (newSettings && typeof newSettings.webmcpEnabled === 'boolean') {
+          setEnabled(newSettings.webmcpEnabled);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [loadState]);
+
+  const toggleEnabled = async (value: boolean) => {
+    const settings = await storage.getMcpSettings();
+    settings.webmcpEnabled = value;
+    await storage.setMcpSettings(settings);
+    setEnabled(value);
+  };
+
+  return { enabled, tabStates, loading, toggleEnabled };
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -145,10 +209,11 @@ export function McpSettings() {
   const { t } = useTranslation();
   const { states, loading, refresh } = useInitMcpServers();
   const { configs, addServer, removeServer, toggleServer } = useExternalServers();
+  const webmcp = useWebMcpSettings();
   const [showAddForm, setShowAddForm] = useState(false);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
 
-  const builtinStates = states.filter((s) => s.info.builtin);
+  const builtinStates = states.filter((s) => s.info.builtin && s.info.id !== 'webmcp');
   const externalStates = states.filter((s) => !s.info.builtin);
 
   const toggleExpanded = (id: string) => {
@@ -231,7 +296,7 @@ export function McpSettings() {
           </section>
 
           {/* External Servers Section */}
-          <section className="mb-6">
+          <section className="mb-8">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-muted-foreground">
                 {t('options.mcp.externalSection')}
@@ -291,8 +356,192 @@ export function McpSettings() {
               </div>
             )}
           </section>
+
+          {/* WebMCP Section */}
+          <WebMcpSection
+            enabled={webmcp.enabled}
+            tabStates={webmcp.tabStates}
+            loading={webmcp.loading}
+            onToggleEnabled={webmcp.toggleEnabled}
+          />
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// WebMCP Section
+// ============================================================================
+
+function WebMcpSection({
+  enabled,
+  tabStates,
+  loading,
+  onToggleEnabled,
+}: {
+  enabled: boolean;
+  tabStates: WebMcpTabState[];
+  loading: boolean;
+  onToggleEnabled: (enabled: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [expandedTabs, setExpandedTabs] = useState<Set<number>>(new Set());
+
+  const toggleTab = (tabId: number) => {
+    setExpandedTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(tabId)) next.delete(tabId);
+      else next.add(tabId);
+      return next;
+    });
+  };
+
+  const totalTools = tabStates.reduce((sum, ts) => sum + ts.tools.length, 0);
+
+  return (
+    <section className="mb-6">
+      {/* Section Header with Toggle */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Globe2 className="h-4 w-4 text-emerald-500" />
+          <h3 className="text-sm font-medium text-muted-foreground">
+            {t('options.mcp.webmcpSection.title')}
+          </h3>
+          {enabled && totalTools > 0 && (
+            <span className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">
+              {t('options.mcp.toolCount', { count: totalTools })}
+            </span>
+          )}
+        </div>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Switch
+            checked={enabled}
+            onCheckedChange={onToggleEnabled}
+          />
+        </div>
+      </div>
+
+      {/* Description */}
+      <p className="text-xs text-muted-foreground mb-3">
+        {t('options.mcp.webmcpSection.description')}
+      </p>
+
+      {/* Content (only visible when enabled) */}
+      <AnimatePresence>
+        {enabled && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-4 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <span className="text-xs">{t('common.loading')}</span>
+              </div>
+            ) : tabStates.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
+                {t('options.mcp.webmcpSection.noTabs')}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {tabStates.map((tabState) => (
+                  <WebMcpTabCard
+                    key={tabState.tabId}
+                    tabState={tabState}
+                    expanded={expandedTabs.has(tabState.tabId)}
+                    onToggle={() => toggleTab(tabState.tabId)}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+function WebMcpTabCard({
+  tabState,
+  expanded,
+  onToggle,
+}: {
+  tabState: WebMcpTabState;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div
+        className="flex items-center gap-2 p-3 bg-card cursor-pointer hover:bg-accent/50 transition-colors"
+        onClick={onToggle}
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        )}
+
+        <Globe2 className="h-4 w-4 shrink-0 text-emerald-500" />
+
+        <span className="font-medium text-sm flex-1 truncate">
+          {tabState.title || t('options.mcp.webmcpSection.tabLabel', { id: tabState.tabId })}
+        </span>
+
+        <span className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded shrink-0">
+          {t('options.mcp.toolCount', { count: tabState.tools.length })}
+        </span>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="p-3 pt-0 space-y-2 border-t border-border">
+              {/* Tab URL */}
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                <ExternalLink className="h-3 w-3 shrink-0" />
+                <span className="truncate font-mono">{tabState.url}</span>
+              </div>
+
+              {/* Tools */}
+              {tabState.tools.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">
+                  {t('options.mcp.noTools')}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1">
+                    <Wrench className="h-3 w-3" />
+                    <span>{t('options.mcp.tools')}</span>
+                  </div>
+                  {tabState.tools.map((tool) => (
+                    <ToolItem
+                      key={tool.name}
+                      tool={{
+                        name: tool.name,
+                        description: tool.description,
+                        inputSchema: tool.inputSchema,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -761,6 +1010,8 @@ function ServerIcon({ transport }: { transport: string }) {
       return <Radio className="h-4 w-4 shrink-0 text-blue-500" />;
     case 'sse':
       return <RadioTower className="h-4 w-4 shrink-0 text-orange-500" />;
+    case 'webmcp':
+      return <Globe2 className="h-4 w-4 shrink-0 text-emerald-500" />;
     default:
       return <Server className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }

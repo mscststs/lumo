@@ -17,6 +17,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
 const DEFAULT_MCP_SETTINGS: McpSettings = {
   servers: [],
   disabledBuiltins: [],
+  webmcpEnabled: false,
 };
 
 // Storage helpers using chrome.storage.local

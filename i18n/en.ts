@@ -219,6 +219,17 @@ export const en = {
         file: 'File Manager',
         fileDesc: 'Read, write, patch, and preview files stored in the extension',
       },
+      webmcpSection: {
+        title: 'WebMCP',
+        description: 'Discover and use tools exposed by web pages via the WebMCP protocol. When enabled, a polyfill is injected into every page to enable tool discovery.',
+        enableToggle: 'Enable WebMCP',
+        enableDesc: 'Inject polyfill and monitor pages for WebMCP tools',
+        noTabs: 'No pages with WebMCP tools detected.',
+        tabLabel: 'Tab {{id}}',
+        toolsFromTab: '{{count}} tools from this tab',
+        lastUpdated: 'Last updated',
+        pageUrl: 'Page URL',
+      },
     },
     files: {
       title: 'Files',

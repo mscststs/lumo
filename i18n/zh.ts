@@ -218,6 +218,17 @@ export const zh: TranslationSchema = {
         file: '文件管理',
         fileDesc: '读取、写入、修补和预览存储在扩展中的文件',
       },
+      webmcpSection: {
+        title: 'WebMCP',
+        description: '发现并使用网页通过 WebMCP 协议暴露的工具。启用后，将向每个页面注入 polyfill 以实现工具发现。',
+        enableToggle: '启用 WebMCP',
+        enableDesc: '注入 polyfill 并监控页面的 WebMCP 工具',
+        noTabs: '未检测到包含 WebMCP 工具的页面。',
+        tabLabel: '标签页 {{id}}',
+        toolsFromTab: '来自此标签页的 {{count}} 个工具',
+        lastUpdated: '最后更新',
+        pageUrl: '页面地址',
+      },
     },
     files: {
       title: '文件',

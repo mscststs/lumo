@@ -1,4 +1,5 @@
 import { mcpRegistry, initBuiltinMcpServers, registerMcpCollectors } from '@/lib/mcp';
+import { initWebMcpManager } from '@/lib/mcp/webmcp-manager';
 
 export default defineBackground(() => {
   // Session storage defaults to TRUSTED_CONTEXTS only, which already covers the
@@ -15,6 +16,9 @@ export default defineBackground(() => {
   // are not dropped. They also belong here rather than in the side panel, whose
   // listeners would die with the panel.
   registerMcpCollectors();
+
+  // Initialize WebMCP manager (handles content script injection and tool monitoring)
+  initWebMcpManager();
 
   // Open side panel when browser action icon is clicked
   chrome.sidePanel

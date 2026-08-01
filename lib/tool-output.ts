@@ -1,11 +1,9 @@
 /**
  * Tool output normalization for the sidebar.
  *
- * Built-in tools return wildly different shapes: plain objects, arrays, huge
- * HTML/text dumps (`page_get_html`, `debug_get_accessibility_tree`) and large
- * base64 screenshots (`page_screenshot`, `debug_full_page_screenshot`).
- * Rendering those raw would freeze the panel, so outputs are classified and
- * capped before display.
+ * All MCP tools (built-in, external, WebMCP) now return a unified
+ * CallToolResult format: { content: [{type, text}, ...], isError: boolean }.
+ * This module unpacks that structure and classifies the output for display.
  */
 
 /** Max characters of JSON/text shown before truncation. */
@@ -17,6 +15,34 @@ export type NormalizedToolOutput =
   | { kind: 'error'; message: string }
   | { kind: 'text'; text: string; truncated: boolean; totalLength: number };
 
+/**
+ * MCP CallToolResult content part types.
+ */
+interface CallToolTextPart {
+  type: 'text';
+  text: string;
+}
+
+interface CallToolImagePart {
+  type: 'image';
+  data: string;       // base64
+  mimeType: string;
+}
+
+type CallToolContentPart = CallToolTextPart | CallToolImagePart | { type: string; [key: string]: unknown };
+
+interface CallToolResult {
+  content: CallToolContentPart[];
+  isError: boolean;
+}
+
+/** Check if value looks like a CallToolResult. */
+function isCallToolResult(value: unknown): value is CallToolResult {
+  if (!value || typeof value !== 'object') return false;
+  const obj = value as Record<string, unknown>;
+  return Array.isArray(obj.content);
+}
+
 /** Detect a data-URL or http(s) image string. */
 function asImageUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -24,43 +50,104 @@ function asImageUrl(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Pull `{ dataUrl }` out of a screenshot-style result object. */
-function findImageField(value: object): string | undefined {
-  for (const key of ['dataUrl', 'screenshot', 'image'] as const) {
-    const candidate = asImageUrl((value as Record<string, unknown>)[key]);
-    if (candidate) return candidate;
+/**
+ * Try to pretty-print a string if it's valid JSON; otherwise return as-is.
+ */
+function prettyPrintIfJson(text: string): string {
+  const trimmed = text.trim();
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      // Not valid JSON, return as-is
+    }
   }
-  return undefined;
+  return text;
+}
+
+/**
+ * Extract displayable content from a CallToolResult.
+ */
+function normalizeCallToolResult(result: CallToolResult): NormalizedToolOutput {
+  if (result.isError) {
+    const errorTexts = result.content
+      .filter((p): p is CallToolTextPart => p.type === 'text')
+      .map((p) => p.text);
+    return {
+      kind: 'error',
+      message: errorTexts.join('\n') || 'Tool execution failed',
+    };
+  }
+
+  if (!result.content || result.content.length === 0) {
+    return { kind: 'empty' };
+  }
+
+  // Check for image parts
+  const imagePart = result.content.find(
+    (p): p is CallToolImagePart => p.type === 'image' && typeof (p as any).data === 'string',
+  );
+  if (imagePart) {
+    const url = `data:${imagePart.mimeType || 'image/png'};base64,${imagePart.data}`;
+    const textParts = result.content
+      .filter((p): p is CallToolTextPart => p.type === 'text')
+      .map((p) => p.text);
+    const caption = textParts.length > 0 ? textParts.join('\n') : undefined;
+    return { kind: 'image', url, ...(caption ? { caption } : {}) };
+  }
+
+  // Extract all text parts and combine
+  const textParts = result.content
+    .filter((p): p is CallToolTextPart => p.type === 'text')
+    .map((p) => p.text);
+
+  if (textParts.length === 0) {
+    return { kind: 'empty' };
+  }
+
+  const combinedText = textParts.join('\n');
+  const prettyText = prettyPrintIfJson(combinedText);
+  const totalLength = prettyText.length;
+
+  if (totalLength > MAX_TEXT_LENGTH) {
+    return {
+      kind: 'text',
+      text: prettyText.slice(0, MAX_TEXT_LENGTH),
+      truncated: true,
+      totalLength,
+    };
+  }
+
+  return { kind: 'text', text: prettyText, truncated: false, totalLength };
 }
 
 export function normalizeToolOutput(output: unknown): NormalizedToolOutput {
   if (output == null) return { kind: 'empty' };
 
+  // Handle CallToolResult format (standard for all MCP tools)
+  if (isCallToolResult(output)) {
+    return normalizeCallToolResult(output);
+  }
+
+  // Legacy fallback for any non-CallToolResult values
   const directImage = asImageUrl(output);
   if (directImage) return { kind: 'image', url: directImage };
 
   if (typeof output === 'object') {
     const record = output as Record<string, unknown>;
 
-    // Several tools signal failure by returning `{ error }` instead of throwing,
-    // which never becomes an `output-error` state — surface it as an error anyway.
     if (typeof record.error === 'string' && Object.keys(record).length <= 2) {
       return { kind: 'error', message: record.error };
     }
-
-    const image = findImageField(record);
-    if (image) {
-      const rest = Object.fromEntries(
-        Object.entries(record).filter(
-          ([key, value]) => value !== image && key !== 'success',
-        ),
-      );
-      const caption = Object.keys(rest).length > 0 ? safeStringify(rest) : undefined;
-      return { kind: 'image', url: image, ...(caption ? { caption } : {}) };
-    }
   }
 
-  const text = typeof output === 'string' ? output : safeStringify(output);
+  const text = typeof output === 'string'
+    ? prettyPrintIfJson(output)
+    : safeStringify(output);
   const totalLength = text.length;
 
   if (totalLength > MAX_TEXT_LENGTH) {

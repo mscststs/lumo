@@ -75,6 +75,30 @@ export interface McpWebMcpServerConfig {
 export type McpExternalServerConfig = McpHttpServerConfig | McpWebMcpServerConfig;
 
 /**
+ * WebMCP tool definition reported from a page's document.modelContext
+ */
+export interface WebMcpToolInfo {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/**
+ * Per-tab WebMCP state tracked by the background service worker
+ */
+export interface WebMcpTabState {
+  tabId: number;
+  /** Tab title at last report */
+  title: string;
+  /** Tab URL at last report */
+  url: string;
+  /** Tools registered on this tab */
+  tools: WebMcpToolInfo[];
+  /** Timestamp of last tool report */
+  lastUpdated: number;
+}
+
+/**
  * MCP settings stored in chrome.storage
  */
 export interface McpSettings {
@@ -82,6 +106,8 @@ export interface McpSettings {
   servers: McpExternalServerConfig[];
   /** Disabled built-in server IDs */
   disabledBuiltins: string[];
+  /** Whether WebMCP discovery and injection is enabled */
+  webmcpEnabled: boolean;
 }
 
 /**
