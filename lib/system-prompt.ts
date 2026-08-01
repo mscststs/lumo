@@ -30,5 +30,14 @@ export function resolveSystemPrompt(
 ): string | undefined {
   if (!settings?.enabled) return undefined;
   const prompt = settings.prompt.trim();
-  return prompt.length > 0 ? prompt : undefined;
+  if (prompt.length === 0) return undefined;
+
+  if (settings.injectCurrentTime) {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    return `CurrentTime: ${timestamp}\n\n${prompt}`;
+  }
+
+  return prompt;
 }

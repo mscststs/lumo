@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Palette, Plug, MessageSquareCode } from 'lucide-react';
+import { Cpu, Palette, Plug, MessageSquareCode, Bug } from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
+import { ChatDebugPage } from './ChatDebug';
 
-type NavItem = 'models' | 'systemPrompt' | 'ui' | 'mcp';
+type NavItem = 'models' | 'systemPrompt' | 'ui' | 'mcp' | 'chatDebug';
 
 export default function App() {
   const { t } = useTranslation();
@@ -46,6 +47,12 @@ export default function App() {
             icon={<Palette className="h-4 w-4" />}
             label={t('options.nav.ui')}
           />
+          <NavButton
+            active={activeNav === 'chatDebug'}
+            onClick={() => setActiveNav('chatDebug')}
+            icon={<Bug className="h-4 w-4" />}
+            label={t('options.nav.chatDebug')}
+          />
         </div>
       </nav>
 
@@ -55,6 +62,7 @@ export default function App() {
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
         {activeNav === 'mcp' && <McpSettings />}
         {activeNav === 'ui' && <UISettingsPage />}
+        {activeNav === 'chatDebug' && <ChatDebugPage />}
       </main>
     </div>
   );

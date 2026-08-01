@@ -40,6 +40,11 @@ export function SystemPromptSettingsPage() {
     void persist({ ...settings, enabled });
   };
 
+  const handleToggleInjectTime = (injectCurrentTime: boolean) => {
+    if (!settings) return;
+    void persist({ ...settings, injectCurrentTime });
+  };
+
   const handleSave = async () => {
     if (!settings) return;
     await persist({ ...settings, prompt: draft });
@@ -77,6 +82,21 @@ export function SystemPromptSettingsPage() {
           <Switch
             checked={settings.enabled}
             onCheckedChange={handleToggle}
+            className="shrink-0 mt-0.5"
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Label className="text-sm">{t('options.systemPrompt.injectTime')}</Label>
+            <p className="text-xs text-muted-foreground mt-1 break-words">
+              {t('options.systemPrompt.injectTimeDesc')}
+            </p>
+          </div>
+          <Switch
+            checked={settings.injectCurrentTime ?? false}
+            onCheckedChange={handleToggleInjectTime}
+            disabled={!settings.enabled}
             className="shrink-0 mt-0.5"
           />
         </div>

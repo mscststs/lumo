@@ -48,6 +48,8 @@ export interface SystemPromptSettings {
   enabled: boolean;
   /** Raw system prompt text. Sent verbatim, no templating. */
   prompt: string;
+  /** When true, prepend `CurrentTime: <local time>` to the resolved prompt. */
+  injectCurrentTime?: boolean;
 }
 
 /**
@@ -84,6 +86,12 @@ export interface Conversation {
   providerId: string;
   createdAt: number;
   updatedAt: number;
+  /**
+   * The resolved system prompt snapshot for this conversation.
+   * Generated once when the conversation starts; reused on subsequent messages
+   * so that time-injected prompts stay stable and provider caching works.
+   */
+  systemPrompt?: string;
 }
 
 export interface AppConfig {
