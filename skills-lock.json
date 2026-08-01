@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-elements": {
+      "source": "vercel/ai-elements",
+      "sourceType": "github",
+      "skillPath": "skills/ai-elements/SKILL.md",
+      "computedHash": "c5faf42a5aa6bf02f7310dfcf0b6c45d956c98afa520cb16ec048df7ee263af5"
+    },
+    "ai-sdk": {
+      "source": "vercel/ai",
+      "sourceType": "github",
+      "skillPath": "skills/use-ai-sdk/SKILL.md",
+      "computedHash": "da25c27a274ef2b71017c255f95a26350d2519765a75cb54ee1a37872b121dab"
+    },
+    "webmcp": {
+      "source": "cr4yfish/web-mcp-skill",
+      "sourceType": "github",
+      "skillPath": "skills/webmcp/SKILL.md",
+      "computedHash": "479c6bc74f5160bccc24002b093238b01b8c0e0b07c5b1431e26d5b9ebf5e9b0"
+    },
+    "wxt-browser-extensions": {
+      "source": "pproenca/dot-skills",
+      "sourceType": "github",
+      "skillPath": "skills/.experimental/wxt-browser-extensions/SKILL.md",
+      "computedHash": "3cb5453d026a8a223bc3d788bd5ddb0dae230a39508ae002a66cbce67a8f0e96"
+    }
+  }
+}
