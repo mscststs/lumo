@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { IMcpServer, McpServerInfo, McpServerStatus, McpToolDefinition, AnyTool } from './types';
+import type { IMcpServer, McpServerInfo, McpServerStatus, McpToolDefinition, AnyTool, WebMcpTabState } from './types';
+import { WEBMCP_SESSION_KEY } from './webmcp-messages';
 
 /**
  * Built-in Browser Core MCP Server
@@ -63,6 +64,18 @@ export class BrowserMcpServer implements IMcpServer {
         }
       });
     });
+  }
+
+  /**
+   * Read WebMCP tab states from session storage.
+   */
+  private async getWebMcpTabStates(): Promise<WebMcpTabState[]> {
+    try {
+      const result = await chrome.storage.session.get(WEBMCP_SESSION_KEY);
+      return (result[WEBMCP_SESSION_KEY] as WebMcpTabState[] | undefined) || [];
+    } catch {
+      return [];
+    }
   }
 
   getInfo(): McpServerInfo {
@@ -148,7 +161,7 @@ export class BrowserMcpServer implements IMcpServer {
     return {
       // ===== TABS =====
       browser_list_tabs: tool({
-        description: 'List all open tabs in the browser. Returns tab ID, title, URL, active status, and window ID for each tab.',
+        description: 'List all open tabs in the browser. Returns tab ID, title, URL, active status, and window ID for each tab. If a tab has WebMCP tools registered, a webmcp field is included with tool names and descriptions.',
         inputSchema: z.object({
           windowId: z.number().optional().describe('Filter by window ID (optional)'),
         }),
@@ -156,25 +169,44 @@ export class BrowserMcpServer implements IMcpServer {
           const queryInfo: chrome.tabs.QueryInfo = {};
           if (windowId !== undefined) queryInfo.windowId = windowId;
           const tabs = await chrome.tabs.query(queryInfo);
-          return tabs.map((tab) => ({
-            id: tab.id,
-            title: tab.title,
-            url: tab.url,
-            active: tab.active,
-            windowId: tab.windowId,
-            pinned: tab.pinned,
-            index: tab.index,
-          }));
+
+          // Load WebMCP tab states to enrich tabs with tool info
+          const webmcpStates = await this.getWebMcpTabStates();
+          const webmcpByTab = new Map(webmcpStates.filter((s) => s.tools.length > 0).map((s) => [s.tabId, s]));
+
+          return tabs.map((tab) => {
+            const base = {
+              id: tab.id,
+              title: tab.title,
+              url: tab.url,
+              active: tab.active,
+              windowId: tab.windowId,
+              pinned: tab.pinned,
+              index: tab.index,
+            };
+            const webmcpState = tab.id ? webmcpByTab.get(tab.id) : undefined;
+            if (webmcpState) {
+              return {
+                ...base,
+                webmcp: webmcpState.tools.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                })),
+              };
+            }
+            return base;
+          });
         },
       }),
 
       browser_get_active_tab: tool({
-        description: 'Get information about the currently active tab in the current window.',
+        description: 'Get information about the currently active tab in the current window. If the tab has WebMCP tools registered, a webmcp field is included with tool names and descriptions.',
         inputSchema: z.object({}),
         execute: async () => {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (!tab) return { error: 'No active tab found' };
-          return {
+
+          const base = {
             id: tab.id,
             title: tab.title,
             url: tab.url,
@@ -182,6 +214,23 @@ export class BrowserMcpServer implements IMcpServer {
             pinned: tab.pinned,
             index: tab.index,
           };
+
+          // Enrich with WebMCP tools if available
+          if (tab.id) {
+            const webmcpStates = await this.getWebMcpTabStates();
+            const tabState = webmcpStates.find((s) => s.tabId === tab.id && s.tools.length > 0);
+            if (tabState) {
+              return {
+                ...base,
+                webmcp: tabState.tools.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                })),
+              };
+            }
+          }
+
+          return base;
         },
       }),
 
