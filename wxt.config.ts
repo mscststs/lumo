@@ -28,6 +28,9 @@ export default defineConfig({
       'tabGroups',
     ],
     host_permissions: ['<all_urls>'],
+    sandbox: {
+      pages: ['sandbox.html'],
+    },
     side_panel: {
       default_path: 'sidepanel.html',
     },
