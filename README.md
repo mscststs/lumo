@@ -1,3 +1,132 @@
-# WXT + React
+# Lumo
 
-This template should help get you started developing with React in WXT.
+AI-powered browser sidebar assistant — a Chrome extension that brings a full-featured AI agent directly into your browser.
+
+Lumo connects to third-party LLM APIs and provides deep browser integration through the Model Context Protocol (MCP), enabling the AI to interact with tabs, pages, network, DevTools, and more.
+
+## Features
+
+### AI Chat Sidebar
+- Stream-based conversations with multi-model support
+- Image input for vision-capable models
+- Multi-turn tool-calling agent loop (AI autonomously uses browser tools)
+- Conversation history with search and management
+- Streaming Markdown rendering with code highlighting and math support
+- Stop generation / retry on failure
+
+### Built-in MCP Servers (Browser Tools)
+
+| Server | Capabilities |
+|--------|-------------|
+| **Browser Core** | Tabs, windows, bookmarks, history, cookies, downloads, navigation |
+| **Page Interaction** | DOM reading/querying, clicking, form filling, screenshots, JS execution |
+| **Network Monitor** | Request capture, URL blocking/redirecting, header modification |
+| **DevTools Advanced** | CDP-based input simulation, accessibility tree, full-page screenshots, device/network emulation |
+| **File Manager** | Read, write, patch, and preview files stored in the extension (IndexedDB) |
+
+### External MCP Server Support
+- Connect to remote MCP servers via **HTTP Streamable** or **SSE** transport
+- Add/remove/enable/disable servers from the settings UI
+- Real-time connection status (connecting, connected, error)
+- Auto-discovery of tools provided by external servers
+
+### Multi-Provider Model Support
+- OpenAI-compatible API (Chat Completions)
+- OpenAI Responses API
+- Anthropic Claude API
+- Any OpenAI-compatible gateway (e.g. OpenRouter, Azure, local proxies)
+
+### Settings & Customization
+- Model & provider configuration
+- Custom system prompts
+- Light / Dark theme
+- Internationalization (English & Chinese)
+- File manager for AI-generated files
+- Chat debug inspector
+
+## Tech Stack
+
+| Category | Technologies |
+|----------|-------------|
+| Framework | [WXT](https://wxt.dev) (Chrome Extension MV3) |
+| UI | React 19, Tailwind CSS 4, shadcn/ui, Radix UI |
+| AI | [Vercel AI SDK](https://ai-sdk.dev) (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/mcp`) |
+| Animation | Motion (Framer Motion) |
+| i18n | i18next + react-i18next |
+| State | Zustand, Chrome Storage API |
+| Markdown | Streamdown (streaming markdown renderer) |
+| Build | Vite 7, TypeScript 5.9 |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js >= 18
+- npm
+
+### Install
+
+```bash
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+This starts WXT in development mode with hot reload. Load the extension from `.output/chrome-mv3` in Chrome (`chrome://extensions` → Developer mode → Load unpacked).
+
+### Build
+
+```bash
+npm run build
+```
+
+Production build output goes to `.output/chrome-mv3`.
+
+### Package for Distribution
+
+```bash
+npm run zip
+```
+
+### Type Check
+
+```bash
+npm run compile
+```
+
+## Project Structure
+
+```
+├── entrypoints/
+│   ├── sidepanel/       # Main chat UI (sidebar)
+│   ├── options/         # Settings pages (hash-routed)
+│   ├── preview/         # File preview page
+│   ├── background.ts    # Service worker
+│   └── content.ts       # Content script
+├── components/
+│   ├── ai-elements/     # AI conversation rendering components
+│   ├── chat/            # Chat-specific components
+│   └── ui/              # shadcn base components
+├── lib/
+│   ├── mcp/             # MCP servers and registry
+│   ├── ai.ts            # AI SDK integration layer
+│   ├── theme.ts         # Theme management
+│   └── system-prompt.ts # System prompt configuration
+├── store/               # Storage and state hooks
+├── i18n/                # Internationalization (en, zh)
+├── types/               # Shared TypeScript types
+└── assets/              # Global styles and static assets
+```
+
+## Browser Support
+
+- Chrome / Chromium-based browsers (MV3)
+- Firefox support available via `npm run dev:firefox` / `npm run build:firefox`
+
+## License
+
+This project does not currently include a license file. All rights reserved.
