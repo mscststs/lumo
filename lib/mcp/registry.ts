@@ -103,6 +103,14 @@ class McpRegistry {
     };
   }
 
+  /**
+   * Notify all subscribers of a state change.
+   * Call after modifying a server's state externally (e.g. connect/disconnect).
+   */
+  notifyChange(): void {
+    this.notifyListeners();
+  }
+
   private notifyListeners(): void {
     this.listeners.forEach((listener) => listener());
   }

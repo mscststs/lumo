@@ -1,18 +1,48 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Palette, Plug, MessageSquareCode, Bug } from 'lucide-react';
+import { Cpu, Palette, Plug, MessageSquareCode, Bug, FolderOpen } from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
 import { ChatDebugPage } from './ChatDebug';
+import { FileManager } from './FileManager';
 
-type NavItem = 'models' | 'systemPrompt' | 'ui' | 'mcp' | 'chatDebug';
+const NAV_ITEMS = ['models', 'systemPrompt', 'mcp', 'files', 'ui', 'chatDebug'] as const;
+type NavItem = (typeof NAV_ITEMS)[number];
+
+function isValidNav(hash: string): hash is NavItem {
+  return (NAV_ITEMS as readonly string[]).includes(hash);
+}
+
+function getNavFromHash(): NavItem {
+  const hash = window.location.hash.replace('#', '');
+  return isValidNav(hash) ? hash : 'models';
+}
+
+function useHashNav() {
+  const [activeNav, setActiveNav] = useState<NavItem>(getNavFromHash);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setActiveNav(getNavFromHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const navigate = useCallback((nav: NavItem) => {
+    window.location.hash = nav;
+    setActiveNav(nav);
+  }, []);
+
+  return { activeNav, navigate };
+}
 
 export default function App() {
   const { t } = useTranslation();
-  const [activeNav, setActiveNav] = useState<NavItem>('models');
+  const { activeNav, navigate } = useHashNav();
 
   return (
     <div className="flex h-screen w-full bg-background">
@@ -25,31 +55,37 @@ export default function App() {
         <div className="flex-1 p-2 space-y-1">
           <NavButton
             active={activeNav === 'models'}
-            onClick={() => setActiveNav('models')}
+            onClick={() => navigate('models')}
             icon={<Cpu className="h-4 w-4" />}
             label={t('options.nav.models')}
           />
           <NavButton
             active={activeNav === 'systemPrompt'}
-            onClick={() => setActiveNav('systemPrompt')}
+            onClick={() => navigate('systemPrompt')}
             icon={<MessageSquareCode className="h-4 w-4" />}
             label={t('options.nav.systemPrompt')}
           />
           <NavButton
             active={activeNav === 'mcp'}
-            onClick={() => setActiveNav('mcp')}
+            onClick={() => navigate('mcp')}
             icon={<Plug className="h-4 w-4" />}
             label={t('options.nav.mcp')}
           />
           <NavButton
+            active={activeNav === 'files'}
+            onClick={() => navigate('files')}
+            icon={<FolderOpen className="h-4 w-4" />}
+            label={t('options.nav.files')}
+          />
+          <NavButton
             active={activeNav === 'ui'}
-            onClick={() => setActiveNav('ui')}
+            onClick={() => navigate('ui')}
             icon={<Palette className="h-4 w-4" />}
             label={t('options.nav.ui')}
           />
           <NavButton
             active={activeNav === 'chatDebug'}
-            onClick={() => setActiveNav('chatDebug')}
+            onClick={() => navigate('chatDebug')}
             icon={<Bug className="h-4 w-4" />}
             label={t('options.nav.chatDebug')}
           />
@@ -61,6 +97,7 @@ export default function App() {
         {activeNav === 'models' && <ModelSettings />}
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
         {activeNav === 'mcp' && <McpSettings />}
+        {activeNav === 'files' && <FileManager />}
         {activeNav === 'ui' && <UISettingsPage />}
         {activeNav === 'chatDebug' && <ChatDebugPage />}
       </main>
