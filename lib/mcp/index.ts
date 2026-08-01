@@ -26,7 +26,7 @@ import { DevToolsAdvancedMcpServer } from './devtools-advanced-server';
 import { FileMcpServer } from './file-server';
 import { ExternalMcpServer } from './external-server';
 import { storage } from '@/store/storage';
-import type { McpHttpServerConfig } from './types';
+import type { McpHttpServerConfig, McpExternalServerConfig } from './types';
 
 /**
  * Initialize all built-in MCP servers and connect them.
@@ -51,6 +51,9 @@ export async function initBuiltinMcpServers(): Promise<void> {
   await initExternalMcpServers();
 
   await mcpRegistry.connectAll();
+
+  // Start listening for cross-context storage changes to keep registry in sync
+  setupMcpStorageSync();
 }
 
 /**
@@ -89,4 +92,89 @@ export function registerExternalServer(config: McpHttpServerConfig): ExternalMcp
  */
 export function unregisterExternalServer(id: string): void {
   mcpRegistry.unregister(id);
+}
+
+/**
+ * Listen for chrome.storage.onChanged events on the `mcpSettings` key and
+ * synchronize the local registry accordingly. This ensures that when settings
+ * are modified in another context (e.g. the options page), the current context
+ * (e.g. sidepanel) picks up changes without requiring a full page reload.
+ *
+ * Handles:
+ * - Toggling `enabled` on/off for external servers
+ * - Adding new external servers
+ * - Removing external servers
+ */
+function setupMcpStorageSync(): void {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (!changes.mcpSettings) return;
+
+    const newSettings = changes.mcpSettings.newValue as
+      | { servers: McpExternalServerConfig[]; disabledBuiltins: string[] }
+      | undefined;
+
+    if (!newSettings) return;
+
+    syncExternalServers(newSettings.servers ?? []);
+  });
+}
+
+/**
+ * Reconcile the local registry's external servers with the latest storage state.
+ */
+async function syncExternalServers(
+  latestConfigs: McpExternalServerConfig[],
+): Promise<void> {
+  // Filter out WebMCP configs - they are handled separately
+  const httpConfigs = latestConfigs.filter(
+    (c): c is McpHttpServerConfig => c.transport !== 'webmcp',
+  );
+
+  const latestById = new Map(httpConfigs.map((c) => [c.id, c]));
+
+  // 1. Handle servers that currently exist in the registry
+  for (const server of mcpRegistry.getAllServers()) {
+    const info = server.getInfo();
+    // Skip built-in servers
+    if (info.builtin) continue;
+
+    const latestConfig = latestById.get(info.id);
+
+    if (!latestConfig) {
+      // Server was removed in settings → unregister locally
+      mcpRegistry.unregister(info.id);
+      continue;
+    }
+
+    // Server still exists — check if enabled state changed
+    if (server instanceof ExternalMcpServer) {
+      const currentEnabled = info.enabled;
+      const newEnabled = latestConfig.enabled;
+
+      if (currentEnabled !== newEnabled) {
+        server.updateConfig(latestConfig);
+
+        if (newEnabled) {
+          // Was disabled, now enabled → connect
+          server.connect();
+        } else {
+          // Was enabled, now disabled → disconnect
+          server.disconnect();
+        }
+      }
+    }
+  }
+
+  // 2. Handle newly added servers (exist in settings but not in registry)
+  for (const config of httpConfigs) {
+    if (!mcpRegistry.getServer(config.id)) {
+      const server = registerExternalServer(config);
+      if (config.enabled) {
+        server.connect();
+      }
+    }
+  }
+
+  mcpRegistry.notifyChange();
 }
