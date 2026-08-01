@@ -404,7 +404,6 @@ function WebMcpSection({
       {/* Section Header with Toggle */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Globe2 className="h-4 w-4 text-emerald-500" />
           <h3 className="text-sm font-medium text-muted-foreground">
             {t('options.mcp.webmcpSection.title')}
           </h3>
