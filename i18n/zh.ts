@@ -220,7 +220,7 @@ export const zh: TranslationSchema = {
       },
       webmcpSection: {
         title: 'WebMCP',
-        description: '发现并使用网页通过 WebMCP 协议暴露的工具。启用后，将向每个页面注入 polyfill 以实现工具发现。',
+        description: '发现并使用网页通过 WebMCP 协议暴露的工具。',
         enableToggle: '启用 WebMCP',
         enableDesc: '注入 polyfill 并监控页面的 WebMCP 工具',
         noTabs: '未检测到包含 WebMCP 工具的页面。',

@@ -221,7 +221,7 @@ export const en = {
       },
       webmcpSection: {
         title: 'WebMCP',
-        description: 'Discover and use tools exposed by web pages via the WebMCP protocol. When enabled, a polyfill is injected into every page to enable tool discovery.',
+        description: 'Discover and use tools exposed by web pages via the WebMCP protocol.',
         enableToggle: 'Enable WebMCP',
         enableDesc: 'Inject polyfill and monitor pages for WebMCP tools',
         noTabs: 'No pages with WebMCP tools detected.',
