@@ -398,6 +398,7 @@ function WebMcpSection({
   };
 
   const totalTools = tabStates.reduce((sum, ts) => sum + ts.tools.length, 0);
+  const activeTabs = tabStates.filter((ts) => ts.tools.length > 0);
 
   return (
     <section className="mb-6">
@@ -441,13 +442,13 @@ function WebMcpSection({
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 <span className="text-xs">{t('common.loading')}</span>
               </div>
-            ) : tabStates.length === 0 ? (
+            ) : activeTabs.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
                 {t('options.mcp.webmcpSection.noTabs')}
               </p>
             ) : (
               <div className="space-y-2">
-                {tabStates.map((tabState) => (
+                {activeTabs.map((tabState) => (
                   <WebMcpTabCard
                     key={tabState.tabId}
                     tabState={tabState}
