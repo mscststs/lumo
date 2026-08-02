@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { storage } from '@/store/storage';
@@ -15,9 +16,9 @@ const INTENDED_PANELS_KEY = 'splitView_intendedPanelCount';
 /** Storage key for the actual visible panel count (for other pages to read) */
 const VISIBLE_PANELS_KEY = 'splitView_visiblePanelCount';
 
-/**
- * Determines how many panels can fit given the container width and user setting.
- */
+/** Duration for panel width transitions (ms) */
+const TRANSITION_DURATION_MS = 300;
+
 function computeMaxPanels(containerWidth: number, userMax: 1 | 2 | 3): number {
   let allowed = 1;
   if (containerWidth >= THRESHOLD_3_PANELS) {
@@ -48,6 +49,13 @@ function computeMaxPanels(containerWidth: number, userMax: 1 | 2 | 3): number {
  *
  * Rendering order is left-to-right, so with N visible panels, the render array
  * indices map to panelIds as: renderIndex i → panelId (N-1-i).
+ *
+ * Animation strategy:
+ * - Panel width transitions are ONLY enabled briefly when panel count changes
+ *   (triggered by split/close/width threshold crossing). They auto-disable after
+ *   the transition completes, so container resize and divider drag remain instant.
+ * - Panel show/hide uses AnimatePresence with opacity + scale animation
+ * - Divider drag bypasses transitions for real-time feedback
  */
 export function SplitView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,6 +82,35 @@ export function SplitView() {
   const [isInternalDragOrigin, setIsInternalDragOrigin] = useState(false);
   const externalDragCounterRef = useRef(0);
 
+  // Whether we should animate width transitions.
+  // Only enabled briefly when panel count changes, then auto-disabled.
+  // This ensures divider drag and container resize remain immediate.
+  const [animateTransitions, setAnimateTransitions] = useState(false);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialLoadRef = useRef(true);
+
+  /** Temporarily enable width transition, then auto-disable after the duration */
+  const triggerWidthTransition = useCallback(() => {
+    if (initialLoadRef.current) return;
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+    }
+    setAnimateTransitions(true);
+    transitionTimerRef.current = setTimeout(() => {
+      setAnimateTransitions(false);
+      transitionTimerRef.current = null;
+    }, TRANSITION_DURATION_MS + 50); // slight buffer beyond animation duration
+  }, []);
+
+  // Cleanup transition timer on unmount
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+      }
+    };
+  }, []);
+
   // ─── Persistence ──────────────────────────────────────────────────────────
 
   // Load initial settings and intended panel count
@@ -88,6 +125,10 @@ export function SplitView() {
       if (saved && saved >= 1 && saved <= 3) {
         setIntendedPanelCount(saved);
       }
+      // Mark initial load as done after first layout settles
+      requestAnimationFrame(() => {
+        initialLoadRef.current = false;
+      });
     })();
   }, []);
 
@@ -180,8 +221,6 @@ export function SplitView() {
 
     if (targetVisibleCount < visiblePanelCount) {
       // Width shrunk — hide panels from the left (highest panelId).
-      // Keep their storage keys intact so they can restore later.
-      // Only clear sessionIds so other panels can switch to those conversations.
       setSessionIds((prev) => {
         const next = [...prev];
         for (let id = targetVisibleCount; id < visiblePanelCount; id++) {
@@ -189,21 +228,16 @@ export function SplitView() {
         }
         return next;
       });
+      triggerWidthTransition();
       setVisiblePanelCount(targetVisibleCount);
       setPanelRatios(Array(targetVisibleCount).fill(1 / targetVisibleCount));
     } else if (targetVisibleCount > visiblePanelCount) {
       // Width grew — show panels that were temporarily hidden.
-      // They will remount and read their stored conversation from storage.
-      // If another panel has since taken that conversation, useConversations
-      // will find it occupied and the panel will show a new chat naturally.
-      // NOTE: Do NOT increment generation here. Generation changes force remount
-      // of all non-primary panels (via key change), causing visible flicker.
-      // Generation should only change on close/shift operations where panel
-      // identity needs to be reset.
+      triggerWidthTransition();
       setVisiblePanelCount(targetVisibleCount);
       setPanelRatios(Array(targetVisibleCount).fill(1 / targetVisibleCount));
     }
-  }, [targetVisibleCount, visiblePanelCount, containerWidth]);
+  }, [targetVisibleCount, visiblePanelCount, containerWidth, triggerWidthTransition]);
 
   // Persist visible panel count so other pages (e.g. ChatDebug) can read it
   useEffect(() => {
@@ -240,13 +274,10 @@ export function SplitView() {
   const handleSplit = useCallback(() => {
     const newIntended = intendedPanelCount + 1;
     if (newIntended > maxSplitPanels) return;
-    // The new panel gets the highest panelId (newIntended - 1).
-    // Clear its conversation key so it starts as a fresh new chat.
     const newPanelId = newIntended - 1;
     const convKey = `currentConversationId_${newPanelId}`;
     void chrome.storage.local.set({ [convKey]: null });
     persistIntendedCount(newIntended);
-    // visiblePanelCount will update via the targetVisibleCount effect
   }, [intendedPanelCount, maxSplitPanels, persistIntendedCount]);
 
   /**
@@ -314,6 +345,12 @@ export function SplitView() {
 
   const handleDividerMouseDown = useCallback((dividerIndex: number, e: React.MouseEvent) => {
     e.preventDefault();
+    // Cancel any active transition timer to ensure no transition during drag
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+      setAnimateTransitions(false);
+    }
     setDraggingDivider(dividerIndex);
     dragStartXRef.current = e.clientX;
     dragStartRatiosRef.current = [...panelRatios];
@@ -395,40 +432,59 @@ export function SplitView() {
       onDragOver={handleSplitViewDragOver}
       onDrop={handleSplitViewDrop}
     >
-      {panelIds.map((panelId, renderIndex) => {
-        const ratio = panelRatios[renderIndex] ?? (1 / visiblePanelCount);
-        const panelWidth = visiblePanelCount === 1 ? '100%' : `${ratio * availableWidth}px`;
-        const isLeftmost = renderIndex === 0;
-        const isRightmost = renderIndex === visiblePanelCount - 1;
+      <AnimatePresence initial={false}>
+        {panelIds.map((panelId, renderIndex) => {
+          const ratio = panelRatios[renderIndex] ?? (1 / visiblePanelCount);
+          const panelWidth = visiblePanelCount === 1
+            ? containerWidth
+            : ratio * availableWidth;
+          const isLeftmost = renderIndex === 0;
+          const isRightmost = renderIndex === visiblePanelCount - 1;
+          const panelKey = panelId === 0 ? 'panel-0' : `panel-${panelId}-g${generation}`;
 
-        return (
-          <div key={panelId === 0 ? 'panel-0' : `panel-${panelId}-g${generation}`} className="flex h-full" style={{ width: panelWidth }}>
-            <div className="flex-1 h-full min-w-0 overflow-hidden">
-              <ChatPanel
-                panelIndex={panelId}
-                showSettings={isRightmost}
-                showSplitButton={isLeftmost && canSplit}
-                showClose={panelId > 0}
-                onSplit={handleSplit}
-                onClose={() => handleClosePanel(panelId)}
-                onOpenSettings={() => chrome.runtime.openOptionsPage()}
-                occupiedSessionIds={getOccupiedSessionIds(panelId)}
-                onSessionChange={handleSessionChange}
-                isExternalDragActive={isExternalDragActive && visiblePanelCount > 1}
-              />
-            </div>
-            {renderIndex < visiblePanelCount - 1 && (
-              <div
-                className="h-full flex items-center justify-center shrink-0 group cursor-col-resize hover:bg-muted/60 active:bg-muted transition-colors"
-                style={{ width: `${dividerWidth}px` }}
-                onMouseDown={(e) => handleDividerMouseDown(renderIndex, e)}
-              >
-                <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-foreground/30 group-active:bg-foreground/50 transition-colors" />
+          // When animateTransitions is true (panel count changing), use smooth animation.
+          // Otherwise (resize/drag), use instant transition (duration 0).
+          const transitionDuration = animateTransitions ? 0.3 : 0;
+
+          return (
+            <motion.div
+              key={panelKey}
+              className="flex h-full overflow-hidden shrink-0"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: panelWidth, opacity: 1 }}
+              exit={{ width: 0, opacity: 0, transition: { width: { duration: 0.3, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.2, ease: 'easeInOut' } } }}
+              transition={{
+                width: { duration: transitionDuration, ease: [0.4, 0, 0.2, 1] },
+                opacity: { duration: transitionDuration > 0 ? 0.2 : 0, ease: 'easeInOut' },
+              }}
+            >
+              <div className="flex-1 h-full min-w-0 overflow-hidden">
+                <ChatPanel
+                  panelIndex={panelId}
+                  showSettings={isRightmost}
+                  showSplitButton={isLeftmost && canSplit}
+                  showClose={panelId > 0}
+                  onSplit={handleSplit}
+                  onClose={() => handleClosePanel(panelId)}
+                  onOpenSettings={() => chrome.runtime.openOptionsPage()}
+                  occupiedSessionIds={getOccupiedSessionIds(panelId)}
+                  onSessionChange={handleSessionChange}
+                  isExternalDragActive={isExternalDragActive && visiblePanelCount > 1}
+                />
               </div>
-            )}
-          </div>
-        );
-      })}
+              {renderIndex < visiblePanelCount - 1 && (
+                <div
+                  className="h-full flex items-center justify-center shrink-0 group cursor-col-resize hover:bg-muted/60 active:bg-muted transition-colors"
+                  style={{ width: `${dividerWidth}px` }}
+                  onMouseDown={(e) => handleDividerMouseDown(renderIndex, e)}
+                >
+                  <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-foreground/30 group-active:bg-foreground/50 transition-colors" />
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
