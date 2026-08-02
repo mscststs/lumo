@@ -19,11 +19,11 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run zip
+      - run: npm run build
 
       - uses: actions/upload-artifact@v4
         with:
           name: lumo-chrome-mv3
-          path: .output/*.zip
+          path: .output/chrome-mv3/
           if-no-files-found: error
           include-hidden-files: true
