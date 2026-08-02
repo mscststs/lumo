@@ -19,6 +19,12 @@ interface UseConversationsOptions {
    * Each panel persists its current conversation independently.
    */
   panelId?: number;
+  /**
+   * Session IDs currently occupied by other panels. If the conversation this
+   * panel would restore from storage is already occupied, it falls back to a
+   * new chat instead of duplicating. This is checked at initialization time.
+   */
+  occupiedSessionIds?: string[];
 }
 
 /**
@@ -32,6 +38,7 @@ interface UseConversationsOptions {
 export function useConversations(options?: UseConversationsOptions) {
   const panelId = options?.panelId ?? 0;
   const storageKey = getCurrentConvStorageKey(panelId);
+  const occupiedSessionIds = options?.occupiedSessionIds;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<Conversation | null>(null);
@@ -39,6 +46,10 @@ export function useConversations(options?: UseConversationsOptions) {
   // identities returned below stay stable across renders.
   const currentRef = useRef<Conversation | null>(null);
   currentRef.current = current;
+
+  // Use a ref to read occupiedSessionIds at init time without re-triggering the effect
+  const occupiedRef = useRef(occupiedSessionIds);
+  occupiedRef.current = occupiedSessionIds;
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +64,15 @@ export function useConversations(options?: UseConversationsOptions) {
       const currentId = result[storageKey] as string | null | undefined;
       if (cancelled) return;
       if (currentId) {
-        setCurrent(list.find((c) => c.id === currentId) ?? null);
+        // Check if this conversation is already occupied by another panel
+        const isOccupied = occupiedRef.current?.includes(currentId) ?? false;
+        if (isOccupied) {
+          // Fall back to new chat and clear storage to avoid stale conflicts
+          setCurrent(null);
+          await chrome.storage.local.set({ [storageKey]: null });
+        } else {
+          setCurrent(list.find((c) => c.id === currentId) ?? null);
+        }
       }
     })();
 

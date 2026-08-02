@@ -37,6 +37,8 @@ export interface UseChatStreamReturn {
 export interface UseChatStreamOptions {
   /** Panel identifier for independent conversation state. Default 0. */
   panelId?: number;
+  /** Session IDs occupied by other panels (for conflict detection on restore) */
+  occupiedSessionIds?: string[];
 }
 
 /**
@@ -56,6 +58,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     clearAll: clearAllConversations,
   } = useConversations({
     panelId: options?.panelId ?? 0,
+    occupiedSessionIds: options?.occupiedSessionIds,
   });
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);

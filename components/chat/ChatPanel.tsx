@@ -105,7 +105,7 @@ export function ChatPanel({
     handleSelectConversation,
     handleDeleteConversation,
     handleClearAllConversations,
-  } = useChatStream({ panelId: panelIndex });
+  } = useChatStream({ panelId: panelIndex, occupiedSessionIds });
 
   useEffect(() => {
     loadData();
