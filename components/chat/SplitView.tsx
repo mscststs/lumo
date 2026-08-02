@@ -196,9 +196,12 @@ export function SplitView() {
       // They will remount and read their stored conversation from storage.
       // If another panel has since taken that conversation, useConversations
       // will find it occupied and the panel will show a new chat naturally.
+      // NOTE: Do NOT increment generation here. Generation changes force remount
+      // of all non-primary panels (via key change), causing visible flicker.
+      // Generation should only change on close/shift operations where panel
+      // identity needs to be reset.
       setVisiblePanelCount(targetVisibleCount);
       setPanelRatios(Array(targetVisibleCount).fill(1 / targetVisibleCount));
-      setGeneration((g) => g + 1);
     }
   }, [targetVisibleCount, visiblePanelCount, containerWidth]);
 
