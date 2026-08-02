@@ -14,12 +14,23 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { safeStringify } from '@/lib/tool-output';
 import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
 import type { ToolPart } from '@/lib/message-parts';
+
+/** Storage key for the actual visible panel count */
+const VISIBLE_PANELS_KEY = 'splitView_visiblePanelCount';
+
+/**
+ * Returns the storage key for a panel's current conversation ID.
+ */
+function getConvStorageKey(panelId: number): string {
+  return panelId === 0 ? 'currentConversationId' : `currentConversationId_${panelId}`;
+}
 
 /**
  * Debug entry representing one logical "card" in the timeline.
@@ -143,14 +154,50 @@ export function ChatDebugPage() {
   const { t } = useTranslation();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [visiblePanelCount, setVisiblePanelCount] = useState(1);
+  const [selectedPanel, setSelectedPanel] = useState(0);
 
-  // Load current conversation on mount
+  // Load visible panel count on mount
+  useEffect(() => {
+    chrome.storage.local.get(VISIBLE_PANELS_KEY).then((result) => {
+      const count = (result[VISIBLE_PANELS_KEY] as number | undefined) ?? 1;
+      setVisiblePanelCount(count);
+    });
+  }, []);
+
+  // Watch for visible panel count changes
+  useEffect(() => {
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') return;
+      if (VISIBLE_PANELS_KEY in changes) {
+        const newCount = changes[VISIBLE_PANELS_KEY]?.newValue as number | undefined;
+        if (newCount && newCount >= 1) {
+          setVisiblePanelCount(newCount);
+          if (selectedPanel >= newCount) {
+            setSelectedPanel(0);
+          }
+        }
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [selectedPanel]);
+
+  // Load conversation when selected panel changes
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     (async () => {
-      const currentId = await storage.getCurrentConversationId();
+      const convKey = getConvStorageKey(selectedPanel);
+      const convResult = await chrome.storage.local.get(convKey);
+      const currentId = convResult[convKey] as string | null | undefined;
       if (cancelled) return;
+
       if (!currentId) {
+        setConversation(null);
         setLoading(false);
         return;
       }
@@ -160,37 +207,57 @@ export function ChatDebugPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [selectedPanel]);
 
   // Watch for changes to conversations (live updates while streaming)
   useStorageWatch<Conversation[]>(
     'conversations',
     useCallback((newConversations) => {
       if (!newConversations) return;
-      // Re-resolve current from storage
-      storage.getCurrentConversationId().then((currentId) => {
+      const convKey = getConvStorageKey(selectedPanel);
+      chrome.storage.local.get(convKey).then((result) => {
+        const currentId = result[convKey] as string | null | undefined;
         if (!currentId) {
           setConversation(null);
           return;
         }
         setConversation(newConversations.find((c) => c.id === currentId) ?? null);
       });
-    }, []),
+    }, [selectedPanel]),
   );
 
-  // Watch for currentConversationId changes
-  useStorageWatch<string | null>(
-    'currentConversationId',
-    useCallback((newId) => {
-      if (!newId) {
-        setConversation(null);
-        return;
+  // Watch for the selected panel's currentConversationId changes
+  useEffect(() => {
+    const convKey = getConvStorageKey(selectedPanel);
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') return;
+      if (convKey in changes) {
+        const newId = changes[convKey]?.newValue as string | null | undefined;
+        if (!newId) {
+          setConversation(null);
+          return;
+        }
+        storage.getConversations().then((conversations) => {
+          setConversation(conversations.find((c) => c.id === newId) ?? null);
+        });
       }
-      storage.getConversations().then((conversations) => {
-        setConversation(conversations.find((c) => c.id === newId) ?? null);
-      });
-    }, []),
-  );
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [selectedPanel]);
+
+  const getPanelSideLabel = (panelId: number): string => {
+    if (visiblePanelCount <= 1) return t('options.chatDebug.panelRight');
+    if (visiblePanelCount === 2) {
+      return panelId === 0 ? t('options.chatDebug.panelRight') : t('options.chatDebug.panelLeft');
+    }
+    if (panelId === 0) return t('options.chatDebug.panelRight');
+    if (panelId === 1) return t('options.chatDebug.panelMiddle');
+    return t('options.chatDebug.panelLeft');
+  };
 
   const timeline = useMemo(
     () => (conversation ? buildTimeline(conversation) : []),
@@ -212,6 +279,26 @@ export function ChatDebugPage() {
         <h2 className="text-xl font-semibold text-foreground">{t('options.chatDebug.title')}</h2>
         <p className="text-sm text-muted-foreground">{t('options.chatDebug.description')}</p>
       </div>
+
+      {/* Panel switcher (only show when multiple panels visible) */}
+      {visiblePanelCount > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground shrink-0">{t('options.chatDebug.panelSelect')}</span>
+          <div className="flex gap-1">
+            {Array.from({ length: visiblePanelCount }, (_, i) => visiblePanelCount - 1 - i).map((panelId) => (
+              <Button
+                key={panelId}
+                variant={selectedPanel === panelId ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-3"
+                onClick={() => setSelectedPanel(panelId)}
+              >
+                {getPanelSideLabel(panelId)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!conversation ? (
         <EmptyState />

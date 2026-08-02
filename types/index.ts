@@ -40,6 +40,8 @@ export interface ProviderConfig {
 export interface UISettings {
   language: 'en' | 'zh';
   theme: 'light' | 'dark' | 'system';
+  /** Maximum number of side-by-side chat panels (1–3). Default is 1. */
+  maxSplitPanels: 1 | 2 | 3;
 }
 
 /**

@@ -34,6 +34,11 @@ export interface UseChatStreamReturn {
   handleClearAllConversations: () => Promise<void>;
 }
 
+export interface UseChatStreamOptions {
+  /** Panel identifier for independent conversation state. Default 0. */
+  panelId?: number;
+}
+
 /**
  * Hook that encapsulates all streaming chat logic including:
  * - Sending messages and managing stream lifecycle
@@ -41,7 +46,7 @@ export interface UseChatStreamReturn {
  * - Aborting in-flight requests
  * - Conversation management (new, switch, delete, clear)
  */
-export function useChatStream(): UseChatStreamReturn {
+export function useChatStream(options?: UseChatStreamOptions): UseChatStreamReturn {
   const {
     conversations,
     current: currentConversation,
@@ -49,7 +54,9 @@ export function useChatStream(): UseChatStreamReturn {
     open: openConversation,
     remove: removeConversation,
     clearAll: clearAllConversations,
-  } = useConversations();
+  } = useConversations({
+    panelId: options?.panelId ?? 0,
+  });
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);

@@ -18,10 +18,12 @@ export function UISettingsPage() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<UISettings['language']>('en');
+  const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
       setLanguage(settings.language);
+      setMaxSplitPanels(settings.maxSplitPanels ?? 1);
     });
   }, []);
 
@@ -35,6 +37,13 @@ export function UISettingsPage() {
 
   const handleThemeChange = async (val: string) => {
     await setTheme(val as UISettings['theme']);
+  };
+
+  const handleMaxSplitPanelsChange = async (val: string) => {
+    const panels = Number(val) as UISettings['maxSplitPanels'];
+    setMaxSplitPanels(panels);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, maxSplitPanels: panels });
   };
 
   const handleExport = async () => {
@@ -109,6 +118,24 @@ export function UISettingsPage() {
               <SelectItem value="light">{t('options.ui.themeLight')}</SelectItem>
               <SelectItem value="dark">{t('options.ui.themeDark')}</SelectItem>
               <SelectItem value="system">{t('options.ui.themeSystem')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Max Split Panels */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-0.5">
+            <Label className="text-sm">{t('options.ui.maxSplitPanels')}</Label>
+            <span className="text-xs text-muted-foreground">{t('options.ui.maxSplitPanelsDesc')}</span>
+          </div>
+          <Select value={String(maxSplitPanels)} onValueChange={handleMaxSplitPanelsChange}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">1</SelectItem>
+              <SelectItem value="2">2</SelectItem>
+              <SelectItem value="3">3</SelectItem>
             </SelectContent>
           </Select>
         </div>

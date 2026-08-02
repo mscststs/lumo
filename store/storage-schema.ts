@@ -75,6 +75,7 @@ export interface StorageFieldDef<K extends StorageKey> {
 const DEFAULT_UI_SETTINGS: UISettings = {
   language: 'en',
   theme: 'system',
+  maxSplitPanels: 1,
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -102,6 +103,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     key: 'uiSettings',
     defaultValue: DEFAULT_UI_SETTINGS,
     exportable: true,
+    normalize: (raw) => ({
+      ...raw,
+      maxSplitPanels: raw.maxSplitPanels ?? 1,
+    }),
   },
   systemPrompt: {
     key: 'systemPrompt',
