@@ -121,6 +121,16 @@ export interface McpServerState {
 }
 
 /**
+ * Context passed to tool execution at stream creation time.
+ * Each stream call creates its own closure over this context,
+ * ensuring parallel streams (multiple panels) don't conflict.
+ */
+export interface McpToolExecutionContext {
+  /** The conversation ID associated with the current stream */
+  conversationId?: string;
+}
+
+/**
  * The abstract interface that all MCP server implementations must follow.
  * This enables different transport types to be registered uniformly.
  */
@@ -143,8 +153,9 @@ export interface IMcpServer {
   /** 
    * Get AI SDK compatible tools object.
    * Returns a record of tool name -> AI SDK tool definition.
+   * @param context Optional execution context (e.g. conversationId) captured in closures.
    */
-  getAITools(): Record<string, AnyTool>;
+  getAITools(context?: McpToolExecutionContext): Record<string, AnyTool>;
 
   /** Get error message if status is 'error' */
   getError(): string | undefined;

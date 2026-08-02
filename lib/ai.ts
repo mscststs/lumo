@@ -92,6 +92,8 @@ export interface ChatStreamOptions {
   signal?: AbortSignal;
   /** Whether to include MCP tools in this request */
   enableTools?: boolean;
+  /** Conversation ID for the current stream (passed to tools for file association) */
+  conversationId?: string;
 }
 
 export async function chatStream({
@@ -104,6 +106,7 @@ export async function chatStream({
   onError,
   signal,
   enableTools = true,
+  conversationId,
 }: ChatStreamOptions) {
   let latestParts: ChatMessagePart[] = [];
   // `readUIMessageStream` reports errors via its `onError` callback and then
@@ -126,8 +129,10 @@ export async function chatStream({
   try {
     const { model: aiModel, providerOptions } = createProvider(provider, model);
 
-    // Gather tools from all connected MCP servers
-    const tools: ToolSet = enableTools ? mcpRegistry.getAllAITools() : {};
+    // Gather tools from all connected MCP servers (with stream-specific context)
+    const tools: ToolSet = enableTools
+      ? mcpRegistry.getAllAITools({ conversationId })
+      : {};
     const hasTools = Object.keys(tools).length > 0;
     const trimmedSystem = system?.trim();
 

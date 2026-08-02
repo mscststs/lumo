@@ -1,4 +1,4 @@
-import type { IMcpServer, McpServerState, AnyTool } from './types';
+import type { IMcpServer, McpServerState, McpToolExecutionContext, AnyTool } from './types';
 
 /**
  * Check if a value is already a MCP CallToolResult structure.
@@ -142,13 +142,14 @@ class McpRegistry {
    * Get all AI SDK compatible tools from all connected servers.
    * Returns a merged tools object that can be passed directly to streamText/generateText.
    * All tool execute outputs are normalized to MCP CallToolResult format.
+   * @param context Optional execution context captured in tool closures for the current stream.
    */
-  getAllAITools(): Record<string, AnyTool> {
+  getAllAITools(context?: McpToolExecutionContext): Record<string, AnyTool> {
     const allTools: Record<string, AnyTool> = {};
     
     for (const server of this.getAllServers()) {
       if (server.getStatus() === 'connected' && server.getInfo().enabled) {
-        const tools = server.getAITools();
+        const tools = server.getAITools(context);
         for (const [name, t] of Object.entries(tools)) {
           allTools[name] = wrapToolExecute(t);
         }

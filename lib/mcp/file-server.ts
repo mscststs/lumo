@@ -5,6 +5,7 @@ import type {
   McpServerInfo,
   McpServerStatus,
   McpToolDefinition,
+  McpToolExecutionContext,
   AnyTool,
 } from './types';
 import { fileStorage, inferMimeType, getPreviewCategory } from './file-storage';
@@ -203,7 +204,9 @@ export class FileMcpServer implements IMcpServer {
     ];
   }
 
-  getAITools(): Record<string, AnyTool> {
+  getAITools(context?: McpToolExecutionContext): Record<string, AnyTool> {
+    const conversationId = context?.conversationId;
+
     return {
       file_read: tool({
         description:
@@ -234,15 +237,6 @@ export class FileMcpServer implements IMcpServer {
           content: z.string().describe('File content to write'),
         }),
         execute: async ({ name, content: fileContent }) => {
-          // Try to extract conversation ID from the execution context
-          let conversationId: string | undefined;
-          try {
-            const result = await chrome.storage.local.get('currentConversationId');
-            conversationId = (result.currentConversationId as string) || undefined;
-          } catch {
-            // Not available in this context
-          }
-
           const metadata = await fileStorage.writeFile(name, fileContent, { conversationId });
 
           // Generate preview URL for previewable files
@@ -279,7 +273,7 @@ export class FileMcpServer implements IMcpServer {
 
           try {
             const patched = applyPatch(original, patch);
-            const metadata = await fileStorage.writeFile(name, patched);
+            const metadata = await fileStorage.writeFile(name, patched, { conversationId });
 
             const category = getPreviewCategory(metadata.mimeType);
             const previewUrl =

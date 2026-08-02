@@ -203,6 +203,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         messages: uiMessages,
         system,
         signal: controller.signal,
+        conversationId: convWithUserMessage.id,
         onUpdate: (parts) => {
           latestParts = parts;
           if (isStale()) return;
