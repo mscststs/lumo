@@ -1,5 +1,6 @@
 import { mcpRegistry, initBuiltinMcpServers, registerMcpCollectors } from '@/lib/mcp';
 import { initWebMcpManager } from '@/lib/mcp/webmcp-manager';
+import { registerContextMenus } from '@/lib/context-menu';
 
 export default defineBackground(() => {
   // Session storage defaults to TRUSTED_CONTEXTS only, which already covers the
@@ -19,6 +20,9 @@ export default defineBackground(() => {
 
   // Initialize WebMCP manager (handles content script injection and tool monitoring)
   initWebMcpManager();
+
+  // Register right-click context menu items (synchronous listener registration)
+  registerContextMenus();
 
   // Open side panel when browser action icon is clicked
   chrome.sidePanel

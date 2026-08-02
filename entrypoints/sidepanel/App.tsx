@@ -9,6 +9,7 @@ import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { ThemeInit } from '@/lib/theme';
 import { useModelSelection } from '@/store/useModelSelection';
 import { useChatStream } from '@/store/useChatStream';
+import { CONTEXT_MENU_PENDING_KEY, type ContextMenuPendingData } from '@/lib/context-menu';
 import type { TextAttachment } from '@/types';
 
 export default function App() {
@@ -16,6 +17,10 @@ export default function App() {
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
+  // Tracks the timestamp of the last consumed context-menu pending data to
+  // deduplicate across the initial read and the onChanged listener (and across
+  // StrictMode double-mount in dev).
+  const lastContextMenuTimestampRef = useRef(0);
 
   const {
     currentModelValue,
@@ -52,6 +57,89 @@ export default function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ─── Context menu pending selection listener ─────────────────────────────
+  useEffect(() => {
+    const addPendingAttachment = (pending: ContextMenuPendingData) => {
+      if (pending.timestamp <= lastContextMenuTimestampRef.current) return;
+      lastContextMenuTimestampRef.current = pending.timestamp;
+
+      if (pending.type === 'image' && pending.imageUrl) {
+        // Fetch the image and convert to data URL, then add as image attachment
+        fetch(pending.imageUrl)
+          .then((res) => res.blob())
+          .then((blob) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target?.result as string;
+              chatInputRef.current?.addImages([dataUrl]);
+              chatInputRef.current?.focus();
+            };
+            reader.readAsDataURL(blob);
+          })
+          .catch(() => {
+            // If fetch fails (e.g. CORS), fall back to adding the URL as text
+            const attachment: TextAttachment = {
+              id: uuidv4(),
+              mediaType: 'text/plain',
+              content: pending.imageUrl!,
+              preview: pending.imageUrl!.slice(0, 50),
+            };
+            chatInputRef.current?.addTextAttachment(attachment);
+            chatInputRef.current?.focus();
+          });
+      } else if (pending.text) {
+        const attachment: TextAttachment = {
+          id: uuidv4(),
+          mediaType: 'text/plain',
+          content: pending.text,
+          preview: pending.text.slice(0, 50),
+        };
+        chatInputRef.current?.addTextAttachment(attachment);
+        chatInputRef.current?.focus();
+      }
+
+      // Clear the pending data so it's not re-consumed on next open
+      void chrome.storage.session.remove(CONTEXT_MENU_PENDING_KEY);
+    };
+
+    // Check if there's a pending context menu selection when the panel opens
+    const consumePending = async () => {
+      try {
+        const result = await chrome.storage.session.get(CONTEXT_MENU_PENDING_KEY);
+        const pending = result[CONTEXT_MENU_PENDING_KEY] as ContextMenuPendingData | undefined;
+        if (pending && Date.now() - pending.timestamp < 30_000) {
+          // Small delay to ensure the input ref is mounted
+          requestAnimationFrame(() => {
+            addPendingAttachment(pending);
+          });
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    void consumePending();
+
+    // Also listen for new context menu selections while the panel is already open
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'session') return;
+      if (CONTEXT_MENU_PENDING_KEY in changes) {
+        const pending = changes[CONTEXT_MENU_PENDING_KEY]?.newValue as ContextMenuPendingData | undefined;
+        if (pending) {
+          addPendingAttachment(pending);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(listener);
+    return () => {
+      chrome.storage.onChanged.removeListener(listener);
+    };
+  }, []);
 
   const handleOpenSettings = () => {
     chrome.runtime.openOptionsPage();

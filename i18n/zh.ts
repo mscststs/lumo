@@ -28,6 +28,11 @@ export const zh: TranslationSchema = {
     dropHere: '拖放到此处以附加',
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
+    contextMenu: {
+      ask: '询问 Lumo',
+      askSelection: '以选中内容询问 Lumo',
+      askImage: '以此图片询问 Lumo',
+    },
     error: {
       title: '请求失败',
       retry: '重试',

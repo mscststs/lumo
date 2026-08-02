@@ -26,6 +26,11 @@ export const en = {
     dropHere: 'Drop here to attach',
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
+    contextMenu: {
+      ask: 'Ask Lumo',
+      askSelection: 'Ask Lumo about selection',
+      askImage: 'Ask Lumo about this image',
+    },
     error: {
       title: 'Request Failed',
       retry: 'Retry',

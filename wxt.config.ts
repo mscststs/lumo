@@ -26,6 +26,7 @@ export default defineConfig({
       'downloads',
       'debugger',
       'tabGroups',
+      'contextMenus',
     ],
     host_permissions: ['<all_urls>'],
     sandbox: {
