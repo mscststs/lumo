@@ -21,6 +21,9 @@ export const en = {
     send: 'Send',
     thinking: 'Thinking...',
     pasteImage: 'Paste or drop an image',
+    textAttachment: 'Text',
+    imageAttachment: 'Image',
+    dropHere: 'Drop here to attach',
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
     error: {

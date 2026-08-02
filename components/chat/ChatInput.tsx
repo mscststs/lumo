@@ -1,18 +1,21 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Square, ImagePlus, X } from 'lucide-react';
+import { Send, Square, ImagePlus, X, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import type { TextAttachment } from '@/types';
 
 export interface ChatInputHandle {
   focus: () => void;
+  addImages: (dataUrls: string[]) => void;
+  addTextAttachment: (attachment: TextAttachment) => void;
 }
 
 interface ChatInputProps {
   isStreaming: boolean;
   isVisionModel: boolean;
-  onSend: (input: string, images: string[]) => void;
+  onSend: (input: string, images: string[], textAttachments: TextAttachment[]) => void;
   onStop: () => void;
 }
 
@@ -23,11 +26,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({
     focus: () => {
       textareaRef.current?.focus();
+    },
+    addImages: (dataUrls: string[]) => {
+      setImages((prev) => [...prev, ...dataUrls]);
+    },
+    addTextAttachment: (attachment: TextAttachment) => {
+      setTextAttachments((prev) => [...prev, attachment]);
     },
   }));
 
@@ -50,31 +60,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    if (!isVisionModel) return;
-    e.preventDefault();
-    const files = e.dataTransfer.files;
-    for (const file of files) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const base64 = ev.target?.result as string;
-          setImages((prev) => [...prev, base64]);
-        };
-        reader.readAsDataURL(file);
-      }
-    }
-  };
-
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const removeTextAttachment = (id: string) => {
+    setTextAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   const handleSend = () => {
-    if ((!input.trim() && images.length === 0) || isStreaming) return;
-    onSend(input.trim(), images);
+    if ((!input.trim() && images.length === 0 && textAttachments.length === 0) || isStreaming) return;
+    onSend(input.trim(), images, textAttachments);
     setInput('');
     setImages([]);
+    setTextAttachments([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -104,27 +103,50 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     inp.click();
   };
 
+  const hasAttachments = images.length > 0 || textAttachments.length > 0;
+
   return (
     <div className="p-3 shrink-0">
       <div
         className="rounded-xl border border-border bg-muted/50 overflow-hidden transition-colors focus-within:border-chat-user/50"
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
       >
         {/* Attachment previews inside the input box */}
         <AnimatePresence>
-          {images.length > 0 && (
+          {hasAttachments && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className="px-3 pt-3 flex gap-2 overflow-x-auto scrollbar-lumo"
             >
+              {/* Image attachments */}
               {images.map((img, i) => (
-                <div key={i} className="relative shrink-0 group">
+                <div key={`img-${i}`} className="relative shrink-0 group">
                   <img src={img} className="h-14 w-14 object-cover rounded-lg" alt="" />
                   <button
                     onClick={() => removeImage(i)}
+                    className="absolute -top-1.5 -right-1.5 bg-foreground/80 text-background rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {/* Text attachments */}
+              {textAttachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="relative shrink-0 group flex items-center gap-1.5 h-14 px-2.5 rounded-lg bg-muted border border-border max-w-[180px]"
+                  title={attachment.preview}
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="flex flex-col overflow-hidden min-w-0">
+                    <span className="text-[10px] text-muted-foreground leading-tight">
+                      {attachment.mediaType === 'text/html' ? 'HTML' : t('sidebar.textAttachment')}
+                    </span>
+                    <span className="text-xs truncate leading-tight">{attachment.preview}</span>
+                  </div>
+                  <button
+                    onClick={() => removeTextAttachment(attachment.id)}
                     className="absolute -top-1.5 -right-1.5 bg-foreground/80 text-background rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="h-3 w-3" />
@@ -180,7 +202,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 size="icon"
                 className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
                 onClick={handleSend}
-                disabled={!input.trim() && images.length === 0}
+                disabled={!input.trim() && images.length === 0 && textAttachments.length === 0}
               >
                 <Send className="h-4 w-4" />
               </Button>

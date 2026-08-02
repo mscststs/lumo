@@ -42,6 +42,20 @@ export interface UISettings {
   theme: 'light' | 'dark' | 'system';
 }
 
+/**
+ * A text attachment dragged from external sources (web pages, etc.).
+ * Can be plain text or HTML. Sent as a separate text content part.
+ */
+export interface TextAttachment {
+  id: string;
+  /** The content type: 'text/plain' or 'text/html' */
+  mediaType: 'text/plain' | 'text/html';
+  /** The actual text/html content */
+  content: string;
+  /** A short preview label (first N chars) */
+  preview: string;
+}
+
 /** User-authored system instructions prepended to every conversation. */
 export interface SystemPromptSettings {
   /** Whether to send `prompt` at all. */
@@ -75,6 +89,12 @@ export interface ChatMessage {
   content?: string;
   /** @deprecated Legacy base64 images. Superseded by `file` parts. */
   images?: string[];
+  /**
+   * Metadata for text/HTML attachments dragged from external sources.
+   * Used by the UI to render attachments as distinct cards rather than inline text.
+   * The actual content is also stored in `parts` as text parts for sending to the model.
+   */
+  textAttachments?: TextAttachment[];
   timestamp: number;
 }
 

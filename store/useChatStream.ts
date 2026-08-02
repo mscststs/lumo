@@ -7,7 +7,7 @@ import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
 import { resolveSystemPrompt } from '@/lib/system-prompt';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation } from '@/types';
+import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment } from '@/types';
 
 /** Max auto-retry attempts for recoverable errors */
 const MAX_RETRIES = 3;
@@ -25,7 +25,7 @@ export interface UseChatStreamReturn {
   isRetrying: boolean;
   retryAttempt: number;
   isStreamingVisible: boolean;
-  handleSend: (input: string, images: string[], getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined, selectedProviderId: string, selectedModelId: string) => Promise<void>;
+  handleSend: (input: string, images: string[], textAttachments: TextAttachment[], getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined, selectedProviderId: string, selectedModelId: string) => Promise<void>;
   handleRetry: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
   handleStop: () => void;
   handleNewChat: () => void;
@@ -241,13 +241,14 @@ export function useChatStream(): UseChatStreamReturn {
     async (
       input: string,
       images: string[],
+      textAttachments: TextAttachment[],
       getProvider: () => ProviderConfig | undefined,
       getModel: () => ModelConfig | undefined,
       selectedProviderId: string,
       selectedModelId: string,
     ) => {
       const text = input.trim();
-      if (!text && images.length === 0) return;
+      if (!text && images.length === 0 && textAttachments.length === 0) return;
       if (isStreaming) return;
 
       const provider = getProvider();
@@ -260,6 +261,13 @@ export function useChatStream(): UseChatStreamReturn {
           mediaType: /^data:([^;,]+)[;,]/.exec(image)?.[1] ?? 'image/png',
           url: image,
         })),
+        ...textAttachments.map((attachment) => ({
+          type: 'text' as const,
+          text: attachment.mediaType === 'text/html'
+            ? `[HTML Content]\n${attachment.content}`
+            : attachment.content,
+          state: 'done' as const,
+        })),
         ...(text ? [{ type: 'text' as const, text, state: 'done' as const }] : []),
       ];
 
@@ -267,6 +275,7 @@ export function useChatStream(): UseChatStreamReturn {
         id: uuidv4(),
         role: 'user',
         parts: userParts,
+        textAttachments: textAttachments.length > 0 ? textAttachments : undefined,
         timestamp: Date.now(),
       };
 

@@ -23,6 +23,9 @@ export const zh: TranslationSchema = {
     send: '发送',
     thinking: '思考中...',
     pasteImage: '粘贴或拖放图片',
+    textAttachment: '文本',
+    imageAttachment: '图片',
+    dropHere: '拖放到此处以附加',
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
     error: {
