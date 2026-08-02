@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
+import type { StorageKey } from './storage-schema';
 
-type StorageKey = 'providers' | 'uiSettings' | 'conversations' | 'currentConversationId' | 'selectedModel';
+export type { StorageKey };
 
 type StorageChangeCallback<T = unknown> = (newValue: T | undefined, oldValue: T | undefined) => void;
 

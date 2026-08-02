@@ -1,55 +1,79 @@
 import type {
-  AppConfig,
   ProviderConfig,
   UISettings,
   Conversation,
   SystemPromptSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
-import { normalizeProvider } from '@/lib/provider-type';
-import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
+import {
+  STORAGE_FIELDS,
+  EXPORTABLE_KEYS,
+  type StorageSchema,
+  type StorageKey,
+} from './storage-schema';
 
-const DEFAULT_UI_SETTINGS: UISettings = {
-  language: 'en',
-  theme: 'system',
-};
+// ---------------------------------------------------------------------------
+// Generic helpers driven by the schema registry
+// ---------------------------------------------------------------------------
 
-const DEFAULT_MCP_SETTINGS: McpSettings = {
-  servers: [],
-  disabledBuiltins: [],
-  webmcpEnabled: false,
-};
+/** Read a single key from chrome.storage.local, applying defaults + normalize */
+async function getField<K extends StorageKey>(key: K): Promise<StorageSchema[K]> {
+  const field = STORAGE_FIELDS[key];
+  const result = await chrome.storage.local.get(key);
+  const raw = result[key] as StorageSchema[K] | undefined;
+  if (raw === undefined) return field.defaultValue;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return field.normalize ? (field.normalize as any)(raw) : raw;
+}
+
+/** Write a single key to chrome.storage.local */
+async function setField<K extends StorageKey>(
+  key: K,
+  value: StorageSchema[K],
+): Promise<void> {
+  await chrome.storage.local.set({ [key]: value });
+}
+
+// ---------------------------------------------------------------------------
+// Exported config type — automatically covers all exportable keys
+// ---------------------------------------------------------------------------
+
+/**
+ * Portable configuration bundle for import/export.
+ * At runtime, only keys with `exportable: true` in the registry are
+ * actually written/read. The type is permissive (partial of full schema)
+ * so that older config files with missing keys import cleanly.
+ */
+export type AppConfig = Partial<StorageSchema>;
+
+// ---------------------------------------------------------------------------
+// Public API — preserves the exact same method signatures for compatibility
+// ---------------------------------------------------------------------------
 
 // Storage helpers using chrome.storage.local
 export const storage = {
+  // ----- Providers -----
   async getProviders(): Promise<ProviderConfig[]> {
-    const result = await chrome.storage.local.get('providers');
-    const providers = (result.providers as ProviderConfig[] | undefined) || [];
-    // Migrate on read so existing configs keep working without a destructive
-    // rewrite; the new type is persisted the next time the user saves.
-    return providers.map(normalizeProvider);
+    return getField('providers');
   },
-
   async setProviders(providers: ProviderConfig[]): Promise<void> {
-    await chrome.storage.local.set({ providers });
+    await setField('providers', providers);
   },
 
+  // ----- UI Settings -----
   async getUISettings(): Promise<UISettings> {
-    const result = await chrome.storage.local.get('uiSettings');
-    return (result.uiSettings as UISettings | undefined) || DEFAULT_UI_SETTINGS;
+    return getField('uiSettings');
   },
-
   async setUISettings(settings: UISettings): Promise<void> {
-    await chrome.storage.local.set({ uiSettings: settings });
+    await setField('uiSettings', settings);
   },
 
+  // ----- Conversations -----
   async getConversations(): Promise<Conversation[]> {
-    const result = await chrome.storage.local.get('conversations');
-    return (result.conversations as Conversation[] | undefined) || [];
+    return getField('conversations');
   },
-
   async setConversations(conversations: Conversation[]): Promise<void> {
-    await chrome.storage.local.set({ conversations });
+    await setField('conversations', conversations);
   },
 
   /**
@@ -76,65 +100,83 @@ export const storage = {
     return all;
   },
 
+  // ----- Current Conversation ID -----
   async getCurrentConversationId(): Promise<string | null> {
-    const result = await chrome.storage.local.get('currentConversationId');
-    return (result.currentConversationId as string | undefined) || null;
+    return getField('currentConversationId');
   },
-
   async setCurrentConversationId(id: string | null): Promise<void> {
-    await chrome.storage.local.set({ currentConversationId: id });
+    await setField('currentConversationId', id);
   },
 
+  // ----- Selected Model -----
   async getSelectedModel(): Promise<{ providerId: string; modelId: string } | null> {
-    const result = await chrome.storage.local.get('selectedModel');
-    return (result.selectedModel as { providerId: string; modelId: string } | undefined) || null;
+    return getField('selectedModel');
+  },
+  async setSelectedModel(
+    model: { providerId: string; modelId: string } | null,
+  ): Promise<void> {
+    await setField('selectedModel', model);
   },
 
-  async setSelectedModel(model: { providerId: string; modelId: string } | null): Promise<void> {
-    await chrome.storage.local.set({ selectedModel: model });
-  },
-
+  // ----- MCP Settings -----
   async getMcpSettings(): Promise<McpSettings> {
-    const result = await chrome.storage.local.get('mcpSettings');
-    return (result.mcpSettings as McpSettings | undefined) || DEFAULT_MCP_SETTINGS;
+    return getField('mcpSettings');
   },
-
   async setMcpSettings(settings: McpSettings): Promise<void> {
-    await chrome.storage.local.set({ mcpSettings: settings });
+    await setField('mcpSettings', settings);
   },
 
+  // ----- System Prompt -----
   async getSystemPrompt(): Promise<SystemPromptSettings> {
-    const result = await chrome.storage.local.get('systemPrompt');
-    const saved = result.systemPrompt as SystemPromptSettings | undefined;
-    if (!saved) return DEFAULT_SYSTEM_PROMPT_SETTINGS;
-    return {
-      ...saved,
-      injectCurrentTime: saved.injectCurrentTime ?? true,
-    };
+    return getField('systemPrompt');
   },
-
   async setSystemPrompt(settings: SystemPromptSettings): Promise<void> {
-    await chrome.storage.local.set({ systemPrompt: settings });
+    await setField('systemPrompt', settings);
   },
 
+  // ----- Export / Import (driven by registry) -----
+
+  /**
+   * Export all settings marked `exportable: true` in the schema registry.
+   * New settings added to the registry are automatically included.
+   */
   async exportConfig(): Promise<AppConfig> {
-    const [providers, uiSettings, systemPrompt] = await Promise.all([
-      this.getProviders(),
-      this.getUISettings(),
-      this.getSystemPrompt(),
-    ]);
-    return { providers, uiSettings, systemPrompt };
+    const keys = EXPORTABLE_KEYS;
+    const result = await chrome.storage.local.get(keys);
+    const config: AppConfig = {};
+
+    for (const key of keys) {
+      const field = STORAGE_FIELDS[key];
+      const raw = result[key];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const value = raw === undefined ? field.defaultValue : (field.normalize ? (field.normalize as any)(raw) : raw);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (config as any)[key] = value;
+    }
+
+    return config;
   },
 
+  /**
+   * Import settings from a config bundle.
+   * Only keys present in the bundle AND marked `exportable` are written.
+   * Normalize functions are applied automatically.
+   */
   async importConfig(config: AppConfig): Promise<void> {
-    if (config.providers) {
-      await this.setProviders(config.providers.map(normalizeProvider));
+    const writes: Record<string, unknown> = {};
+
+    for (const key of EXPORTABLE_KEYS) {
+      const value = (config as Record<string, unknown>)[key];
+      if (value === undefined) continue;
+
+      const field = STORAGE_FIELDS[key];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      writes[key] = field.normalize ? (field.normalize as any)(value) : value;
     }
-    if (config.uiSettings) {
-      await this.setUISettings(config.uiSettings);
-    }
-    if (config.systemPrompt) {
-      await this.setSystemPrompt(config.systemPrompt);
+
+    // Batch write for atomicity
+    if (Object.keys(writes).length > 0) {
+      await chrome.storage.local.set(writes);
     }
   },
 };

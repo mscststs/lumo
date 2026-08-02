@@ -93,9 +93,3 @@ export interface Conversation {
    */
   systemPrompt?: string;
 }
-
-export interface AppConfig {
-  providers: ProviderConfig[];
-  uiSettings: UISettings;
-  systemPrompt?: SystemPromptSettings;
-}
