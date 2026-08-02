@@ -44,16 +44,24 @@ export interface UISettings {
 
 /**
  * A text attachment dragged from external sources (web pages, etc.).
- * Can be plain text or HTML. Sent as a separate text content part.
+ * Can be plain text, HTML, or a file reference. Sent as a separate text content part.
  */
 export interface TextAttachment {
   id: string;
+  /**
+   * The semantic kind of attachment:
+   * - 'text': plain text or HTML content (default if omitted for backwards compat)
+   * - 'file-ref': a reference to a file stored in the extension's file system
+   */
+  kind?: 'text' | 'file-ref';
   /** The content type: 'text/plain' or 'text/html' */
   mediaType: 'text/plain' | 'text/html';
-  /** The actual text/html content */
+  /** The actual text/html content, or `[file: name]` for file-ref kind */
   content: string;
-  /** A short preview label (first N chars) */
+  /** A short preview label (first N chars, or the file name for file-ref) */
   preview: string;
+  /** Optional display label override (e.g. "File" for file references) */
+  label?: string;
 }
 
 /** User-authored system instructions prepended to every conversation. */

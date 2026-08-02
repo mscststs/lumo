@@ -67,6 +67,13 @@ export const en = {
       title: 'Reasoning',
       thinking: 'Thinking...',
     },
+    files: {
+      count: '{{count}} files',
+      file: 'File',
+      preview: 'Preview',
+      download: 'Download',
+      reference: 'Reference as attachment',
+    },
   },
   options: {
     title: 'Lumo Settings',

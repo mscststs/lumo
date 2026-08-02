@@ -1,9 +1,10 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, Square, ImagePlus, X, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 import type { TextAttachment } from '@/types';
 
 export interface ChatInputHandle {
@@ -17,16 +18,22 @@ interface ChatInputProps {
   isVisionModel: boolean;
   onSend: (input: string, images: string[], textAttachments: TextAttachment[]) => void;
   onStop: () => void;
+  /** Whether the current drag originates from within the sidebar */
+  isInternalDrag: boolean;
+  onInternalFileDrop?: (fileName: string) => void;
+  onInternalTextDrop?: (text: string) => void;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { isStreaming, isVisionModel, onSend, onStop },
+  { isStreaming, isVisionModel, onSend, onStop, isInternalDrag, onInternalFileDrop, onInternalTextDrop },
   ref,
 ) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
+  const [isInternalDragOver, setIsInternalDragOver] = useState(false);
+  const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useImperativeHandle(ref, () => ({
@@ -105,10 +112,71 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const hasAttachments = images.length > 0 || textAttachments.length > 0;
 
+  // ─── Internal drag-and-drop (from within the sidebar) ────────────────────
+  const handleInputDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isInternalDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    internalDragCounterRef.current += 1;
+    if (internalDragCounterRef.current === 1) {
+      setIsInternalDragOver(true);
+    }
+  }, [isInternalDrag]);
+
+  const handleInputDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isInternalDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    internalDragCounterRef.current -= 1;
+    if (internalDragCounterRef.current === 0) {
+      setIsInternalDragOver(false);
+    }
+  }, [isInternalDrag]);
+
+  const handleInputDragOver = useCallback((e: React.DragEvent) => {
+    if (!isInternalDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  }, [isInternalDrag]);
+
+  const handleInputDrop = useCallback((e: React.DragEvent) => {
+    if (!isInternalDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    internalDragCounterRef.current = 0;
+    setIsInternalDragOver(false);
+
+    // Check for file reference first
+    const fileName = e.dataTransfer.getData(LUMO_FILE_REF_MIME);
+    if (fileName && onInternalFileDrop) {
+      onInternalFileDrop(fileName);
+      return;
+    }
+
+    // Otherwise treat as text drop
+    const text = e.dataTransfer.getData('text/plain');
+    if (text?.trim() && onInternalTextDrop) {
+      onInternalTextDrop(text.trim());
+    }
+  }, [isInternalDrag, onInternalFileDrop, onInternalTextDrop]);
+
   return (
-    <div className="p-3 shrink-0">
+    <div
+      className="p-3 shrink-0"
+      onDragEnter={handleInputDragEnter}
+      onDragLeave={handleInputDragLeave}
+      onDragOver={handleInputDragOver}
+      onDrop={handleInputDrop}
+    >
       <div
-        className="rounded-xl border border-border bg-muted/50 overflow-hidden transition-colors focus-within:border-chat-user/50"
+        className={`rounded-xl border-2 overflow-hidden transition-all duration-150 focus-within:border-chat-user/50 ${
+          isInternalDragOver
+            ? 'border-chat-user border-dashed bg-chat-user/15 shadow-[0_0_8px_0_var(--color-chat-user)/20] scale-[1.01]'
+            : isInternalDrag
+              ? 'border-chat-user/50 border-dashed bg-chat-user/5'
+              : 'border-border bg-muted/50 border'
+        }`}
       >
         {/* Attachment previews inside the input box */}
         <AnimatePresence>
@@ -141,7 +209,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="flex flex-col overflow-hidden min-w-0">
                     <span className="text-[10px] text-muted-foreground leading-tight">
-                      {attachment.mediaType === 'text/html' ? 'HTML' : t('sidebar.textAttachment')}
+                      {attachment.label
+                        ?? (attachment.kind === 'file-ref' ? t('sidebar.files.file') : null)
+                        ?? (attachment.mediaType === 'text/html' ? 'HTML' : t('sidebar.textAttachment'))}
                     </span>
                     <span className="text-xs truncate leading-tight">{attachment.preview}</span>
                   </div>

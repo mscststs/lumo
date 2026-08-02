@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatInput, type ChatInputHandle } from '@/components/chat/ChatInput';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
+import { ConversationFiles } from '@/components/chat/ConversationFiles';
 import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { ThemeInit } from '@/lib/theme';
 import { useModelSelection } from '@/store/useModelSelection';
@@ -16,6 +17,7 @@ export default function App() {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isInternalDrag, setIsInternalDrag] = useState(false);
   const dragCounterRef = useRef(0);
   // Tracks the timestamp of the last consumed context-menu pending data to
   // deduplicate across the initial read and the onChanged listener (and across
@@ -57,6 +59,18 @@ export default function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ─── Track internal drag origin ──────────────────────────────────────────
+  useEffect(() => {
+    const handleDragStart = () => { setIsInternalDrag(true); };
+    const handleDragEnd = () => { setIsInternalDrag(false); };
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('dragend', handleDragEnd);
+    return () => {
+      document.removeEventListener('dragstart', handleDragStart);
+      document.removeEventListener('dragend', handleDragEnd);
+    };
+  }, []);
 
   // ─── Context menu pending selection listener ─────────────────────────────
   useEffect(() => {
@@ -164,19 +178,22 @@ export default function App() {
 
   const handleGlobalDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    // Don't show full-screen overlay for drags originating within the sidebar
+    if (isInternalDrag) return;
     dragCounterRef.current += 1;
     if (dragCounterRef.current === 1) {
       setIsDragOver(true);
     }
-  }, []);
+  }, [isInternalDrag]);
 
   const handleGlobalDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    if (isInternalDrag) return;
     dragCounterRef.current -= 1;
     if (dragCounterRef.current === 0) {
       setIsDragOver(false);
     }
-  }, []);
+  }, [isInternalDrag]);
 
   const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -186,6 +203,9 @@ export default function App() {
     e.preventDefault();
     dragCounterRef.current = 0;
     setIsDragOver(false);
+
+    // Internal drags are handled by ChatInput's own drop zone
+    if (isInternalDrag) return;
 
     const dataTransfer = e.dataTransfer;
     const visionEnabled = isVisionModel();
@@ -255,7 +275,7 @@ export default function App() {
     if (textData && textData.trim()) {
       addTextAttachmentFromDrop(textData, 'text/plain');
     }
-  }, [isVisionModel]);
+  }, [isVisionModel, isInternalDrag]);
 
   const addTextAttachmentFromDrop = (content: string, mediaType: 'text/plain' | 'text/html') => {
     const preview = content.replace(/<[^>]*>/g, '').trim().slice(0, 50);
@@ -267,6 +287,26 @@ export default function App() {
     };
     chatInputRef.current?.addTextAttachment(attachment);
   };
+
+  // ─── File reference (from ConversationFiles panel) ────────────────────────
+
+  const addFileReference = useCallback((fileName: string) => {
+    const attachment: TextAttachment = {
+      id: uuidv4(),
+      kind: 'file-ref',
+      mediaType: 'text/plain',
+      content: `[file: ${fileName}]`,
+      preview: fileName,
+      label: t('sidebar.files.file'),
+    };
+    chatInputRef.current?.addTextAttachment(attachment);
+    chatInputRef.current?.focus();
+  }, [t]);
+
+  const addInternalTextDrop = useCallback((text: string) => {
+    addTextAttachmentFromDrop(text, 'text/plain');
+    chatInputRef.current?.focus();
+  }, []);
 
   return (
     <div
@@ -328,12 +368,20 @@ export default function App() {
         onRetry={onRetry}
       />
 
+      <ConversationFiles
+        conversationId={currentConversation?.id ?? null}
+        onReference={addFileReference}
+      />
+
       <ChatInput
         ref={chatInputRef}
         isStreaming={isStreaming}
         isVisionModel={isVisionModel()}
         onSend={onSend}
         onStop={handleStop}
+        isInternalDrag={isInternalDrag}
+        onInternalFileDrop={addFileReference}
+        onInternalTextDrop={addInternalTextDrop}
       />
     </div>
   );

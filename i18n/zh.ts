@@ -69,6 +69,13 @@ export const zh: TranslationSchema = {
       title: '推理过程',
       thinking: '思考中...',
     },
+    files: {
+      count: '{{count}} 个文件',
+      file: '文件',
+      preview: '预览',
+      download: '下载',
+      reference: '引用为附件',
+    },
   },
   options: {
     title: 'Lumo 设置',

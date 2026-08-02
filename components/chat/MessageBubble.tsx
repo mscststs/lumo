@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 import {
   Message,
   MessageContent,
@@ -121,11 +122,21 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
+  const handleDragStart = (e: React.DragEvent) => {
+    // Set the image URL as draggable HTML (img tag) so the global drop handler
+    // can detect it as an image drag, same as dragging from a web page.
+    e.dataTransfer.setData('text/html', `<img src="${image.url}" />`);
+    e.dataTransfer.setData('text/plain', image.url);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
   return (
     <>
       <div
-        className="relative group cursor-pointer rounded-lg border border-border overflow-hidden bg-muted/30"
+        className="relative group cursor-pointer rounded-lg border border-border overflow-hidden bg-muted/30 active:cursor-grabbing"
         onClick={() => setExpanded(true)}
+        draggable
+        onDragStart={handleDragStart}
       >
         <img
           src={image.url}
@@ -168,10 +179,32 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
   const [expanded, setExpanded] = useState(false);
 
   const isHtml = attachment.mediaType === 'text/html';
-  const label = isHtml ? 'HTML' : t('sidebar.textAttachment');
+  const label = attachment.label
+    ?? (attachment.kind === 'file-ref' ? t('sidebar.files.file') : null)
+    ?? (isHtml ? 'HTML' : t('sidebar.textAttachment'));
+
+  const handleDragStart = (e: React.DragEvent) => {
+    if (attachment.kind === 'file-ref') {
+      // Extract file name from content format `[file: name]`
+      const match = /^\[file:\s*(.+)\]$/.exec(attachment.content);
+      const fileName = match?.[1] ?? attachment.preview;
+      e.dataTransfer.setData(LUMO_FILE_REF_MIME, fileName);
+      e.dataTransfer.setData('text/plain', attachment.content);
+    } else {
+      if (isHtml) {
+        e.dataTransfer.setData('text/html', attachment.content);
+      }
+      e.dataTransfer.setData('text/plain', attachment.content);
+    }
+    e.dataTransfer.effectAllowed = 'copy';
+  };
 
   return (
-    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden text-sm">
+    <div
+      className="rounded-lg border border-border bg-muted/30 overflow-hidden text-sm active:cursor-grabbing"
+      draggable
+      onDragStart={handleDragStart}
+    >
       {/* Header */}
       <button
         className="flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-muted/50 transition-colors"
