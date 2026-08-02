@@ -1,63 +1,128 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <defs>
-    <linearGradient id="lumoOuter" x1="256" y1="16" x2="256" y2="496" gradientUnits="userSpaceOnUse">
-      <stop offset="0.02" stop-color="#FFF0B8" />
-      <stop offset="0.1" stop-color="#FFD34A" />
-      <stop offset="0.26" stop-color="#FFA51E" />
-      <stop offset="0.46" stop-color="#FF7314" />
-      <stop offset="0.66" stop-color="#F4441A" />
-      <stop offset="0.84" stop-color="#D51E0C" />
-      <stop offset="1" stop-color="#9E1206" />
-    </linearGradient>
-    <linearGradient id="lumoInner" x1="256" y1="86" x2="256" y2="452" gradientUnits="userSpaceOnUse">
-      <stop offset="0.1" stop-color="#FFF6CE" />
-      <stop offset="0.32" stop-color="#FFE071" />
-      <stop offset="0.55" stop-color="#FFC53A" />
-      <stop offset="0.78" stop-color="#FFE79A" />
-      <stop offset="1" stop-color="#FFFDF2" />
-    </linearGradient>
-    <radialGradient id="lumoCore" cx="256" cy="368" r="86" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFCEE" stop-opacity="0.95" />
-      <stop offset="0.55" stop-color="#FFF0B0" stop-opacity="0.45" />
-      <stop offset="1" stop-color="#FFE071" stop-opacity="0" />
-    </radialGradient>
-    <linearGradient id="lumoRim" x1="256" y1="16" x2="256" y2="240" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFF7DC" stop-opacity="0.85" />
-      <stop offset="1" stop-color="#FFF7DC" stop-opacity="0" />
-    </linearGradient>
-    <filter id="lumoGlow" x="-30%" y="-20%" width="160%" height="150%">
-      <feGaussianBlur stdDeviation="22" />
-    </filter>
-  </defs>
+<svg id="logoSvg" width="238" height="238" viewBox="81 114 238 238" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+        <filter id="glow-top" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+        <filter id="glow-bg" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="30" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
 
-  <!-- 外发光 -->
-  <g filter="url(#lumoGlow)" opacity="0.4">
-    <path
-      fill="#FF6A12"
-      d="M287 10c18 82 64 127 94 187 35 69 65 126 39 198-26 69-93 105-164 105s-138-39-164-108-4-131 38-195c31-47 39-79 25-123 28 37 61 44 79 16 16-26 25-53 53-80Z"
-    />
-  </g>
+        <linearGradient id="top1" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stop-color="rgba(0,180,255,0.15)"/>
+            <stop offset="100%" stop-color="rgba(0,80,200,0.30)"/>
+        </linearGradient>
+        <linearGradient id="top2" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stop-color="rgba(30,200,255,0.18)"/>
+            <stop offset="100%" stop-color="rgba(0,100,220,0.35)"/>
+        </linearGradient>
+        <linearGradient id="top3" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stop-color="rgba(60,220,255,0.22)"/>
+            <stop offset="100%" stop-color="rgba(0,120,240,0.40)"/>
+        </linearGradient>
+        <linearGradient id="top4" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stop-color="rgba(100,240,255,0.26)"/>
+            <stop offset="100%" stop-color="rgba(30,150,255,0.48)"/>
+        </linearGradient>
+        <linearGradient id="top5" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stop-color="rgba(150,255,255,0.32)"/>
+            <stop offset="100%" stop-color="rgba(60,180,255,0.55)"/>
+        </linearGradient>
 
-  <!-- 外焰 -->
-  <path
-    fill="url(#lumoOuter)"
-    d="M287 10c18 82 64 127 94 187 35 69 65 126 39 198-26 69-93 105-164 105s-138-39-164-108-4-131 38-195c31-47 39-79 25-123 28 37 61 44 79 16 16-26 25-53 53-80Z"
-  />
+        <linearGradient id="r1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,100,220,0.35)"/>
+            <stop offset="100%" stop-color="rgba(0,50,160,0.18)"/>
+        </linearGradient>
+        <linearGradient id="r2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,130,240,0.40)"/>
+            <stop offset="100%" stop-color="rgba(0,70,190,0.22)"/>
+        </linearGradient>
+        <linearGradient id="r3" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,160,255,0.46)"/>
+            <stop offset="100%" stop-color="rgba(0,90,210,0.26)"/>
+        </linearGradient>
+        <linearGradient id="r4" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(30,190,255,0.52)"/>
+            <stop offset="100%" stop-color="rgba(0,110,230,0.30)"/>
+        </linearGradient>
+        <linearGradient id="r5" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(80,220,255,0.58)"/>
+            <stop offset="100%" stop-color="rgba(0,140,245,0.36)"/>
+        </linearGradient>
 
-  <!-- 内焰 -->
-  <path
-    fill="url(#lumoInner)"
-    d="M262 61c34 56 72 106 85 130 19 39 25 89 4 129-19 36-56 56-95 56s-76-20-95-56c-21-40-15-90 4-129 13-24 51-74 85-130Z"
-    opacity="0.92"
-  />
+        <linearGradient id="l1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,50,160,0.20)"/>
+            <stop offset="100%" stop-color="rgba(0,20,100,0.10)"/>
+        </linearGradient>
+        <linearGradient id="l2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,70,190,0.24)"/>
+            <stop offset="100%" stop-color="rgba(0,30,120,0.12)"/>
+        </linearGradient>
+        <linearGradient id="l3" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,90,210,0.28)"/>
+            <stop offset="100%" stop-color="rgba(0,40,140,0.14)"/>
+        </linearGradient>
+        <linearGradient id="l4" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,110,230,0.32)"/>
+            <stop offset="100%" stop-color="rgba(0,50,160,0.16)"/>
+        </linearGradient>
+        <linearGradient id="l5" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,140,245,0.38)"/>
+            <stop offset="100%" stop-color="rgba(0,60,180,0.20)"/>
+        </linearGradient>
 
-  <!-- 白热核心 -->
-  <ellipse cx="256" cy="368" rx="60" ry="82" fill="url(#lumoCore)" />
+        <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(255,255,255,0.30)"/>
+            <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+        </linearGradient>
+    </defs>
 
-  <!-- 上缘高光 -->
-  <path
-    fill="url(#lumoRim)"
-    d="M287 10c14 62 44 104 71 148-24-16-46-45-62-79-10-21-15-45-9-69Z"
-    opacity="0.55"
-  />
+    <ellipse cx="200" cy="250" rx="120" ry="35" fill="rgba(0,100,255,0.06)" filter="url(#glow-bg)"/>
+
+    <g filter="url(#glow)">
+        <polygon points="200,240 310,290 200,340 90,290" fill="url(#top1)" stroke="#00CCFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="310,290 310,298 200,348 200,340" fill="url(#r1)" stroke="#0099DD" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="90,290 200,340 200,348 90,298" fill="url(#l1)" stroke="#0066AA" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="200,240 310,290 200,340 90,290" fill="url(#shine)" opacity="0.15"/>
+    </g>
+    <g filter="url(#glow)">
+        <polygon points="200,210 310,260 200,310 90,260" fill="url(#top2)" stroke="#00DDFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="310,260 310,268 200,318 200,310" fill="url(#r2)" stroke="#00AADD" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="90,260 200,310 200,318 90,268" fill="url(#l2)" stroke="#0077BB" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="200,210 310,260 200,310 90,260" fill="url(#shine)" opacity="0.15"/>
+    </g>
+    <g filter="url(#glow)">
+        <polygon points="200,180 310,230 200,280 90,230" fill="url(#top3)" stroke="#00EEFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="310,230 310,238 200,288 200,280" fill="url(#r3)" stroke="#00BBEE" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="90,230 200,280 200,288 90,238" fill="url(#l3)" stroke="#0088CC" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="200,180 310,230 200,280 90,230" fill="url(#shine)" opacity="0.15"/>
+    </g>
+    <g filter="url(#glow)">
+        <polygon points="200,150 310,200 200,250 90,200" fill="url(#top4)" stroke="#66FFFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="310,200 310,208 200,258 200,250" fill="url(#r4)" stroke="#00CCFF" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="90,200 200,250 200,258 90,208" fill="url(#l4)" stroke="#0099DD" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="200,150 310,200 200,250 90,200" fill="url(#shine)" opacity="0.15"/>
+    </g>
+    <g filter="url(#glow-top)">
+        <polygon points="200,120 310,170 200,220 90,170" fill="url(#top5)" stroke="#AAFFFF" stroke-width="3" stroke-linejoin="round"/>
+        <polygon points="310,170 310,178 200,228 200,220" fill="url(#r5)" stroke="#88FFFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="90,170 200,220 200,228 90,178" fill="url(#l5)" stroke="#00CCFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="200,120 310,170 200,220 90,170" fill="url(#shine)" opacity="0.20"/>
+    </g>
+    <circle cx="200" cy="122" r="4" fill="rgba(200,255,255,0.95)" filter="url(#glow-top)"/>
+    <circle cx="200" cy="122" r="2" fill="white"/>
 </svg>
