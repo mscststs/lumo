@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Message, MessageContent } from '@/components/ai-elements/message';
 import {
   Conversation as ConversationContainer,
   ConversationContent,
@@ -8,18 +7,17 @@ import {
   useConversationScroll,
 } from '@/components/ai-elements/conversation';
 import { MessageBubble } from '@/components/chat/MessageBubble';
-import { MessagePartList } from '@/components/chat/MessagePartList';
 import { ChatError } from '@/components/chat/ChatError';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ChatMessagePart, Conversation } from '@/types';
+import type { ChatMessage, Conversation } from '@/types';
 
 const MAX_RETRIES = 3;
 
 interface ChatMessageListProps {
   currentConversation: Conversation | null;
   isStreaming: boolean;
-  isStreamingVisible: boolean;
-  streamingParts: ChatMessagePart[];
+  /** The in-flight assistant turn, or `null` when it has nothing to show yet. */
+  streamingMessage: ChatMessage | null;
   chatError: ChatErrorInfo | null;
   isRetrying: boolean;
   retryAttempt: number;
@@ -30,8 +28,7 @@ interface ChatMessageListProps {
 export function ChatMessageList({
   currentConversation,
   isStreaming,
-  isStreamingVisible,
-  streamingParts,
+  streamingMessage,
   chatError,
   isRetrying,
   retryAttempt,
@@ -41,6 +38,15 @@ export function ChatMessageList({
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
 
+  const messages = currentConversation?.messages ?? [];
+  // The streamed turn is persisted under the id it streamed under, so once the
+  // conversation contains it the live copy must step aside — otherwise the reply
+  // would briefly appear twice.
+  const pending =
+    streamingMessage && !messages.some((msg) => msg.id === streamingMessage.id)
+      ? streamingMessage
+      : null;
+
   return (
     <ConversationContainer className="flex-1">
       <ConversationContent scrollRef={scrollRef} contentRef={contentRef}>
@@ -49,17 +55,20 @@ export function ChatMessageList({
             {t('sidebar.noModels')}
           </div>
         )}
-        {currentConversation?.messages.map((msg) => (
+        {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
-        {isStreaming && isStreamingVisible && (
-          <Message from="assistant">
-            <MessageContent>
-              <MessagePartList parts={streamingParts} isStreaming />
-            </MessageContent>
-          </Message>
+        {/*
+          Rendered as a `MessageBubble` keyed by the assistant id it will be
+          saved under. When the turn finishes, the persisted message takes over
+          this exact key and slot, so React patches the existing DOM instead of
+          unmounting the live bubble and mounting a fresh one — which is what
+          made the completed reply flash and replay its entry animation.
+        */}
+        {pending && (
+          <MessageBubble key={pending.id} message={pending} isStreaming={isStreaming} />
         )}
-        {isStreaming && !isStreamingVisible && !chatError && (
+        {isStreaming && !pending && !chatError && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -68,14 +77,6 @@ export function ChatMessageList({
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-pulse" />
             {t('sidebar.thinking')}
           </motion.div>
-        )}
-        {/* Show partial content when retrying (content streamed before error) */}
-        {!isStreaming && streamingParts.length > 0 && chatError && (
-          <Message from="assistant">
-            <MessageContent>
-              <MessagePartList parts={streamingParts} />
-            </MessageContent>
-          </Message>
         )}
         {/* Error display with retry controls */}
         <AnimatePresence>

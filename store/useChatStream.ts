@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { chatStream, resumeFingerprint } from '@/lib/ai';
 import type { ResumeState } from '@/lib/ai';
@@ -15,17 +15,32 @@ const MAX_RETRIES = 3;
 /** Base delay in ms for exponential backoff (doubles each attempt) */
 const RETRY_BASE_DELAY = 1500;
 
+/**
+ * Identity of one assistant turn, allocated before the first chunk arrives so
+ * the streaming bubble and the persisted message agree on both fields.
+ */
+interface AssistantTurn {
+  /** The id the finished message will be saved under. */
+  id: string;
+  /** When the turn started — kept across retries so it reflects the user's ask. */
+  timestamp: number;
+}
+
 export interface UseChatStreamReturn {
   conversations: Conversation[];
   currentConversation: Conversation | null;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (open: boolean) => void;
   isStreaming: boolean;
-  streamingParts: ChatMessagePart[];
+  /**
+   * The in-flight assistant turn, shaped as a real `ChatMessage` so the list can
+   * render it through the same component and React key as the persisted one.
+   * `null` until the turn has produced something worth showing.
+   */
+  streamingMessage: ChatMessage | null;
   chatError: ChatErrorInfo | null;
   isRetrying: boolean;
   retryAttempt: number;
-  isStreamingVisible: boolean;
   handleSend: (input: string, images: string[], textAttachments: TextAttachment[], getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined, selectedProviderId: string, selectedModelId: string) => Promise<void>;
   handleRetry: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
   handleStop: () => void;
@@ -65,6 +80,17 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingParts, setStreamingParts] = useState<ChatMessagePart[]>([]);
+  // Identity of the assistant message currently being streamed: the id it will
+  // be saved under, plus the moment the turn started. Allocated when the turn
+  // starts and reused verbatim when it is persisted, so the streaming bubble and
+  // the saved bubble are the same React element (same key, same position) and
+  // the DOM is patched in place instead of being torn down and rebuilt — which
+  // is what made the finished reply visibly flash.
+  const [streamingTurn, setStreamingTurn] = useState<AssistantTurn | null>(null);
+  // Mirrors `streamingTurn` for callbacks that must read it without re-running.
+  // Survives retries so a resumed turn keeps rendering under the same key and
+  // reports the time the user actually asked, not the time of the last attempt.
+  const streamingTurnRef = useRef<AssistantTurn | null>(null);
   const [chatError, setChatError] = useState<ChatErrorInfo | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -88,8 +114,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       retryTimeoutRef.current = null;
     }
     resumeStateRef.current = null;
+    streamingTurnRef.current = null;
     setIsStreaming(false);
     setStreamingParts([]);
+    setStreamingTurn(null);
     setChatError(null);
     setIsRetrying(false);
     setRetryAttempt(0);
@@ -189,41 +217,66 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
       let latestParts: ChatMessagePart[] = resumeFrom ? [...resumeFrom.parts] : [];
 
+      // Identity for the assistant message this turn produces. Reused for both
+      // the live streaming bubble and the persisted one. A retry inherits the
+      // existing turn so the saved timestamp is when the user asked.
+      const turn: AssistantTurn = streamingTurnRef.current ?? {
+        id: uuidv4(),
+        timestamp: Date.now(),
+      };
+      streamingTurnRef.current = turn;
+      setStreamingTurn(turn);
+
       const persist = async (parts: ChatMessagePart[]) => {
         const stale = isStale();
+        const renderable = hasRenderableParts(parts);
+
+        const updatedConv: Conversation | null = renderable
+          ? {
+              ...convWithUserMessage,
+              messages: [
+                ...convWithUserMessage.messages,
+                {
+                  // Same id and timestamp the streaming bubble already rendered
+                  // under, so the hand-off from "live" to "saved" reuses the
+                  // existing DOM instead of unmounting and remounting the reply.
+                  ...turn,
+                  role: 'assistant',
+                  parts,
+                } satisfies ChatMessage,
+              ],
+              updatedAt: Date.now(),
+            }
+          : null;
 
         if (!stale) {
           activeRequestIdRef.current = null;
           abortControllerRef.current = null;
           resumeStateRef.current = null;
+          streamingTurnRef.current = null;
+
+          // These all land in a single React commit: the finished message is
+          // appended to the conversation in the very same render that drops the
+          // streaming state. Awaiting in between would paint a frame with the
+          // reply missing, which is what made the completed message flash.
+          // `openConversation` applies its state update synchronously and only
+          // then persists the pointer, so it is safe not to await here.
+          if (updatedConv) {
+            void openConversation(updatedConv).catch(() => {
+              // Pointer persistence is best-effort; the id is unchanged anyway.
+            });
+          }
           setIsStreaming(false);
           setStreamingParts([]);
+          setStreamingTurn(null);
           setChatError(null);
           setIsRetrying(false);
           setRetryAttempt(0);
         }
 
-        if (!hasRenderableParts(parts)) {
-          return;
-        }
-
-        const assistantMessage: ChatMessage = {
-          id: uuidv4(),
-          role: 'assistant',
-          parts,
-          timestamp: Date.now(),
-        };
-
-        const updatedConv: Conversation = {
-          ...convWithUserMessage,
-          messages: [...convWithUserMessage.messages, assistantMessage],
-          updatedAt: Date.now(),
-        };
+        if (!updatedConv) return;
 
         await saveConversation(updatedConv);
-
-        if (stale) return;
-        await openConversation(updatedConv);
       };
 
       await chatStream({
@@ -356,6 +409,9 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       setRetryAttempt(0);
       // A new turn invalidates any snapshot left by the previous one.
       resumeStateRef.current = null;
+      // ...and gets a fresh assistant identity, allocated by `executeStream`.
+      streamingTurnRef.current = null;
+      setStreamingTurn(null);
 
       const convWithUserMessage = conv;
       await openConversation(convWithUserMessage);
@@ -382,9 +438,11 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       setIsStreaming(true);
       // Resuming keeps the already-streamed steps on screen; `executeStream`
       // re-seeds them and appends the remaining steps. Only a full restart
-      // clears the transcript.
+      // clears the transcript, and only then is a new identity warranted.
       if (!resume) {
         setStreamingParts([]);
+        streamingTurnRef.current = null;
+        setStreamingTurn(null);
       }
 
       void executeStream(currentConversation, provider, model, 0, resume);
@@ -407,7 +465,19 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     setRetryAttempt(0);
   }, []);
 
-  const isStreamingVisible = hasRenderableParts(streamingParts);
+  /**
+   * The in-flight turn as a `ChatMessage`. Memoised on the turn identity + parts
+   * so the object identity only changes when the content does, letting the
+   * message component's `memo` skip renders driven by unrelated panel state.
+   */
+  const streamingMessage = useMemo<ChatMessage | null>(() => {
+    if (!streamingTurn || !hasRenderableParts(streamingParts)) return null;
+    return {
+      ...streamingTurn,
+      role: 'assistant',
+      parts: streamingParts,
+    };
+  }, [streamingTurn, streamingParts]);
 
   return {
     conversations,
@@ -415,11 +485,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     isHistoryOpen,
     setIsHistoryOpen,
     isStreaming,
-    streamingParts,
+    streamingMessage,
     chatError,
     isRetrying,
     retryAttempt,
-    isStreamingVisible,
     handleSend,
     handleRetry,
     handleStop,

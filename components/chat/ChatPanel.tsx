@@ -95,11 +95,10 @@ export function ChatPanel({
     isHistoryOpen,
     setIsHistoryOpen,
     isStreaming,
-    streamingParts,
+    streamingMessage,
     chatError,
     isRetrying,
     retryAttempt,
-    isStreamingVisible,
     handleSend,
     handleRetry,
     handleStop,
@@ -424,8 +423,7 @@ export function ChatPanel({
       <ChatMessageList
         currentConversation={currentConversation}
         isStreaming={isStreaming}
-        isStreamingVisible={isStreamingVisible}
-        streamingParts={streamingParts}
+        streamingMessage={streamingMessage}
         chatError={chatError}
         isRetrying={isRetrying}
         retryAttempt={retryAttempt}

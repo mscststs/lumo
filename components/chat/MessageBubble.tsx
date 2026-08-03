@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
@@ -18,7 +18,10 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-export function MessageBubble({ message, isStreaming = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  isStreaming = false,
+}: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const parts = normalizeMessage(message);
@@ -58,7 +61,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
       </Message>
     </motion.div>
   );
-}
+});
 
 /** Attachment cards rendered outside the message bubble. */
 function UserAttachments({ parts, textAttachments }: { parts: ChatMessagePart[]; textAttachments?: TextAttachment[] }) {

@@ -58,12 +58,19 @@ export function MessageContent({ className, children, ...props }: MessageContent
 
 // ─── MessageResponse (Markdown renderer) ────────────────────────────────────
 
+/**
+ * Hoisted to module scope on purpose: `Streamdown` memoises on a referential
+ * comparison of `plugins`, so an inline object literal would allocate a new
+ * identity on every render and force the whole Markdown tree to re-parse.
+ */
+const STREAMDOWN_PLUGINS = { code, math, cjk };
+
 interface MessageResponseProps extends React.HTMLAttributes<HTMLDivElement> {
   children: string;
   isStreaming?: boolean;
 }
 
-export function MessageResponse({
+export const MessageResponse = React.memo(function MessageResponse({
   children,
   isStreaming = false,
   className,
@@ -73,14 +80,14 @@ export function MessageResponse({
     <div className={cn('sd-message-response break-words overflow-hidden', className)} {...props}>
       <Streamdown
         animated
-        plugins={{ code, math, cjk }}
+        plugins={STREAMDOWN_PLUGINS}
         isAnimating={isStreaming}
       >
         {children}
       </Streamdown>
     </div>
   );
-}
+});
 
 // ─── MessageActions ─────────────────────────────────────────────────────────
 
