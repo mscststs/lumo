@@ -76,6 +76,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   language: 'en',
   theme: 'system',
   maxSplitPanels: 1,
+  sendKey: 'enter',
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -106,6 +107,7 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     normalize: (raw) => ({
       ...raw,
       maxSplitPanels: raw.maxSplitPanels ?? 1,
+      sendKey: raw.sendKey ?? 'enter',
     }),
   },
   systemPrompt: {

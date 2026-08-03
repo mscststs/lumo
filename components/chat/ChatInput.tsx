@@ -1,11 +1,13 @@
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, Square, ImagePlus, X, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
-import type { TextAttachment } from '@/types';
+import { storage } from '@/store/storage';
+import { useStorageWatch } from '@/store/useStorageWatch';
+import type { SendKey, TextAttachment, UISettings } from '@/types';
  
 export interface ChatInputHandle {
   focus: () => void;
@@ -33,8 +35,51 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [images, setImages] = useState<string[]>([]);
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
   const [isInternalDragOver, setIsInternalDragOver] = useState(false);
+  const [sendKey, setSendKey] = useState<SendKey>('enter');
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    storage.getUISettings().then((settings) => {
+      setSendKey(settings.sendKey ?? 'enter');
+    });
+  }, []);
+
+  // React live to send-key changes made in the options page.
+  useStorageWatch<UISettings>('uiSettings', (newVal) => {
+    if (newVal) setSendKey(newVal.sendKey ?? 'enter');
+  });
+
+  // Auto-grow the textarea to fit content, up to MAX_INPUT_LINES rows,
+  // after which a scrollbar appears instead of expanding further.
+  const MAX_INPUT_LINES = 5;
+  const LINE_HEIGHT = 20; // 1.25rem (text-sm line-height)
+  const MAX_INPUT_HEIGHT = MAX_INPUT_LINES * LINE_HEIGHT;
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    const resize = () => {
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT);
+      if (el.clientHeight !== next) {
+        el.style.height = `${next}px`;
+      }
+    };
+
+    // Re-measure whenever the content (input) changes.
+    resize();
+
+    // Re-measure when the element resizes too. This matters because the chat
+    // panel animates in from width 0 on open — the first measurement taken
+    // then can be wrong (the placeholder wraps → height pinned at max). It
+    // also keeps the height correct when the sidebar/panel width changes and
+    // the text re-wraps.
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [input]);
  
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -84,6 +129,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   };
  
   /**
+   * Send key behavior follows the `sendKey` UI setting:
+   * - `'enter'`: Enter (no modifier) sends; any modifier+Enter inserts a newline.
+   * - `'meta-enter'`: any modifier+Enter sends (Ctrl/Alt/Shift on Windows,
+   *   ⌘/⌥/⇧ on macOS); plain Enter inserts a newline.
+   *
    * FIX: Ignore Enter while an IME (input method) is composing.
    * - e.nativeEvent.isComposing === true  -> IME composition is in progress
    * - e.nativeEvent.keyCode === 229       -> legacy browsers that don't expose isComposing
@@ -97,11 +147,42 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
       return;
     }
- 
-    if (e.key === 'Enter' && !e.shiftKey) {
+
+    if (e.key !== 'Enter') return;
+
+    const hasModifier = e.shiftKey || e.ctrlKey || e.altKey || e.metaKey;
+
+    if (sendKey === 'enter') {
+      // Enter sends; any modifier+Enter inserts a newline.
+      // We must explicitly insert \n at cursor for Ctrl/Alt+Enter since the
+      // browser default only guarantees a newline for Shift+Enter.
+      if (hasModifier) {
+        e.preventDefault();
+        const el = textareaRef.current;
+        if (!el) return;
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        const newValue = input.slice(0, start) + '\n' + input.slice(end);
+        // Direct DOM mutation first so the browser applies native scroll to cursor.
+        el.value = newValue;
+        el.selectionStart = el.selectionEnd = start + 1;
+        // Sync React state so it stays in control.
+        setInput(newValue);
+        // Programmatic value assignment doesn't trigger native auto-scroll,
+        // so we manually scroll to keep the cursor visible.
+        const cursorRatio = (start + 1) / newValue.length;
+        el.scrollTop = cursorRatio * (el.scrollHeight - el.clientHeight);
+        return;
+      }
       e.preventDefault();
       handleSend();
+      return;
     }
+
+    // meta-enter mode: any modifier+Enter sends; plain Enter inserts a newline.
+    if (!hasModifier) return;
+    e.preventDefault();
+    handleSend();
   };
  
   const handleImageUpload = () => {
@@ -259,7 +340,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={t('sidebar.placeholder')}
-            className="min-h-[36px] max-h-[120px] resize-none text-sm border-0 bg-transparent p-0 shadow-none placeholder:text-muted-foreground/60"
+            className="min-h-[36px] max-h-[100px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none placeholder:text-muted-foreground/60 scrollbar-lumo"
             rows={1}
           />
         </div>

@@ -37,11 +37,23 @@ export interface ProviderConfig {
   models: ModelConfig[];
 }
 
+/**
+ * Which key combination sends a chat message from the input box.
+ * - `'enter'`: Enter (with no modifier) sends; any modifier+Enter (Shift,
+ *   Ctrl/Cmd, Alt/Option) inserts a newline.
+ * - `'meta-enter'`: any modifier+Enter sends — Ctrl/Alt/Shift on Windows,
+ *   ⌘/⌥/⇧ on macOS (the name is a loose shorthand for "a modifier key");
+ *   plain Enter inserts a newline.
+ */
+export type SendKey = 'enter' | 'meta-enter';
+
 export interface UISettings {
   language: 'en' | 'zh';
   theme: 'light' | 'dark' | 'system';
   /** Maximum number of side-by-side chat panels (1–3). Default is 1. */
   maxSplitPanels: 1 | 2 | 3;
+  /** Which key combination sends a chat message. Default is Enter. */
+  sendKey: SendKey;
 }
 
 /**

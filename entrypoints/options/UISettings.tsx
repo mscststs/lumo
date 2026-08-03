@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Upload } from 'lucide-react';
+import { CornerDownLeft, Download, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -11,19 +11,62 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTheme } from '@/lib/theme';
+import { cn, isMacPlatform } from '@/lib/utils';
 import { storage } from '@/store/storage';
-import type { UISettings } from '@/types';
+import type { SendKey, UISettings } from '@/types';
+
+function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <kbd
+      className={cn(
+        'inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-border bg-muted px-1 font-mono text-[11px] leading-none text-foreground',
+        className,
+      )}
+    >
+      {children}
+    </kbd>
+  );
+}
+
+function SendKeyBadge({ value }: { value: SendKey }) {
+  const mac = isMacPlatform();
+  const enterKey = (
+    <Kbd>
+      <CornerDownLeft className="h-3 w-3" />
+    </Kbd>
+  );
+  if (value === 'enter') {
+    return <span className="flex items-center gap-1">{enterKey}</span>;
+  }
+  // "Meta" is a loose shorthand: any modifier key triggers send.
+  // Show the platform-appropriate modifiers: ⌘/⌥/⇧ on macOS, Ctrl/Alt/⇧ elsewhere.
+  const modifiers = mac ? ['⌘', '⌥', '⇧'] : ['Ctrl', 'Alt', '⇧'];
+  return (
+    <span className="flex items-center gap-1">
+      {modifiers.map((m, i) => (
+        <span key={m} className="flex items-center gap-1">
+          {i > 0 && <span className="text-muted-foreground">/</span>}
+          <Kbd>{m}</Kbd>
+        </span>
+      ))}
+      <span className="text-muted-foreground">+</span>
+      {enterKey}
+    </span>
+  );
+}
 
 export function UISettingsPage() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<UISettings['language']>('en');
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
+  const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
       setLanguage(settings.language);
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
+      setSendKey(settings.sendKey ?? 'enter');
     });
   }, []);
 
@@ -44,6 +87,13 @@ export function UISettingsPage() {
     setMaxSplitPanels(panels);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, maxSplitPanels: panels });
+  };
+
+  const handleSendKeyChange = async (val: string) => {
+    const key = val as UISettings['sendKey'];
+    setSendKey(key);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, sendKey: key });
   };
 
   const handleExport = async () => {
@@ -75,6 +125,8 @@ export function UISettingsPage() {
         // Reload settings
         const settings = await storage.getUISettings();
         setLanguage(settings.language);
+        setMaxSplitPanels(settings.maxSplitPanels ?? 1);
+        setSendKey(settings.sendKey ?? 'enter');
         await i18n.changeLanguage(settings.language);
         await setTheme(settings.theme);
         alert(t('options.ui.importSuccess'));
@@ -136,6 +188,27 @@ export function UISettingsPage() {
               <SelectItem value="1">1</SelectItem>
               <SelectItem value="2">2</SelectItem>
               <SelectItem value="3">3</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Send Key */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-0.5">
+            <Label className="text-sm">{t('options.ui.sendKey')}</Label>
+            <span className="text-xs text-muted-foreground">{t('options.ui.sendKeyDesc')}</span>
+          </div>
+          <Select value={sendKey} onValueChange={handleSendKeyChange}>
+            <SelectTrigger className="w-52" aria-label={t('options.ui.sendKey')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="enter">
+                <SendKeyBadge value="enter" />
+              </SelectItem>
+              <SelectItem value="meta-enter">
+                <SendKeyBadge value="meta-enter" />
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>

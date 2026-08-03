@@ -145,6 +145,8 @@ export const en = {
       themeSystem: 'System',
       maxSplitPanels: 'Max Side-by-Side Panels',
       maxSplitPanelsDesc: 'Maximum number of chat panels displayed side by side when the sidebar is wide enough.',
+      sendKey: 'Send Key',
+      sendKeyDesc: 'Send with plain Enter, or with Enter + any modifier key (Ctrl/⌘/Alt/Shift).',
       importExport: 'Import / Export',
       importConfig: 'Import Configuration',
       exportConfig: 'Export Configuration',

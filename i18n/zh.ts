@@ -144,6 +144,8 @@ export const zh: TranslationSchema = {
       themeSystem: '跟随系统',
       maxSplitPanels: '最大并排会话数',
       maxSplitPanelsDesc: '侧边栏足够宽时，可并排显示的最大聊天面板数量。',
+      sendKey: '发送按键',
+      sendKeyDesc: 'Enter 直接发送；或任意修饰键（Ctrl/⌘/Alt/⇧）+ Enter 发送。',
       importExport: '导入 / 导出',
       importConfig: '导入配置',
       exportConfig: '导出配置',
