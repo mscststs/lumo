@@ -6,13 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 import type { TextAttachment } from '@/types';
-
+ 
 export interface ChatInputHandle {
   focus: () => void;
   addImages: (dataUrls: string[]) => void;
   addTextAttachment: (attachment: TextAttachment) => void;
 }
-
+ 
 interface ChatInputProps {
   isStreaming: boolean;
   isVisionModel: boolean;
@@ -23,7 +23,7 @@ interface ChatInputProps {
   onInternalFileDrop?: (fileName: string) => void;
   onInternalTextDrop?: (text: string) => void;
 }
-
+ 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
   { isStreaming, isVisionModel, onSend, onStop, isInternalDrag, onInternalFileDrop, onInternalTextDrop },
   ref,
@@ -35,7 +35,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [isInternalDragOver, setIsInternalDragOver] = useState(false);
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
+ 
   useImperativeHandle(ref, () => ({
     focus: () => {
       textareaRef.current?.focus();
@@ -47,7 +47,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       setTextAttachments((prev) => [...prev, attachment]);
     },
   }));
-
+ 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (!isVisionModel) return;
     const items = e.clipboardData.items;
@@ -66,15 +66,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       }
     }
   };
-
+ 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
-
+ 
   const removeTextAttachment = (id: string) => {
     setTextAttachments((prev) => prev.filter((a) => a.id !== id));
   };
-
+ 
   const handleSend = () => {
     if ((!input.trim() && images.length === 0 && textAttachments.length === 0) || isStreaming) return;
     onSend(input.trim(), images, textAttachments);
@@ -82,14 +82,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setImages([]);
     setTextAttachments([]);
   };
-
+ 
+  /**
+   * FIX: Ignore Enter while an IME (input method) is composing.
+   * - e.nativeEvent.isComposing === true  -> IME composition is in progress
+   * - e.nativeEvent.keyCode === 229       -> legacy browsers that don't expose isComposing
+   *
+   * When composing, the Enter key is used to confirm/commit the candidate word and
+   * should ONLY commit the composition to the input, not trigger a send.
+   */
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Skip if the event originates from an IME composition session
+    const nativeEvent = e.nativeEvent;
+    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+      return;
+    }
+ 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
-
+ 
   const handleImageUpload = () => {
     const inp = document.createElement('input');
     inp.type = 'file';
@@ -109,9 +123,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     };
     inp.click();
   };
-
+ 
   const hasAttachments = images.length > 0 || textAttachments.length > 0;
-
+ 
   // ─── Internal drag-and-drop (from within the sidebar) ────────────────────
   const handleInputDragEnter = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
@@ -122,7 +136,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       setIsInternalDragOver(true);
     }
   }, [isInternalDrag]);
-
+ 
   const handleInputDragLeave = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
     e.preventDefault();
@@ -132,35 +146,35 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       setIsInternalDragOver(false);
     }
   }, [isInternalDrag]);
-
+ 
   const handleInputDragOver = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
   }, [isInternalDrag]);
-
+ 
   const handleInputDrop = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
     e.preventDefault();
     e.stopPropagation();
     internalDragCounterRef.current = 0;
     setIsInternalDragOver(false);
-
+ 
     // Check for file reference first
     const fileName = e.dataTransfer.getData(LUMO_FILE_REF_MIME);
     if (fileName && onInternalFileDrop) {
       onInternalFileDrop(fileName);
       return;
     }
-
+ 
     // Otherwise treat as text drop
     const text = e.dataTransfer.getData('text/plain');
     if (text?.trim() && onInternalTextDrop) {
       onInternalTextDrop(text.trim());
     }
   }, [isInternalDrag, onInternalFileDrop, onInternalTextDrop]);
-
+ 
   return (
     <div
       className="p-3 shrink-0"
@@ -226,7 +240,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             </motion.div>
           )}
         </AnimatePresence>
-
+ 
         {/* Textarea body */}
         <div className="px-3 pt-3 pb-1">
           <Textarea
@@ -240,7 +254,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             rows={1}
           />
         </div>
-
+ 
         {/* Footer toolbar */}
         <div className="flex items-center justify-between px-2 pb-2">
           <div className="flex items-center gap-0.5">
