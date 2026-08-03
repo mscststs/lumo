@@ -131,7 +131,7 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
   const allModels: ModelOption[] = providers.flatMap((p) =>
     p.models.map((m) => ({
       value: `${p.id}::${m.id}`,
-      label: `${m.displayName} (${p.name})`,
+      label: m.displayName,
     })),
   );
 

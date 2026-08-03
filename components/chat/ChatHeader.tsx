@@ -4,15 +4,19 @@ import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import type { ModelOption } from '@/store/useModelSelection';
+import type { ProviderConfig } from '@/types';
 
 interface ChatHeaderProps {
   currentModelValue: string;
   allModels: ModelOption[];
+  providers: ProviderConfig[];
   onModelChange: (value: string) => void;
   onNewChat: () => void;
   onOpenHistory: () => void;
@@ -25,6 +29,7 @@ interface ChatHeaderProps {
 export function ChatHeader({
   currentModelValue,
   allModels,
+  providers,
   onModelChange,
   onNewChat,
   onOpenHistory,
@@ -53,12 +58,21 @@ export function ChatHeader({
           <SelectTrigger className="h-8 text-xs font-medium w-auto min-w-0 mr-2 border-0 bg-transparent px-1.5 py-1 shadow-none hover:bg-muted/60 rounded-md transition-colors gap-1">
             <SelectValue placeholder={t('sidebar.selectModel')} />
           </SelectTrigger>
-          <SelectContent>
-            {allModels.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                {m.label}
-              </SelectItem>
-            ))}
+          <SelectContent className="min-w-[13rem] font-mono">
+            {providers.map((p) => {
+              const models = allModels.filter((m) => m.value.startsWith(`${p.id}::`));
+              if (models.length === 0) return null;
+              return (
+                <SelectGroup key={p.id}>
+                  <SelectLabel>{p.name}</SelectLabel>
+                  {models.map((m) => (
+                    <SelectItem key={m.value} value={m.value} className="text-xs">
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>

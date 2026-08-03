@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
-import { LUMO_FILE_REF_MIME } from '@/lib/constants';
+import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import {
   Message,
   MessageContent,
@@ -26,7 +26,7 @@ export function MessageBubble({ message, isStreaming = false }: MessageBubblePro
   if (isUser) {
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <Message from="user">
+        <Message from="user" className="gap-2">
           {/* Attachments rendered OUTSIDE the bubble */}
           <UserAttachments parts={parts} textAttachments={message.textAttachments} />
 
@@ -125,6 +125,7 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
   const handleDragStart = (e: React.DragEvent) => {
     // Set the image URL as draggable HTML (img tag) so the global drop handler
     // can detect it as an image drag, same as dragging from a web page.
+    e.dataTransfer.setData(LUMO_IMAGE_DRAG_MIME, image.url);
     e.dataTransfer.setData('text/html', `<img src="${image.url}" />`);
     e.dataTransfer.setData('text/plain', image.url);
     e.dataTransfer.effectAllowed = 'copy';

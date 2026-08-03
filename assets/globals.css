@@ -79,8 +79,12 @@
     @apply border-border;
     outline: none !important;
   }
-  *:focus,
-  *:focus-visible {
+  /* Suppress native focus rings app-wide. Radix Select focuses its content
+     element when the pointer leaves a highlighted item onto a group label, so
+     exempt the listbox (the dropdown panel) from the box-shadow suppression to
+     keep its `shadow-md`. */
+  *:focus:not([role="listbox"]),
+  *:focus-visible:not([role="listbox"]) {
     outline: none !important;
     box-shadow: none !important;
   }

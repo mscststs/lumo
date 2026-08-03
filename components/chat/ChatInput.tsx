@@ -4,7 +4,7 @@ import { Send, Square, ImagePlus, X, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { LUMO_FILE_REF_MIME } from '@/lib/constants';
+import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import type { TextAttachment } from '@/types';
  
 export interface ChatInputHandle {
@@ -161,19 +161,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     internalDragCounterRef.current = 0;
     setIsInternalDragOver(false);
  
+    // Check for image drag (from chat history image attachments) first
+    const imageDataUrl = e.dataTransfer.getData(LUMO_IMAGE_DRAG_MIME);
+    if (imageDataUrl) {
+      if (isVisionModel) {
+        setImages((prev) => [...prev, imageDataUrl]);
+      }
+      return;
+    }
+
     // Check for file reference first
     const fileName = e.dataTransfer.getData(LUMO_FILE_REF_MIME);
     if (fileName && onInternalFileDrop) {
       onInternalFileDrop(fileName);
       return;
     }
- 
+
     // Otherwise treat as text drop
     const text = e.dataTransfer.getData('text/plain');
     if (text?.trim() && onInternalTextDrop) {
       onInternalTextDrop(text.trim());
     }
-  }, [isInternalDrag, onInternalFileDrop, onInternalTextDrop]);
+  }, [isInternalDrag, isVisionModel, onInternalFileDrop, onInternalTextDrop]);
  
   return (
     <div

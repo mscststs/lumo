@@ -9,6 +9,7 @@ import { ConversationFiles } from '@/components/chat/ConversationFiles';
 import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { useModelSelection } from '@/store/useModelSelection';
 import { useChatStream } from '@/store/useChatStream';
+import { classifyDroppedContent } from '@/lib/drop-content';
 import type { TextAttachment, Conversation } from '@/types';
 import type { ContextMenuPendingData } from '@/lib/context-menu';
 
@@ -78,6 +79,7 @@ export function ChatPanel({
   const {
     currentModelValue,
     allModels,
+    providers,
     getSelectedProvider,
     getSelectedModel,
     isVisionModel,
@@ -241,6 +243,36 @@ export function ChatPanel({
     e.preventDefault();
   }, []);
 
+  const addTextAttachmentFromDrop = (content: string, mediaType: 'text/plain' | 'text/html') => {
+    const preview = content.replace(/<[^>]*>/g, '').trim().slice(0, 50);
+    const attachment: TextAttachment = {
+      id: uuidv4(),
+      mediaType,
+      content,
+      preview: preview || content.slice(0, 50),
+    };
+    chatInputRef.current?.addTextAttachment(attachment);
+  };
+
+  /** Resolve a dragged image source (data URL or remote URL) into a data URL. */
+  const resolveImageSrc = useCallback(async (src: string): Promise<string | null> => {
+    if (src.startsWith('data:')) {
+      return src.startsWith('data:image/') ? src : null;
+    }
+    try {
+      const blob = await fetch(src).then((res) => res.blob());
+      if (!blob.type.startsWith('image/')) return null;
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = () => reject(new Error(`Failed to read image blob from ${src}`));
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }, []);
+
   const handlePanelDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current = 0;
@@ -277,57 +309,47 @@ export function ChatPanel({
 
     if (hasImageFile) return;
 
-    // Check for dragged images (e.g. img elements from web pages)
+    // Classify the dropped HTML/text into pure text, pure images, or mixed content.
     const htmlData = dataTransfer.getData('text/html');
-    if (visionEnabled && htmlData) {
-      const imgMatch = /<img[^>]+src=["']([^"']+)["']/i.exec(htmlData);
-      if (imgMatch?.[1]) {
-        const imgSrc = imgMatch[1];
-        if (imgSrc.startsWith('data:')) {
-          chatInputRef.current?.addImages([imgSrc]);
+    const textData = dataTransfer.getData('text/plain');
+    const classified = classifyDroppedContent(htmlData, textData);
+
+    switch (classified.type) {
+      case 'text':
+        if (classified.text?.trim()) {
+          addTextAttachmentFromDrop(classified.text, 'text/plain');
+        }
+        return;
+
+      case 'html':
+        // Mixed text + images (or preserved HTML): keep as an HTML attachment.
+        if (classified.html?.trim()) {
+          addTextAttachmentFromDrop(classified.html, 'text/html');
+        }
+        return;
+
+      case 'image': {
+        // Pure image selection: extract all image sources.
+        if (!visionEnabled || !classified.images?.length) {
+          // Vision disabled: fall back to an HTML attachment to avoid data loss.
+          if (classified.html?.trim()) {
+            addTextAttachmentFromDrop(classified.html, 'text/html');
+          }
           return;
         }
-        fetch(imgSrc)
-          .then((res) => res.blob())
-          .then((blob) => {
-            if (blob.type.startsWith('image/')) {
-              const reader = new FileReader();
-              reader.onload = (ev) => {
-                chatInputRef.current?.addImages([ev.target?.result as string]);
-              };
-              reader.readAsDataURL(blob);
+        void Promise.all(classified.images.map(resolveImageSrc))
+          .then((urls) => urls.filter((url): url is string => url !== null))
+          .then((urls) => {
+            if (urls.length > 0) {
+              chatInputRef.current?.addImages(urls);
+            } else if (classified.html?.trim()) {
+              addTextAttachmentFromDrop(classified.html, 'text/html');
             }
-          })
-          .catch(() => {
-            addTextAttachmentFromDrop(htmlData, 'text/html');
           });
         return;
       }
     }
-
-    // Handle text/html content (non-image HTML fragments)
-    if (htmlData && htmlData.trim()) {
-      addTextAttachmentFromDrop(htmlData, 'text/html');
-      return;
-    }
-
-    // Handle plain text
-    const textData = dataTransfer.getData('text/plain');
-    if (textData && textData.trim()) {
-      addTextAttachmentFromDrop(textData, 'text/plain');
-    }
-  }, [isVisionModel, isInternalDrag]);
-
-  const addTextAttachmentFromDrop = (content: string, mediaType: 'text/plain' | 'text/html') => {
-    const preview = content.replace(/<[^>]*>/g, '').trim().slice(0, 50);
-    const attachment: TextAttachment = {
-      id: uuidv4(),
-      mediaType,
-      content,
-      preview: preview || content.slice(0, 50),
-    };
-    chatInputRef.current?.addTextAttachment(attachment);
-  };
+  }, [isVisionModel, isInternalDrag, resolveImageSrc]);
 
   // ─── File reference (from ConversationFiles panel) ────────────────────────
 
@@ -389,6 +411,7 @@ export function ChatPanel({
       <ChatHeader
         currentModelValue={currentModelValue}
         allModels={allModels}
+        providers={providers}
         onModelChange={handleModelChange}
         onNewChat={onNewChat}
         onOpenHistory={() => setIsHistoryOpen(true)}
