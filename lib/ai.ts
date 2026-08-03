@@ -14,6 +14,7 @@ import {
 } from 'ai';
 import type { ProviderConfig, ModelConfig, ChatMessagePart } from '@/types';
 import { normalizeProviderType } from '@/lib/provider-type';
+import { toError } from '@/lib/provider-error';
 import { mcpRegistry } from '@/lib/mcp';
 
 /**
@@ -319,7 +320,7 @@ export async function chatStream({
   const failOnce = (error: unknown) => {
     if (settled) return;
     settled = true;
-    onError(error instanceof Error ? error : new Error(String(error)));
+    onError(toError(error));
   };
 
   try {
@@ -458,7 +459,9 @@ export async function runAgentLoop({
         sendReasoning: true,
         // Defaults to masking errors as "An error occurred." to avoid leaking
         // server details; here the model call is the user's own, so show it.
-        onError: (error) => (error instanceof Error ? error.message : String(error)),
+        // Providers may emit non-`Error` frames, so unwrap rather than
+        // stringify — `String(frame)` would collapse to "[object Object]".
+        onError: (error) => toError(error).message,
       }),
       onError: handleError,
     });

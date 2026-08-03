@@ -40,6 +40,7 @@ export const zh: TranslationSchema = {
       retrying: '正在重试 ({{current}}/{{max}})...',
       networkError: '网络连接失败，请检查网络连接。',
       authError: '认证失败，请在设置中检查 API 密钥。',
+      quotaError: '服务商账户额度已用尽，请充值或切换服务商后重试。',
       rateLimitError: '请求频率超限，将自动重试。',
       serverError: '模型服务返回错误，请稍后再试。',
       timeoutError: '请求超时，请重试。',

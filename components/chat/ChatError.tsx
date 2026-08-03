@@ -2,12 +2,14 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { categorizeError, isRetryableCategory } from '@/lib/provider-error';
+import type { ChatErrorCategory } from '@/lib/provider-error';
 
 export interface ChatErrorInfo {
   /** Original error message from the API/network */
   message: string;
   /** Classified error category for user-friendly display */
-  category: 'network' | 'auth' | 'rateLimit' | 'server' | 'timeout' | 'unknown';
+  category: ChatErrorCategory;
 }
 
 interface ChatErrorProps {
@@ -23,79 +25,29 @@ interface ChatErrorProps {
 }
 
 /**
- * Classifies a raw Error into a user-facing error category.
+ * Classify a raw Error into a user-facing category.
+ *
+ * Thin wrapper over `categorizeError`, which prefers the provider's own code and
+ * HTTP status over matching on the message text.
  */
 export function classifyError(error: Error): ChatErrorInfo {
-  const msg = error.message.toLowerCase();
-
-  if (
-    msg.includes('fetch') ||
-    msg.includes('network') ||
-    msg.includes('failed to fetch') ||
-    msg.includes('net::') ||
-    msg.includes('econnrefused') ||
-    msg.includes('enotfound')
-  ) {
-    return { message: error.message, category: 'network' };
-  }
-
-  if (
-    msg.includes('401') ||
-    msg.includes('403') ||
-    msg.includes('unauthorized') ||
-    msg.includes('forbidden') ||
-    msg.includes('invalid api key') ||
-    msg.includes('invalid_api_key') ||
-    msg.includes('authentication')
-  ) {
-    return { message: error.message, category: 'auth' };
-  }
-
-  if (
-    msg.includes('429') ||
-    msg.includes('rate limit') ||
-    msg.includes('rate_limit') ||
-    msg.includes('too many requests') ||
-    msg.includes('quota')
-  ) {
-    return { message: error.message, category: 'rateLimit' };
-  }
-
-  if (
-    msg.includes('timeout') ||
-    msg.includes('timed out') ||
-    msg.includes('deadline')
-  ) {
-    return { message: error.message, category: 'timeout' };
-  }
-
-  if (
-    msg.includes('500') ||
-    msg.includes('502') ||
-    msg.includes('503') ||
-    msg.includes('504') ||
-    msg.includes('internal server error') ||
-    msg.includes('service unavailable') ||
-    msg.includes('bad gateway') ||
-    msg.includes('overloaded')
-  ) {
-    return { message: error.message, category: 'server' };
-  }
-
-  return { message: error.message, category: 'unknown' };
+  return { message: error.message, category: categorizeError(error) };
 }
 
 /**
  * Whether this error category is safe to auto-retry.
- * Auth errors should NOT be retried automatically.
+ *
+ * Auth and quota failures are deterministic: retrying burns the backoff delay
+ * and hits the same wall, so they surface immediately instead.
  */
-export function isRetryableError(category: ChatErrorInfo['category']): boolean {
-  return category !== 'auth';
+export function isRetryableError(category: ChatErrorCategory): boolean {
+  return isRetryableCategory(category);
 }
 
-const categoryToI18nKey: Record<ChatErrorInfo['category'], string> = {
+const categoryToI18nKey: Record<ChatErrorCategory, string> = {
   network: 'sidebar.error.networkError',
   auth: 'sidebar.error.authError',
+  quota: 'sidebar.error.quotaError',
   rateLimit: 'sidebar.error.rateLimitError',
   server: 'sidebar.error.serverError',
   timeout: 'sidebar.error.timeoutError',
@@ -106,7 +58,6 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
   const { t } = useTranslation();
 
   const friendlyMessage = t(categoryToI18nKey[error.category]);
-  const canRetry = isRetryableError(error.category);
 
   return (
     <motion.div
@@ -146,7 +97,13 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
             {t('sidebar.error.retrying', { current: retryAttempt, max: maxRetries })}
           </span>
         )}
-        {!isRetrying && canRetry && (
+        {/*
+          Always offered, even for categories `isRetryableError` excludes: that
+          flag only governs *automatic* retries. Once the user fixes the key or
+          tops up credits, a manual retry resumes this conversation instead of
+          forcing them to start a new one.
+        */}
+        {!isRetrying && (
           <Button
             variant="outline"
             size="sm"

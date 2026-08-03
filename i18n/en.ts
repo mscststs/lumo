@@ -38,6 +38,7 @@ export const en = {
       retrying: 'Retrying ({{current}}/{{max}})...',
       networkError: 'Network connection failed. Please check your connection.',
       authError: 'Authentication failed. Please check your API key in Settings.',
+      quotaError: 'Your provider account is out of credits. Top up or switch providers, then retry.',
       rateLimitError: 'Rate limit reached. Will retry automatically.',
       serverError: 'The model service returned an error. Please try again later.',
       timeoutError: 'Request timed out. Please try again.',
