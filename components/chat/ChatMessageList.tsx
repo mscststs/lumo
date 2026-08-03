@@ -38,14 +38,23 @@ export function ChatMessageList({
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
 
-  const messages = currentConversation?.messages ?? [];
+  const persisted = currentConversation?.messages ?? [];
   // The streamed turn is persisted under the id it streamed under, so once the
   // conversation contains it the live copy must step aside — otherwise the reply
   // would briefly appear twice.
   const pending =
-    streamingMessage && !messages.some((msg) => msg.id === streamingMessage.id)
+    streamingMessage && !persisted.some((msg) => msg.id === streamingMessage.id)
       ? streamingMessage
       : null;
+
+  // Persisted and in-flight messages must live in ONE array, not in an array
+  // plus a trailing conditional slot. React scopes keys to a position among
+  // siblings: a keyed element sitting in its own JSX slot is a different
+  // position from the same key inside the mapped array, so when the finished
+  // turn moved from the slot into the array React unmounted and remounted it —
+  // discarding the DOM and replaying MessageBubble's entry animation. Keeping
+  // both in one list makes the hand-off a plain in-place update.
+  const rendered = pending ? [...persisted, pending] : persisted;
 
   return (
     <ConversationContainer className="flex-1">
@@ -55,19 +64,13 @@ export function ChatMessageList({
             {t('sidebar.noModels')}
           </div>
         )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+        {rendered.map((msg) => (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            isStreaming={isStreaming && msg.id === pending?.id}
+          />
         ))}
-        {/*
-          Rendered as a `MessageBubble` keyed by the assistant id it will be
-          saved under. When the turn finishes, the persisted message takes over
-          this exact key and slot, so React patches the existing DOM instead of
-          unmounting the live bubble and mounting a fresh one — which is what
-          made the completed reply flash and replay its entry animation.
-        */}
-        {pending && (
-          <MessageBubble key={pending.id} message={pending} isStreaming={isStreaming} />
-        )}
         {isStreaming && !pending && !chatError && (
           <motion.div
             initial={{ opacity: 0 }}
