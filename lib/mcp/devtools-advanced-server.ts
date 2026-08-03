@@ -333,10 +333,14 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
             captureBeyondViewport: true,
           }) as { data: string };
           return {
-            success: true,
-            dataUrl: `data:image/${format || 'png'};base64,${result.data}`,
-            dimensions: { width, height },
-            format: format || 'png',
+            content: [
+              { type: 'image', data: result.data, mimeType: `image/${format || 'png'}` },
+              {
+                type: 'text',
+                text: `Full-page screenshot captured (${format || 'png'}, ${width}x${height})`,
+              },
+            ],
+            isError: false,
           };
         },
       }),
@@ -362,10 +366,14 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
             clip: { ...bounds, scale: 1 },
           }) as { data: string };
           return {
-            success: true,
-            dataUrl: `data:image/png;base64,${result.data}`,
-            selector,
-            bounds,
+            content: [
+              { type: 'image', data: result.data, mimeType: 'image/png' },
+              {
+                type: 'text',
+                text: `Element screenshot captured (${selector}, ${Math.round(bounds.width)}x${Math.round(bounds.height)})`,
+              },
+            ],
+            isError: false,
           };
         },
       }),

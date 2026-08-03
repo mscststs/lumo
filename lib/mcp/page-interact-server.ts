@@ -708,14 +708,23 @@ export class PageInteractMcpServer implements IMcpServer {
             await chrome.tabs.update(targetTabId, { active: true });
             await new Promise((resolve) => setTimeout(resolve, 200));
           }
+          const imageFormat = format || 'png';
           const options: { format?: string; quality?: number } = {
-            format: format || 'png',
+            format: imageFormat,
           };
           if (format === 'jpeg' && quality !== undefined) {
             options.quality = quality;
           }
           const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, options as chrome.extensionTypes.ImageDetails);
-          return { success: true, dataUrl, format: format || 'png' };
+          const comma = dataUrl.indexOf(',');
+          const mimeType = dataUrl.slice(5, comma).split(';')[0] || (imageFormat === 'jpeg' ? 'image/jpeg' : 'image/png');
+          return {
+            content: [
+              { type: 'image', data: comma > 0 ? dataUrl.slice(comma + 1) : dataUrl, mimeType },
+              { type: 'text', text: `Screenshot captured (${imageFormat})` },
+            ],
+            isError: false,
+          };
         },
       }),
 
