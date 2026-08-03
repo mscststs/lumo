@@ -219,6 +219,42 @@ export function createProvider(
   return { model: openai.chat(model.modelId) };
 }
 
+/**
+ * A resumable snapshot of an interrupted `chatStream` run.
+ *
+ * `modelMessages` bypasses `convertToModelMessages`, so it is only valid for the
+ * exact conversation and provider/model that produced it — the wire shape of
+ * tool calls differs per provider. `fingerprint` carries that identity so a
+ * stale snapshot (e.g. the user switched models before retrying) is discarded
+ * rather than sent to an incompatible endpoint.
+ */
+export interface ResumeState extends AgentLoopCheckpoint {
+  fingerprint: string;
+}
+
+/** Identity a `ResumeState` must match to be safely replayed. */
+export function resumeFingerprint({
+  conversationId,
+  provider,
+  model,
+  messageCount,
+}: {
+  conversationId: string;
+  provider: ProviderConfig;
+  model: ModelConfig;
+  /** Guards against replaying onto a conversation that has since grown. */
+  messageCount: number;
+}): string {
+  return [
+    conversationId,
+    provider.id,
+    normalizeProviderType(provider.type),
+    provider.baseUrl ?? '',
+    model.modelId,
+    messageCount,
+  ].join('\u0000');
+}
+
 export interface ChatStreamOptions {
   provider: ProviderConfig;
   model: ModelConfig;
@@ -243,6 +279,13 @@ export interface ChatStreamOptions {
   enableTools?: boolean;
   /** Conversation ID for the current stream (passed to tools for file association) */
   conversationId?: string;
+  /**
+   * Resume an interrupted run from its last completed step instead of replaying
+   * the whole conversation. Ignored when the fingerprint does not match.
+   */
+  resume?: ResumeState;
+  /** Emits a resume checkpoint after every completed step. */
+  onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
 }
 
 export async function chatStream({
@@ -256,8 +299,12 @@ export async function chatStream({
   signal,
   enableTools = true,
   conversationId,
+  resume,
+  onStepComplete,
 }: ChatStreamOptions) {
-  let latestParts: ChatMessagePart[] = [];
+  // Seed with the resumed parts so an abort or a second failure still reports
+  // everything streamed across attempts, not just the current one.
+  let latestParts: ChatMessagePart[] = resume ? [...resume.parts] : [];
   // `readUIMessageStream` reports errors via its `onError` callback and then
   // closes the stream normally, so guard the terminal callbacks to make sure
   // exactly one of onFinish/onError runs (otherwise the message is saved twice).
@@ -284,17 +331,18 @@ export async function chatStream({
       : {};
     const trimmedSystem = system?.trim();
 
-    // Rebuild the model prompt from history. `tools` resolves each stored tool
-    // result against its definition (applying `toModelOutput`), and the
-    // sanitizer strips stale image payloads so old screenshots can never bloat
-    // the context again.
-    const modelMessages = sanitizeToolResultImages(
-      await convertToModelMessages(messages, {
-        tools,
-        // A tool call left dangling by an aborted stream would otherwise throw.
-        ignoreIncompleteToolCalls: true,
-      }),
-    );
+    // Resuming replays the checkpoint verbatim: it is already a model prompt
+    // with sanitized tool results, so re-deriving it from history would both
+    // waste work and lose the synthetic image messages the loop injected.
+    const modelMessages = resume
+      ? resume.modelMessages
+      : sanitizeToolResultImages(
+          await convertToModelMessages(messages, {
+            tools,
+            // A tool call left dangling by an aborted stream would otherwise throw.
+            ignoreIncompleteToolCalls: true,
+          }),
+        );
 
     const parts = await runAgentLoop({
       model: aiModel,
@@ -302,12 +350,14 @@ export async function chatStream({
       tools,
       system: trimmedSystem,
       messages: modelMessages,
+      initialParts: resume?.parts,
       signal,
       onUpdate: (updatedParts) => {
         latestParts = updatedParts;
         onUpdate(updatedParts);
       },
       onError: failOnce,
+      onStepComplete,
     });
     latestParts = parts;
 
@@ -329,10 +379,27 @@ export interface RunAgentLoopOptions {
   system?: string;
   messages: ModelMessage[];
   signal?: AbortSignal;
+  /** Parts already streamed by earlier steps, when resuming a failed run. */
+  initialParts?: ChatMessagePart[];
   /** Called on every stream update with the full, ordered part list. */
   onUpdate?: (parts: ChatMessagePart[]) => void;
   /** Called when a model stream reports an error. */
   onError?: (error: unknown) => void;
+  /**
+   * Called once per fully completed step with the exact prompt the *next* step
+   * would run with. This is the resume checkpoint: it is emitted after tool
+   * results and tool-produced images have been folded into the prompt, so
+   * replaying it reproduces the loop state without re-running the step.
+   */
+  onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
+}
+
+/** Snapshot of the agent loop between two steps. */
+export interface AgentLoopCheckpoint {
+  /** Full model prompt as of the end of the completed step. */
+  modelMessages: ModelMessage[];
+  /** Every UI part streamed up to and including the completed step. */
+  parts: ChatMessagePart[];
 }
 
 /**
@@ -352,13 +419,17 @@ export async function runAgentLoop({
   system,
   messages,
   signal,
+  initialParts,
   onUpdate,
   onError,
+  onStepComplete,
 }: RunAgentLoopOptions): Promise<ChatMessagePart[]> {
   const hasTools = Object.keys(tools).length > 0;
   const trimmedSystem = system?.trim();
   let modelMessages = sanitizeToolResultImages(messages);
-  let latestParts: ChatMessagePart[] = [];
+  // Seeding with the parts already streamed lets a resumed run keep appending
+  // instead of restarting the part list, so the UI never loses earlier steps.
+  let latestParts: ChatMessagePart[] = initialParts ? [...initialParts] : [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
     // `readUIMessageStream` reports stream errors via `onError` and then closes
@@ -423,6 +494,14 @@ export async function runAgentLoop({
         message.content.some((part) => part.type === 'tool-call'),
     );
     if (!hasPendingToolCalls) break;
+
+    // Checkpoint *after* image injection, so the snapshot is byte-for-byte the
+    // prompt the next iteration is about to send. Emitted only when the loop
+    // continues, which makes "a checkpoint exists" mean "work remains".
+    onStepComplete?.({
+      modelMessages: [...modelMessages],
+      parts: [...latestParts],
+    });
   }
 
   return latestParts;

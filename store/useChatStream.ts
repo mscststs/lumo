@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { chatStream } from '@/lib/ai';
+import { chatStream, resumeFingerprint } from '@/lib/ai';
+import type { ResumeState } from '@/lib/ai';
 import { storage } from '@/store/storage';
 import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
@@ -71,6 +72,11 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   const abortControllerRef = useRef<AbortController | null>(null);
   // Identifies the request that currently owns the UI.
   const activeRequestIdRef = useRef<string | null>(null);
+  // Last completed agent-loop step of the current assistant turn. A retry
+  // replays this instead of the whole turn, so finished tool calls are not run
+  // twice. Held in a ref because it must survive the delay between a failure
+  // and the retry without re-rendering.
+  const resumeStateRef = useRef<ResumeState | null>(null);
 
   // Cancels the in-flight request and invalidates its pending callbacks.
   const abortActiveStream = useCallback(() => {
@@ -81,6 +87,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
+    resumeStateRef.current = null;
     setIsStreaming(false);
     setStreamingParts([]);
     setChatError(null);
@@ -130,6 +137,12 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   /**
    * Executes the stream request. Separated from `handleSend` so it can be
    * called again on retries without re-preparing the conversation.
+   *
+   * `resume` replays the last completed agent-loop step instead of the whole
+   * turn, so a mid-turn failure does not re-run tool calls that already
+   * succeeded. It is dropped when its fingerprint no longer matches the request
+   * about to be sent (different conversation, provider, model, or history
+   * length), because the snapshot is a provider-shaped model prompt.
    */
    const executeStream = useCallback(
     async (
@@ -137,6 +150,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       provider: ProviderConfig,
       model: ModelConfig,
       attempt: number,
+      resume?: ResumeState | null,
     ) => {
       // Reuse the system prompt snapshot stored in the conversation so that
       // time-injected prompts stay stable across messages and provider prompt
@@ -155,6 +169,17 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
       const uiMessages = toUIMessages(convWithUserMessage.messages);
 
+      const fingerprint = resumeFingerprint({
+        conversationId: convWithUserMessage.id,
+        provider,
+        model,
+        messageCount: convWithUserMessage.messages.length,
+      });
+      const resumeFrom =
+        resume && resume.fingerprint === fingerprint ? resume : undefined;
+      // A mismatched snapshot must not leak into the next attempt either.
+      resumeStateRef.current = resumeFrom ?? null;
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
       const requestId = uuidv4();
@@ -162,7 +187,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
       const isStale = () => activeRequestIdRef.current !== requestId;
 
-      let latestParts: ChatMessagePart[] = [];
+      let latestParts: ChatMessagePart[] = resumeFrom ? [...resumeFrom.parts] : [];
 
       const persist = async (parts: ChatMessagePart[]) => {
         const stale = isStale();
@@ -170,6 +195,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         if (!stale) {
           activeRequestIdRef.current = null;
           abortControllerRef.current = null;
+          resumeStateRef.current = null;
           setIsStreaming(false);
           setStreamingParts([]);
           setChatError(null);
@@ -207,6 +233,11 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         system,
         signal: controller.signal,
         conversationId: convWithUserMessage.id,
+        resume: resumeFrom,
+        onStepComplete: (checkpoint) => {
+          if (isStale()) return;
+          resumeStateRef.current = { ...checkpoint, fingerprint };
+        },
         onUpdate: (parts) => {
           latestParts = parts;
           if (isStale()) return;
@@ -228,10 +259,17 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
               setStreamingParts(latestParts);
             }
 
+            const resumeForRetry = resumeStateRef.current;
             const delay = RETRY_BASE_DELAY * Math.pow(2, attempt);
             retryTimeoutRef.current = setTimeout(() => {
               retryTimeoutRef.current = null;
-              void executeStream(convWithUserMessage, provider, model, nextAttempt);
+              void executeStream(
+                convWithUserMessage,
+                provider,
+                model,
+                nextAttempt,
+                resumeForRetry,
+              );
             }, delay);
           } else {
             setIsStreaming(false);
@@ -241,6 +279,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
             setRetryAttempt(nextAttempt > MAX_RETRIES ? MAX_RETRIES : nextAttempt);
             abortControllerRef.current = null;
             activeRequestIdRef.current = null;
+            // Snapshot is intentionally kept so the manual retry button can
+            // still resume from the last completed step.
           }
         },
       });
@@ -314,6 +354,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       setChatError(null);
       setIsRetrying(false);
       setRetryAttempt(0);
+      // A new turn invalidates any snapshot left by the previous one.
+      resumeStateRef.current = null;
 
       const convWithUserMessage = conv;
       await openConversation(convWithUserMessage);
@@ -332,13 +374,20 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       const model = getModel();
       if (!provider || !model) return;
 
+      const resume = resumeStateRef.current;
+
       setChatError(null);
       setIsRetrying(false);
       setRetryAttempt(0);
       setIsStreaming(true);
-      setStreamingParts([]);
+      // Resuming keeps the already-streamed steps on screen; `executeStream`
+      // re-seeds them and appends the remaining steps. Only a full restart
+      // clears the transcript.
+      if (!resume) {
+        setStreamingParts([]);
+      }
 
-      void executeStream(currentConversation, provider, model, 0);
+      void executeStream(currentConversation, provider, model, 0, resume);
     },
     [currentConversation, isStreaming, executeStream],
   );
@@ -349,6 +398,9 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       retryTimeoutRef.current = null;
     }
     abortControllerRef.current?.abort();
+    // Stopping is an explicit abandon: the partial turn is persisted by
+    // `chatStream`'s abort path, so there is nothing left to resume into.
+    resumeStateRef.current = null;
     setIsStreaming(false);
     setChatError(null);
     setIsRetrying(false);
