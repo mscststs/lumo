@@ -18,19 +18,13 @@ import { Button } from '@/components/ui/button';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { normalizeMessage, toolPartName } from '@/lib/message-parts';
+import { panelConversationKey } from '@/lib/panel-storage';
 import { safeStringify } from '@/lib/tool-output';
 import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
 import type { ToolPart } from '@/lib/message-parts';
 
 /** Storage key for the actual visible panel count */
 const VISIBLE_PANELS_KEY = 'splitView_visiblePanelCount';
-
-/**
- * Returns the storage key for a panel's current conversation ID.
- */
-function getConvStorageKey(panelId: number): string {
-  return panelId === 0 ? 'currentConversationId' : `currentConversationId_${panelId}`;
-}
 
 /**
  * Debug entry representing one logical "card" in the timeline.
@@ -191,7 +185,7 @@ export function ChatDebugPage() {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const convKey = getConvStorageKey(selectedPanel);
+      const convKey = panelConversationKey(selectedPanel);
       const convResult = await chrome.storage.local.get(convKey);
       const currentId = convResult[convKey] as string | null | undefined;
       if (cancelled) return;
@@ -214,7 +208,7 @@ export function ChatDebugPage() {
     'conversations',
     useCallback((newConversations) => {
       if (!newConversations) return;
-      const convKey = getConvStorageKey(selectedPanel);
+      const convKey = panelConversationKey(selectedPanel);
       chrome.storage.local.get(convKey).then((result) => {
         const currentId = result[convKey] as string | null | undefined;
         if (!currentId) {
@@ -228,7 +222,7 @@ export function ChatDebugPage() {
 
   // Watch for the selected panel's currentConversationId changes
   useEffect(() => {
-    const convKey = getConvStorageKey(selectedPanel);
+    const convKey = panelConversationKey(selectedPanel);
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },
       areaName: string,

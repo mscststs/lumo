@@ -1,17 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { storage } from './storage';
 import { useStorageWatch } from './useStorageWatch';
+import { panelConversationKey } from '@/lib/panel-storage';
 import type { Conversation } from '@/types';
-
-/**
- * Returns the chrome.storage.local key used to persist the current conversation
- * for a given panel. Panel 0 (rightmost / primary) uses the canonical
- * `currentConversationId` key for backward compatibility. Secondary panels
- * use `currentConversationId_1`, `currentConversationId_2`.
- */
-function getCurrentConvStorageKey(panelId: number): string {
-  return panelId === 0 ? 'currentConversationId' : `currentConversationId_${panelId}`;
-}
 
 interface UseConversationsOptions {
   /**
@@ -37,7 +28,7 @@ interface UseConversationsOptions {
  */
 export function useConversations(options?: UseConversationsOptions) {
   const panelId = options?.panelId ?? 0;
-  const storageKey = getCurrentConvStorageKey(panelId);
+  const storageKey = panelConversationKey(panelId);
   const occupiedSessionIds = options?.occupiedSessionIds;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);

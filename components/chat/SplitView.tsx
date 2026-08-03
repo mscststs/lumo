@@ -3,6 +3,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { storage } from '@/store/storage';
+import {
+  closePanelSlot,
+  openPanelSlot,
+  shiftPanelSessions,
+} from '@/lib/panel-storage';
 import type { UISettings } from '@/types';
 
 /** Minimum width for each panel in pixels */
@@ -37,10 +42,13 @@ function computeMaxPanels(containerWidth: number, userMax: 1 | 2 | 3): number {
  *   only by explicit user actions (split button / close button).
  * - visiblePanelCount: how many panels are actually rendered, constrained by
  *   available width. = min(intendedPanelCount, allowedByWidth).
- * - When width shrinks and panels are hidden temporarily, their conversations
- *   are released (other panels can switch to them). When width restores, the
- *   panels reappear as fresh new chats.
- * - Manual close (X button) permanently reduces intendedPanelCount.
+ * - Hiding a panel because the window got too narrow is temporary: only the
+ *   in-memory session claim is dropped, so another panel may take that
+ *   conversation over meanwhile. Storage is left untouched, so when width
+ *   restores the panel resumes the same conversation (unless it was claimed).
+ * - Manual close (X button) permanently reduces intendedPanelCount. It releases
+ *   the slot's conversation but keeps its model choice, so re-splitting reopens
+ *   the panel on the model that slot last used.
  *
  * Panel ID scheme:
  *   - panelId 0 = rightmost (primary) panel — always present, has Settings button
@@ -220,7 +228,10 @@ export function SplitView() {
     if (containerWidth <= 0) return; // Skip before first measurement
 
     if (targetVisibleCount < visiblePanelCount) {
-      // Width shrunk — hide panels from the left (highest panelId).
+      // Width shrunk — hide panels from the left (highest panelId). Only the
+      // session claim is dropped, never storage: hiding is temporary, so the
+      // panel must be able to resume this conversation when width returns.
+      // Dropping the claim also lets a still-visible panel open it meanwhile.
       setSessionIds((prev) => {
         const next = [...prev];
         for (let id = targetVisibleCount; id < visiblePanelCount; id++) {
@@ -274,53 +285,22 @@ export function SplitView() {
   const handleSplit = useCallback(() => {
     const newIntended = intendedPanelCount + 1;
     if (newIntended > maxSplitPanels) return;
-    const newPanelId = newIntended - 1;
-    const convKey = `currentConversationId_${newPanelId}`;
-    void chrome.storage.local.set({ [convKey]: null });
+    void openPanelSlot(chrome.storage.local, newIntended - 1);
     persistIntendedCount(newIntended);
   }, [intendedPanelCount, maxSplitPanels, persistIntendedCount]);
 
   /**
-   * Manual close (X button): permanently removes a panel.
-   * Shifts storage keys for panels above the closed one.
+   * Manual close (X button): permanently removes a panel, shifting the slots
+   * above it down so panel ids stay contiguous.
    */
   const handleClosePanel = useCallback(async (closedPanelId: number) => {
     if (intendedPanelCount <= 1) return;
 
-    const newIntended = intendedPanelCount - 1;
+    await closePanelSlot(chrome.storage.local, closedPanelId, intendedPanelCount);
 
-    // Migrate storage: shift panels with id > closedPanelId down by one
-    for (let id = closedPanelId; id < intendedPanelCount - 1; id++) {
-      const sourceId = id + 1;
-      const sourceModelKey = sourceId === 0 ? 'selectedModel' : `selectedModel_${sourceId}`;
-      const sourceConvKey = sourceId === 0 ? 'currentConversationId' : `currentConversationId_${sourceId}`;
-      const targetModelKey = id === 0 ? 'selectedModel' : `selectedModel_${id}`;
-      const targetConvKey = id === 0 ? 'currentConversationId' : `currentConversationId_${id}`;
+    setSessionIds((prev) => shiftPanelSessions(prev, closedPanelId, intendedPanelCount));
 
-      const result = await chrome.storage.local.get([sourceModelKey, sourceConvKey]);
-      const writes: Record<string, unknown> = {};
-      writes[targetModelKey] = result[sourceModelKey] ?? null;
-      writes[targetConvKey] = result[sourceConvKey] ?? null;
-      await chrome.storage.local.set(writes);
-    }
-
-    // Clear the highest slot (no longer used)
-    const highestId = intendedPanelCount - 1;
-    const highModelKey = highestId === 0 ? 'selectedModel' : `selectedModel_${highestId}`;
-    const highConvKey = highestId === 0 ? 'currentConversationId' : `currentConversationId_${highestId}`;
-    await chrome.storage.local.remove([highModelKey, highConvKey]);
-
-    // Shift session IDs
-    setSessionIds((prev) => {
-      const next = [...prev];
-      for (let id = closedPanelId; id < intendedPanelCount - 1; id++) {
-        next[id] = next[id + 1] ?? null;
-      }
-      next[intendedPanelCount - 1] = null;
-      return next;
-    });
-
-    persistIntendedCount(newIntended);
+    persistIntendedCount(intendedPanelCount - 1);
     setGeneration((g) => g + 1);
   }, [intendedPanelCount, persistIntendedCount]);
 

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { storage } from '@/store/storage';
 import { useStorageWatchMultiple } from '@/store/useStorageWatch';
+import { panelModelKey } from '@/lib/panel-storage';
 import type { ProviderConfig, ModelConfig } from '@/types';
 
 export interface ModelOption {
@@ -21,16 +22,6 @@ export interface UseModelSelectionReturn {
   loadData: () => Promise<void>;
 }
 
-/**
- * Returns the chrome.storage.local key used to persist the selected model
- * for a given panel. Panel 0 (the rightmost / primary panel) uses the
- * canonical `selectedModel` key for backward compatibility. Secondary
- * panels use `selectedModel_1`, `selectedModel_2`, etc.
- */
-function getSelectedModelStorageKey(panelId: number): string {
-  return panelId === 0 ? 'selectedModel' : `selectedModel_${panelId}`;
-}
-
 interface UseModelSelectionOptions {
   /**
    * Panel identifier. 0 = rightmost (primary), 1 = second from right, etc.
@@ -47,7 +38,7 @@ interface UseModelSelectionOptions {
  */
 export function useModelSelection(options?: UseModelSelectionOptions): UseModelSelectionReturn {
   const panelId = options?.panelId ?? 0;
-  const storageKey = getSelectedModelStorageKey(panelId);
+  const storageKey = panelModelKey(panelId);
 
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
