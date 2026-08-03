@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Download,
   X,
+  Copy,
+  Check,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -12,7 +14,9 @@ import {
 import { Streamdown } from 'streamdown';
 import { code } from '@streamdown/code';
 import { cjk } from '@streamdown/cjk';
+import { cn } from '@/lib/utils';
 import { ThemeInit } from '@/lib/theme';
+import { CodeView } from './CodeView';
 import {
   fileStorage,
   type FileMetadata,
@@ -31,6 +35,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>('rendered');
+  const [copied, setCopied] = useState(false);
 
   const fileName = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -96,6 +101,17 @@ export default function App() {
     window.close();
   };
 
+  const handleCopy = async () => {
+    if (content == null) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard may be unavailable in some contexts; ignore.
+    }
+  };
+
   const handleZoomIn = () => setZoom((z) => Math.min(z + 25, 300));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 25, 25));
   const handleZoomReset = () => setZoom(100);
@@ -122,12 +138,12 @@ export default function App() {
           )}
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1">
           {/* Mode switch for markdown/html */}
           {showModeSwitch && (
             <button
               onClick={() => setViewMode((m) => (m === 'rendered' ? 'source' : 'rendered'))}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="flex items-center gap-1 h-6 rounded px-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               title={t('options.preview.switchMode')}
             >
               {viewMode === 'rendered' ? (
@@ -147,50 +163,41 @@ export default function App() {
           {/* Zoom controls */}
           {category === 'image' && (
             <>
-              <button
-                onClick={handleZoomOut}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={t('options.preview.zoomOut')}
-              >
+              <ToolbarButton onClick={handleZoomOut} title={t('options.preview.zoomOut')}>
                 <ZoomOut className="h-3.5 w-3.5" />
-              </button>
+              </ToolbarButton>
               <span className="text-xs text-muted-foreground min-w-[36px] text-center">
                 {zoom}%
               </span>
-              <button
-                onClick={handleZoomIn}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={t('options.preview.zoomIn')}
-              >
+              <ToolbarButton onClick={handleZoomIn} title={t('options.preview.zoomIn')}>
                 <ZoomIn className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={handleZoomReset}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={t('options.preview.resetZoom')}
-              >
+              </ToolbarButton>
+              <ToolbarButton onClick={handleZoomReset} title={t('options.preview.resetZoom')}>
                 <RotateCcw className="h-3.5 w-3.5" />
-              </button>
+              </ToolbarButton>
             </>
           )}
 
+          {/* Copy source (text/code files) */}
+          {content !== null && (
+            <ToolbarButton onClick={handleCopy} title={t('options.preview.copy')}>
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </ToolbarButton>
+          )}
+
           {/* Download */}
-          <button
-            onClick={handleDownload}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ml-1"
-            title={t('options.preview.download')}
-          >
+          <ToolbarButton onClick={handleDownload} title={t('options.preview.download')}>
             <Download className="h-3.5 w-3.5" />
-          </button>
+          </ToolbarButton>
 
           {/* Close */}
-          <button
-            onClick={handleClose}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            title={t('options.preview.close')}
-          >
+          <ToolbarButton onClick={handleClose} title={t('options.preview.close')}>
             <X className="h-3.5 w-3.5" />
-          </button>
+          </ToolbarButton>
         </div>
       </header>
 
@@ -244,7 +251,7 @@ function ImagePreview({ src, zoom }: { src: string; zoom: number }) {
  * Text preview with support for:
  * - Markdown (rendered via Streamdown or source view)
  * - HTML (rendered in iframe or source view)
- * - Code files (syntax highlighted via language class)
+ * - Code files (syntax highlighted via Shiki, with copy button)
  * - Plain text
  */
 function TextPreview({
@@ -293,40 +300,6 @@ function TextPreview({
 }
 
 /**
- * Code view with line numbers and syntax class for potential highlighting.
- */
-function CodeView({ content, language }: { content: string; language: string }) {
-  const lines = content.split('\n');
-
-  return (
-    <div className="overflow-auto h-full">
-      <div className="flex text-sm font-mono min-w-fit">
-        {/* Line numbers */}
-        <div className="shrink-0 sticky left-0 py-4 px-2 text-right select-none border-r border-border bg-muted/30 z-10">
-          {lines.map((_, i) => (
-            <div key={i} className="text-xs text-muted-foreground leading-5 px-1">
-              {i + 1}
-            </div>
-          ))}
-        </div>
-        {/* Code content */}
-        <div className="flex-1 py-4 px-4">
-          <pre className={`language-${language}`}>
-            <code className={`language-${language} leading-5 block`}>
-              {lines.map((line, i) => (
-                <div key={i} className="leading-5 whitespace-pre">
-                  {line || ' '}
-                </div>
-              ))}
-            </code>
-          </pre>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * HTML rendered preview using a manifest-declared sandbox page.
  *
  * Chrome Extension MV3 enforces strict CSP that blocks inline scripts even in
@@ -369,5 +342,33 @@ function HtmlPreview({ content }: { content: string }) {
       className="w-full h-full border-none bg-white"
       title="HTML Preview"
     />
+  );
+}
+
+/**
+ * Compact, uniformly-sized icon button for the preview toolbar.
+ */
+function ToolbarButton({
+  onClick,
+  title,
+  children,
+  className,
+}: {
+  onClick: () => void;
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'flex items-center justify-center h-6 w-6 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+        className,
+      )}
+    >
+      {children}
+    </button>
   );
 }

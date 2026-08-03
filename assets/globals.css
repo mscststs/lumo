@@ -129,6 +129,35 @@
   }
 }
 
+/* ─── Code view (Shiki highlighting) ─────────────────────────────────────── */
+
+@layer components {
+  /* Shiki emits inline light-theme colors plus `--shiki-dark`/`--shiki-dark-bg`
+     CSS variables on the same elements. The `.dark` rules override the inline
+     colors with `!important` so the code switches theme with the app. */
+  .code-view .shiki {
+    margin: 0;
+    font-size: inherit;
+    font-family: inherit;
+    line-height: 1.25rem;
+  }
+
+  .code-view .shiki code {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .dark .code-view .shiki {
+    background-color: var(--shiki-dark-bg) !important;
+    color: var(--shiki-dark) !important;
+  }
+
+  .dark .code-view .shiki span {
+    color: var(--shiki-dark, inherit) !important;
+  }
+}
+
 /* ─── Streamdown sidebar-optimized overrides ─────────────────────────────── */
 
 @layer components {

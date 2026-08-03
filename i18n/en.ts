@@ -291,6 +291,7 @@ export const en = {
       rendered: 'Rendered',
       source: 'Source',
       switchMode: 'Switch view mode',
+      copy: 'Copy source',
     },
   },
 };

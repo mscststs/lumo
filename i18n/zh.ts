@@ -289,6 +289,7 @@ export const zh: TranslationSchema = {
       rendered: '渲染',
       source: '源码',
       switchMode: '切换视图模式',
+      copy: '复制源码',
     },
   },
 };
