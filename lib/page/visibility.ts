@@ -30,7 +30,7 @@ function computedStyleOf(element: Element): CSSStyleDeclaration | undefined {
  * Style-only visibility: `display`, `visibility`, `hidden`, `aria-hidden`.
  * Shared by both strategies because it is the part that works everywhere.
  */
-export function isStyleVisible(element: Element): boolean {
+function isStyleVisible(element: Element): boolean {
   if (element.getAttribute('aria-hidden') === 'true') return false;
   if ((element as HTMLElement).hidden) return false;
   if (element.tagName === 'INPUT' && element.getAttribute('type') === 'hidden') return false;
@@ -51,7 +51,7 @@ export function isStyleVisible(element: Element): boolean {
  * Walk up looking for the first element with an explicit `pointer-events`.
  * Equivalent to Playwright's `roleUtils.ts:1235`.
  */
-export function receivesPointerEventsByStyle(element: Element): boolean {
+function receivesPointerEventsByStyle(element: Element): boolean {
   for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
     const style = computedStyleOf(node);
     const value = style?.pointerEvents;
@@ -67,7 +67,7 @@ export function receivesPointerEventsByStyle(element: Element): boolean {
  * Production strategy: style checks plus real geometry. An element with a zero
  * box occupies no space and cannot be clicked, even if `display` says otherwise.
  */
-export const layoutVisibility: VisibilityStrategy = {
+const layoutVisibility: VisibilityStrategy = {
   isVisible(element) {
     if (!isStyleVisible(element)) return false;
     // `checkVisibility` covers `content-visibility` and `opacity: 0` subtrees
@@ -96,7 +96,7 @@ export const layoutVisibility: VisibilityStrategy = {
  * Test strategy: style only. Everything laid out is treated as on-screen, which
  * is the best a layout-free DOM can honestly claim.
  */
-export const styleOnlyVisibility: VisibilityStrategy = {
+const styleOnlyVisibility: VisibilityStrategy = {
   isVisible: isStyleVisible,
   receivesPointerEvents: receivesPointerEventsByStyle,
 };

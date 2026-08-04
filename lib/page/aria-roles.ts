@@ -224,7 +224,7 @@ export function isPresentationalRole(role: string): boolean {
   return PRESENTATIONAL_ROLES.has(role);
 }
 
-export function isNameFromContentRole(role: string): boolean {
+function isNameFromContentRole(role: string): boolean {
   return NAME_FROM_CONTENT_ROLES.has(role);
 }
 

@@ -136,15 +136,14 @@ export function buildAriaTree(doc: Document, options: SnapshotOptions = {}): Ari
       return;
     }
 
-    const visible = defaultIsVisible(element, visibility);
     // Hidden subtrees are dropped wholesale — this is what keeps a
     // `display:none` "Ghost button" out of the snapshot.
-    if (!visible) return;
+    if (!visibility.isVisible(element)) return;
 
     const child = makeNode(element);
     if (isPresentationalRole(child.role)) {
       // role=presentation / none: the element vanishes, its children do not.
-      descend(parent, element, visibility, visit);
+      descend(parent, element, visit);
       return;
     }
 
@@ -154,11 +153,11 @@ export function buildAriaTree(doc: Document, options: SnapshotOptions = {}): Ari
 
     if (treatAsBlock || isBr) parent.children.push(' ');
     parent.children.push(child);
-    descend(child, element, visibility, visit);
+    descend(child, element, visit);
     if (treatAsBlock || isBr) parent.children.push(' ');
   };
 
-  descend(root, rootElement, visibility, visit);
+  descend(root, rootElement, visit);
 
   if (assignRefs) pruneRefs();
   return root;
@@ -168,7 +167,6 @@ export function buildAriaTree(doc: Document, options: SnapshotOptions = {}): Ari
 function descend(
   parent: AriaNode,
   element: Element,
-  _visibility: VisibilityStrategy,
   visit: (parent: AriaNode, node: Node) => void,
 ): void {
   for (let child = element.firstChild; child; child = child.nextSibling) {
@@ -182,10 +180,6 @@ function descend(
       visit(parent, child);
     }
   }
-}
-
-function defaultIsVisible(element: Element, visibility: VisibilityStrategy): boolean {
-  return visibility.isVisible(element);
 }
 
 function computedDisplay(element: Element): string {
@@ -630,7 +624,7 @@ export function captureAriaSnapshot(doc: Document, options: SnapshotOptions = {}
   };
 }
 
-export function countRefs(node: AriaNode): number {
+function countRefs(node: AriaNode): number {
   let total = node.ref ? 1 : 0;
   for (const child of node.children) {
     if (typeof child !== 'string') total += countRefs(child);

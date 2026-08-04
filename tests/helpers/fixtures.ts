@@ -36,7 +36,6 @@ export function loadFixture(name: string): Document {
   return document;
 }
 
-/** Raw fixture text, for tests that want to parse it themselves. */
-export function fixtureHtml(name: string): string {
+function fixtureHtml(name: string): string {
   return readFileSync(path.join(FIXTURE_DIR, name), 'utf8');
 }
