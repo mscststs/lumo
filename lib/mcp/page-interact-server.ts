@@ -2,17 +2,50 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { IMcpServer, McpServerInfo, McpServerStatus, McpToolDefinition, AnyTool } from './types';
 import { attachedTabs } from './session-store';
+import { applyOutputLimit, DEFAULT_MAX_CHARS } from '@/lib/page/output-limit';
+import type {
+  PageActAction,
+  PageRequest,
+  PageResponse,
+} from '@/lib/page/messages';
+
+/** Where WXT emits the resident page content script inside the bundle. */
+const CONTENT_SCRIPT_FILE = 'content-scripts/content.js';
+
+/**
+ * Render a tool's zod schema as JSON Schema for the settings UI.
+ *
+ * `z.toJSONSchema` throws on constructs it cannot represent; a tool list is a
+ * display concern, so an unrepresentable schema degrades to a bare object rather
+ * than breaking the page.
+ */
+function toJsonSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  try {
+    const json = z.toJSONSchema(schema as z.ZodType, { io: 'input' }) as Record<string, unknown>;
+    delete json.$schema;
+    return json;
+  } catch {
+    return { type: 'object', properties: {} };
+  }
+}
 
 /**
  * Page Interaction MCP Server
- * Provides tools for interacting with web page content via chrome.scripting:
- * - DOM reading (get text, HTML, attributes, computed styles)
- * - DOM querying (querySelector, querySelectorAll)
- * - User interaction simulation (click, fill, type, hover, scroll)
- * - Form manipulation (fill form, select options, upload files)
- * - Page snapshots (text content, structured DOM tree)
+ * Provides tools for interacting with web page content:
+ * - Content reading (`page_read`: Readability → Markdown)
+ * - Structure & interaction (`page_snapshot` / `page_find`: ARIA tree + stable refs)
+ * - DOM reading (attributes, computed styles) and querying
+ * - User interaction simulation (click, fill, type, hover, scroll) by ref or selector
+ * - Form manipulation (fill form, select options)
  * - Wait operations (wait for selector, text)
  * - Screenshot capture
+ *
+ * `page_read` / `page_snapshot` / `page_find` and the `ref` branch of the action
+ * tools run in the resident content script (`entrypoints/content.ts`), because
+ * element identity has to outlive a single call. Everything else keeps using
+ * `chrome.scripting.executeScript`, which still works on pages where a content
+ * script cannot be injected.
  */
 export class PageInteractMcpServer implements IMcpServer {
   private status: McpServerStatus = 'disconnected';
@@ -22,7 +55,7 @@ export class PageInteractMcpServer implements IMcpServer {
     return {
       id: 'page-interact',
       name: 'Page Interaction',
-      description: 'Page content reading, DOM manipulation, form filling, clicking, and screenshots',
+      description: 'Markdown page reading, accessibility snapshots with stable refs, DOM manipulation, form filling, clicking, and screenshots',
       transport: 'builtin',
       builtin: true,
       enabled: true,
@@ -116,35 +149,182 @@ export class PageInteractMcpServer implements IMcpServer {
     return { success: true, result: result.result.value ?? result.result.description ?? null };
   }
 
+  /**
+   * Send a request to the page content script, injecting it on demand when the
+   * tab predates the extension (or was reloaded before the script registered).
+   */
+  private async sendToContent(tabId: number, request: PageRequest): Promise<PageResponse> {
+    const send = () => chrome.tabs.sendMessage(tabId, request) as Promise<PageResponse>;
+    let response: PageResponse | undefined;
+    try {
+      response = await send();
+    } catch {
+      // No receiver yet — inject and retry once.
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: [CONTENT_SCRIPT_FILE],
+        });
+      } catch (error) {
+        throw new Error(
+          `Page script unavailable on this page (${error instanceof Error ? error.message : String(error)}). ` +
+            'Restricted pages such as chrome://, the Web Store and other extensions cannot be scripted; ' +
+            'use page_get_text or page_get_html there instead.',
+        );
+      }
+      response = await send();
+    }
+    if (!response) {
+      throw new Error('Page script returned no response. Reload the tab and retry.');
+    }
+    return response;
+  }
+
+  /**
+   * Run a request through the content script and flatten the result into the
+   * tool convention: `{ error }` for failures (which `registry.ts` turns into
+   * `isError: true`), the payload itself otherwise.
+   */
+  private async requestPage(
+    tabId: number | undefined,
+    build: () => PageRequest,
+  ): Promise<Record<string, unknown>> {
+    let targetTabId: number;
+    try {
+      targetTabId = await this.getTargetTabId(tabId);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+    try {
+      const response = await this.sendToContent(targetTabId, build());
+      if (!response.ok) return { error: response.error };
+      const { ok: _ok, ...payload } = response;
+      return payload as Record<string, unknown>;
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Act on a `ref` from `page_snapshot`.
+   *
+   * A ref that no longer resolves returns an explicit error rather than falling
+   * back to a selector: silently operating on a neighbouring element is the
+   * data-corruption failure mode this whole path exists to remove.
+   */
+  private async actOnRef(
+    tabId: number | undefined,
+    action: PageActAction,
+    ref: string,
+    extra: { value?: string; checked?: boolean | null } = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestPage(tabId, () => ({
+      type: 'lumo:page:act',
+      action,
+      ref,
+      ...extra,
+    }));
+  }
+
+  /**
+   * UI-facing tool list, derived from the same zod schemas the model sees.
+   *
+   * This used to be a hand-written JSON Schema array kept in sync by hand, and
+   * it had already drifted (`frameId` was missing from several entries). Deriving
+   * it removes the class of bug rather than fixing one instance.
+   */
   getTools(): McpToolDefinition[] {
-    return [
-      { name: 'page_evaluate', description: 'Execute JavaScript in the page context. Supports expressions, statement blocks, and top-level await. Automatically falls back to CDP if CSP blocks execution. Use useCDP=true to force CDP mode.', inputSchema: { type: 'object', properties: { code: { type: 'string' }, tabId: { type: 'number' }, useCDP: { type: 'boolean' } }, required: ['code'] } },
-      { name: 'page_get_text', description: 'Get the text content of the entire page or a specific element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } } } },
-      { name: 'page_get_html', description: 'Get the HTML content of the page or a specific element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, outer: { type: 'boolean' }, tabId: { type: 'number' } } } },
-      { name: 'page_query_selector', description: 'Query a single element and return its properties', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_query_selector_all', description: 'Query all matching elements and return their properties', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, limit: { type: 'number' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_get_attribute', description: 'Get an attribute value of an element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, attribute: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector', 'attribute'] } },
-      { name: 'page_get_computed_style', description: 'Get computed style properties of an element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, properties: { type: 'array', items: { type: 'string' } }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_click', description: 'Click on an element matching the selector', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_fill', description: 'Fill an input/textarea element with text', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, value: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector', 'value'] } },
-      { name: 'page_fill_form', description: 'Fill multiple form fields at once', inputSchema: { type: 'object', properties: { fields: { type: 'array', items: { type: 'object', properties: { selector: { type: 'string' }, value: { type: 'string' } } } }, tabId: { type: 'number' } }, required: ['fields'] } },
-      { name: 'page_select_option', description: 'Select an option in a select element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, value: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector', 'value'] } },
-      { name: 'page_type_text', description: 'Type text character by character into the focused or specified element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, text: { type: 'string' }, delay: { type: 'number' }, tabId: { type: 'number' } }, required: ['text'] } },
-      { name: 'page_press_key', description: 'Press a keyboard key on the page or element', inputSchema: { type: 'object', properties: { key: { type: 'string' }, selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['key'] } },
-      { name: 'page_hover', description: 'Hover over an element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_scroll', description: 'Scroll the page or an element', inputSchema: { type: 'object', properties: { direction: { type: 'string' }, amount: { type: 'number' }, selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['direction'] } },
-      { name: 'page_wait_for_selector', description: 'Wait for an element matching the selector to appear', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, timeout: { type: 'number' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_wait_for_text', description: 'Wait for specific text to appear on the page', inputSchema: { type: 'object', properties: { text: { type: 'string' }, timeout: { type: 'number' }, tabId: { type: 'number' } }, required: ['text'] } },
-      { name: 'page_screenshot', description: 'Take a screenshot of the visible tab', inputSchema: { type: 'object', properties: { tabId: { type: 'number' }, format: { type: 'string' }, quality: { type: 'number' } } } },
-      { name: 'page_take_snapshot', description: 'Take a structured text snapshot of the page DOM for AI consumption', inputSchema: { type: 'object', properties: { tabId: { type: 'number' }, maxDepth: { type: 'number' } } } },
-      { name: 'page_focus', description: 'Focus on an element', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_check_checkbox', description: 'Check or uncheck a checkbox', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, checked: { type: 'boolean' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'page_list_frames', description: 'List all frames (iframes) in the page with their IDs', inputSchema: { type: 'object', properties: { tabId: { type: 'number' } } } },
-    ];
+    return Object.entries(this.getAITools()).map(([name, definition]) => ({
+      name,
+      description: (definition as { description?: string }).description ?? '',
+      inputSchema: toJsonSchema((definition as { inputSchema?: unknown }).inputSchema),
+    }));
   }
 
   getAITools(): Record<string, AnyTool> {
     return {
+      page_read: tool({
+        description:
+          'Read the page as clean Markdown, preserving heading levels, lists, tables, ' +
+          'image alt text and link URLs while stripping navigation, ads and cookie ' +
+          'banners. Prefer this over page_get_text or page_get_html for understanding ' +
+          'page content. Mode "auto" (default) detects article-like pages and falls ' +
+          'back to whole-page cleanup for app UIs such as dashboards or search results. ' +
+          'If the result reports truncated: true, call again with offset to continue.',
+        inputSchema: z.object({
+          mode: z.enum(['auto', 'article', 'full']).optional()
+            .describe('auto (default): detect; article: force main-article extraction; full: whole page, chrome stripped'),
+          selector: z.string().optional().describe('Limit extraction to a subtree (implies full mode)'),
+          includeImages: z.boolean().optional().describe('Keep image markdown (default true)'),
+          includeLinks: z.boolean().optional().describe('Keep link URLs (default true)'),
+          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z.number().optional().describe('Character offset, for paging through long pages'),
+          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+        }),
+        execute: async ({ mode, selector, includeImages, includeLinks, maxChars, offset, tabId }) =>
+          this.requestPage(tabId, () => ({
+            type: 'lumo:page:read',
+            mode: mode ?? 'auto',
+            selector,
+            includeImages: includeImages ?? true,
+            includeLinks: includeLinks ?? true,
+            maxChars,
+            offset,
+          })),
+      }),
+
+      page_snapshot: tool({
+        description:
+          'Capture a structured accessibility snapshot of the page: every element with ' +
+          'its role, accessible name, state ([disabled]/[checked]/[level=N]) and a ' +
+          'stable [ref=eN] handle. Pass a ref to page_click/page_fill instead of a CSS ' +
+          'selector — refs keep pointing at the same element after the DOM changes, ' +
+          'while positional selectors silently drift to a neighbour. Use page_find on ' +
+          'large pages to avoid capturing the whole tree.',
+        inputSchema: z.object({
+          selector: z.string().optional().describe('Snapshot only this subtree'),
+          interactiveOnly: z.boolean().optional().describe('Only elements that can be acted on (default false)'),
+          depth: z.number().optional().describe('Truncate output below this tree depth. Does not affect which elements are discovered.'),
+          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z.number().optional().describe('Character offset, for paging through large snapshots'),
+          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+        }),
+        execute: async ({ selector, interactiveOnly, depth, maxChars, offset, tabId }) =>
+          this.requestPage(tabId, () => ({
+            type: 'lumo:page:snapshot',
+            selector,
+            interactiveOnly: interactiveOnly ?? false,
+            depth,
+            maxChars,
+            offset,
+          })),
+      }),
+
+      page_find: tool({
+        description:
+          'Search the page accessibility snapshot for text or a regex and return only ' +
+          'the matching nodes with their path from the root and surrounding context. ' +
+          'Much cheaper than page_snapshot when you only need to locate one element ' +
+          'and its ref.',
+        inputSchema: z.object({
+          text: z.string().optional().describe('Case-insensitive substring. Provide text or regex, not both.'),
+          regex: z.string().optional().describe('Regex; wrap in slashes for flags, e.g. "/error/i"'),
+          context: z.number().optional().describe('Levels of surrounding context to render (default 2)'),
+          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z.number().optional().describe('Character offset, for paging through many matches'),
+          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+        }),
+        execute: async ({ text, regex, context, maxChars, offset, tabId }) =>
+          this.requestPage(tabId, () => ({
+            type: 'lumo:page:find',
+            text,
+            regex,
+            context: context ?? 2,
+            maxChars,
+            offset,
+          })),
+      }),
+
       page_evaluate: tool({
         description: 'Execute JavaScript code in the page context and return the result. The code may be a single expression (its value is returned automatically) or a statement block using an explicit `return`. Top-level `await` is supported. The result must be JSON-serializable. If blocked by CSP, automatically falls back to CDP Runtime.evaluate (requires debugger, will auto-attach).',
         inputSchema: z.object({
@@ -256,39 +436,59 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_get_text: tool({
-        description: 'Get the visible text content of the entire page or a specific element. Uses innerText which preserves line breaks between block elements for better readability.',
+        description:
+          '[Deprecated — prefer page_read] Get raw visible text via innerText. ' +
+          'Returns no heading levels, link URLs, image alt text or table structure. ' +
+          'Kept as an escape hatch for pages where the content script cannot run ' +
+          '(chrome://, the Web Store, other extension pages).',
         inputSchema: z.object({
           selector: z.string().optional().describe('CSS selector to get text from (optional, defaults to body)'),
+          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z.number().optional().describe('Character offset, for paging through long pages'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
           frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame.'),
         }),
-        execute: async ({ selector, tabId, frameId }) => {
+        execute: async ({ selector, maxChars, offset, tabId, frameId }) => {
           const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string) => {
+          const result = await this.executeOnTab(targetTabId, (sel: string) => {
             const el = sel ? document.querySelector(sel) : document.body;
             if (!el) return { error: `Element not found: ${sel}` };
             // Use innerText instead of textContent to preserve line breaks between
             // block elements and respect CSS visibility (hidden elements excluded).
             const text = (el as HTMLElement).innerText?.trim() || '';
-            return { text, length: text.length };
+            return { text };
           }, [selector || ''], frameId);
+          if ('error' in result) return result;
+          // The whole page used to be returned regardless of size; a single call
+          // could exhaust the context window.
+          const limited = applyOutputLimit(result.text, { maxChars, offset });
+          return { text: limited.text, length: limited.text.length, limit: limited.limit };
         },
       }),
 
       page_get_html: tool({
-        description: 'Get the HTML content of the page or a specific element.',
+        description:
+          '[Deprecated — prefer page_read] Get raw HTML of the page or an element. ' +
+          'Verbose and full of markup noise; use page_read for content or ' +
+          'page_snapshot for structure. Kept as an escape hatch for pages where the ' +
+          'content script cannot run.',
         inputSchema: z.object({
           selector: z.string().optional().describe('CSS selector (optional, defaults to document root)'),
           outer: z.boolean().optional().describe('If true, return outerHTML; if false, return innerHTML (default false)'),
+          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z.number().optional().describe('Character offset, for paging through long documents'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, outer, tabId }) => {
+        execute: async ({ selector, outer, maxChars, offset, tabId }) => {
           const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, getOuter: boolean) => {
+          const result = await this.executeOnTab(targetTabId, (sel: string, getOuter: boolean) => {
             const el = sel ? document.querySelector(sel) : document.documentElement;
             if (!el) return { error: `Element not found: ${sel}` };
             return { html: getOuter ? el.outerHTML : el.innerHTML };
           }, [selector || '', outer || false]);
+          if ('error' in result) return result;
+          const limited = applyOutputLimit(result.html, { maxChars, offset });
+          return { html: limited.text, limit: limited.limit };
         },
       }),
 
@@ -428,13 +628,16 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_click: tool({
-        description: 'Click on an element matching the CSS selector. Dispatches mousedown, mouseup, and click events.',
+        description: 'Click an element. Prefer ref from page_snapshot: a ref keeps pointing at the same element after the DOM changes, while a positional CSS selector silently drifts to a neighbour. Dispatches mousedown, mouseup, and click events.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the element to click'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame.'),
+          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame. Ignored when ref is used.'),
         }),
-        execute: async ({ selector, tabId, frameId }) => {
+        execute: async ({ ref, selector, tabId, frameId }) => {
+          if (ref) return this.actOnRef(tabId, 'click', ref);
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string) => {
             const el = document.querySelector(sel) as HTMLElement;
@@ -449,14 +652,17 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_fill: tool({
-        description: 'Fill an input or textarea element with text. Clears existing value first, then sets new value and triggers input/change events.',
+        description: 'Fill an input or textarea with text. Prefer ref from page_snapshot over a CSS selector. Clears the existing value, then sets the new value via the native setter (so React controlled components update) and triggers input/change events.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the input/textarea'),
           value: z.string().describe('Value to fill in'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame.'),
+          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame. Ignored when ref is used.'),
         }),
-        execute: async ({ selector, value, tabId, frameId }) => {
+        execute: async ({ ref, selector, value, tabId, frameId }) => {
+          if (ref) return this.actOnRef(tabId, 'fill', ref, { value });
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string, val: string) => {
             const el = document.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement;
@@ -520,13 +726,16 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_select_option: tool({
-        description: 'Select an option in a <select> element by value.',
+        description: 'Select an option in a <select> element by value or visible text. Prefer ref from page_snapshot over a CSS selector.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the select element'),
-          value: z.string().describe('Value of the option to select'),
+          value: z.string().describe('Value (or visible text) of the option to select'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, value, tabId }) => {
+        execute: async ({ ref, selector, value, tabId }) => {
+          if (ref) return this.actOnRef(tabId, 'select-option', ref, { value });
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string, val: string) => {
             const el = document.querySelector(sel) as HTMLSelectElement;
@@ -605,12 +814,15 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_hover: tool({
-        description: 'Hover over an element, triggering mouseenter and mouseover events.',
+        description: 'Hover over an element, triggering mouseenter and mouseover events. Prefer ref from page_snapshot over a CSS selector.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the element to hover'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, tabId }) => {
+        execute: async ({ ref, selector, tabId }) => {
+          if (ref) return this.actOnRef(tabId, 'hover', ref);
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string) => {
             const el = document.querySelector(sel) as HTMLElement;
@@ -812,12 +1024,15 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_focus: tool({
-        description: 'Focus on an element matching the selector.',
+        description: 'Focus an element. Prefer ref from page_snapshot over a CSS selector.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the element to focus'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, tabId }) => {
+        execute: async ({ ref, selector, tabId }) => {
+          if (ref) return this.actOnRef(tabId, 'focus', ref);
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string) => {
             const el = document.querySelector(sel) as HTMLElement;
@@ -829,13 +1044,20 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_check_checkbox: tool({
-        description: 'Check or uncheck a checkbox input element.',
+        description: 'Check or uncheck a checkbox or radio input. Prefer ref from page_snapshot over a CSS selector.',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the checkbox'),
+          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
           checked: z.boolean().optional().describe('Whether to check (true) or uncheck (false). Defaults to toggle.'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, checked, tabId }) => {
+        execute: async ({ ref, selector, checked, tabId }) => {
+          if (ref) {
+            return this.actOnRef(tabId, 'check-checkbox', ref, {
+              checked: checked !== undefined ? checked : null,
+            });
+          }
+          if (!selector) return { error: 'Provide either ref or selector' };
           const targetTabId = await this.getTargetTabId(tabId);
           return this.executeOnTab(targetTabId, (sel: string, shouldCheck: boolean | null) => {
             const el = document.querySelector(sel) as HTMLInputElement;

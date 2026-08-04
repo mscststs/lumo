@@ -236,7 +236,7 @@ export const zh: TranslationSchema = {
         browser: '浏览器核心',
         browserDesc: '标签页、窗口、书签、历史记录、Cookie、下载、导航管理',
         pageInteract: '页面交互',
-        pageInteractDesc: '页面内容读取、DOM 操作、表单填写、元素点击、截图',
+        pageInteractDesc: 'Markdown 正文读取、带稳定引用的可访问性快照、DOM 操作、表单填写、元素点击、截图',
         networkMonitor: '网络监控',
         networkMonitorDesc: '网络请求监控、URL 拦截、重定向、请求头修改',
         devtoolsAdvanced: '高级调试',

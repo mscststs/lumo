@@ -237,7 +237,7 @@ export const en = {
         browser: 'Browser Core',
         browserDesc: 'Tabs, windows, bookmarks, history, cookies, downloads, navigation',
         pageInteract: 'Page Interaction',
-        pageInteractDesc: 'Page content reading, DOM manipulation, form filling, clicking, and screenshots',
+        pageInteractDesc: 'Markdown page reading, accessibility snapshots with stable refs, DOM manipulation, form filling, clicking, and screenshots',
         networkMonitor: 'Network Monitor',
         networkMonitorDesc: 'Network request monitoring, URL blocking, redirects, and header modification',
         devtoolsAdvanced: 'DevTools Advanced',

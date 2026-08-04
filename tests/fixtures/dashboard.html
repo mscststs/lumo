@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Operations Dashboard — Acme</title></head>
+<body>
+  <!--
+    App-like page with no prose. Readability returns 78 characters here
+    (research.md §6), which is why `auto` must fall through to `full` mode.
+    Body copied from experiments/readerable.mjs `dashboard`.
+  -->
+  <nav aria-label="Main"><a href="/">Home</a><a href="/reports">Reports</a></nav>
+  <h1>Dashboard</h1>
+  <div class="kpis">
+    <div>Revenue<span>$4.2M</span></div>
+    <div>Users<span>18,204</span></div>
+  </div>
+  <table>
+    <tr><th>Order</th><th>Status</th></tr>
+    <tr><td>#1001</td><td>Shipped</td></tr>
+    <tr><td>#1002</td><td>Pending</td></tr>
+  </table>
+  <button>Export CSV</button>
+  <select><option>Last 7 days</option><option>Last 30 days</option></select>
+  <footer><p>© 2026 Acme Corp.</p></footer>
+</body>
+</html>

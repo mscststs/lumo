@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Quarterly Report — Acme Corp Newsroom</title>
+  <style>
+    .hidden { display: none; }
+    .visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+    nav a { margin-right: 8px; }
+    .ad { background: #eee; }
+    .cookie { position: fixed; bottom:0; left:0; right:0; background:#222; color:#fff; }
+    .btn { cursor: pointer; }
+    body { font-family: sans-serif; }
+  </style>
+</head>
+<body>
+  <!-- ===== chrome / navigation noise ===== -->
+  <header>
+    <div class="wrap"><div class="inner"><div class="col">
+      <a href="/" aria-label="Acme home"><img src="/logo.svg" alt=""></a>
+    </div></div></div>
+    <nav aria-label="Main">
+      <a href="/news">News</a><a href="/products">Products</a><a href="/pricing">Pricing</a>
+      <a href="/docs">Docs</a><a href="/about">About</a><a href="/careers">Careers</a>
+      <a href="/legal">Legal</a><a href="/contact">Contact</a>
+    </nav>
+    <form role="search" action="/search">
+      <label class="visually-hidden" for="q">Search site</label>
+      <input id="q" name="q" type="search" placeholder="Search news…">
+      <button class="btn" type="submit">Search</button>
+    </form>
+  </header>
+
+  <div class="ad" role="complementary" aria-label="Advertisement">
+    <a href="https://ads.example/click?id=99"><img src="/ad-banner.png" alt="Buy AcmeCloud now"></a>
+  </div>
+
+  <!-- SPA state blob: the kind of thing that destroys page_get_html -->
+  <script id="__NEXT_DATA__" type="application/json">
+    {"props":{"pageProps":{"article":{"id":"a-1024","tracking":{"sessionId":"1f2e3d4c-5b6a-7980-9a0b-1c2d3e4f5a6b","impressions":[1,2,3,4,5,6,7,8,9,10],"experiments":{"variant":"B","bucket":42,"flags":["x","y","z"]}}}}},"buildId":"kJ2n8vQ1"}
+  </script>
+  <code id="bpr-guid-8812" style="display:none">{"$type":"com.acme.state.Hydration","payload":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}</code>
+
+  <!-- ===== the actual article ===== -->
+  <main>
+    <article>
+      <h1>Acme Corp Reports Record Q3 Revenue</h1>
+      <p class="byline">By <a href="/authors/jane" rel="author">Jane Doe</a> ·
+        <time datetime="2026-07-28">July 28, 2026</time> · 6 min read</p>
+
+      <figure>
+        <img src="/img/hq-exterior.jpg" alt="Acme Corp headquarters at sunset" width="1200" height="630">
+        <figcaption>Acme's new Portland headquarters opened in June.</figcaption>
+      </figure>
+
+      <p>Acme Corp announced <strong>record third-quarter revenue</strong> of $4.2 billion,
+        up 23% year over year, driven by growth in its
+        <a href="/products/acmecloud">AcmeCloud</a> division.</p>
+
+      <h2>Segment performance</h2>
+      <p>Cloud infrastructure remained the strongest performer. The company also noted
+        margin improvement across all three reporting segments.</p>
+
+      <table>
+        <caption>Revenue by segment (USD millions)</caption>
+        <tr><th>Segment</th><th>Q3 2026</th><th>Q3 2025</th><th>Change</th></tr>
+        <tr><td>AcmeCloud</td><td>2,410</td><td>1,780</td><td>+35%</td></tr>
+        <tr><td>Devices</td><td>1,120</td><td>1,050</td><td>+7%</td></tr>
+        <tr><td>Services</td><td>670</td><td>590</td><td>+14%</td></tr>
+      </table>
+
+      <h2>Guidance</h2>
+      <p>Management raised full-year guidance, citing a stronger enterprise pipeline. CFO
+        Ravi Patel said the company expects <em>continued double-digit growth</em>.</p>
+      <blockquote cite="https://acme.example/ir/q3-call">
+        <p>We are seeing durable demand, not a one-time surge.</p>
+        <footer>— Ravi Patel, CFO</footer>
+      </blockquote>
+
+      <h3>Key figures</h3>
+      <ul>
+        <li>Revenue: <strong>$4.2B</strong> (+23% YoY)</li>
+        <li>Operating margin: 31.4%</li>
+        <li>Free cash flow: $980M</li>
+        <li>Headcount: 28,400</li>
+      </ul>
+
+      <h2>Read next</h2>
+      <ol>
+        <li><a href="/news/acmecloud-region-eu">AcmeCloud opens EU region</a></li>
+        <li><a href="/news/devices-refresh">Devices lineup refresh</a></li>
+      </ol>
+
+      <p>Full filing available in the <a href="/ir/filings/q3-2026.pdf">Q3 2026 10-Q (PDF)</a>.</p>
+    </article>
+
+    <section aria-label="Comments">
+      <h2>Comments (2)</h2>
+      <article><h4>alex_t</h4><p>Impressive cloud numbers.</p>
+        <button class="btn" aria-label="Upvote comment by alex_t">▲ 12</button></article>
+      <article><h4>mkirby</h4><p>Curious about the margin drivers.</p>
+        <button class="btn" aria-label="Upvote comment by mkirby">▲ 4</button></article>
+      <form>
+        <label for="c">Add a comment</label>
+        <textarea id="c" name="comment" placeholder="Share your thoughts"></textarea>
+        <button class="btn" type="submit" disabled>Post comment</button>
+      </form>
+    </section>
+  </main>
+
+  <aside aria-label="Related">
+    <h2>Trending</h2>
+    <ul>
+      <li><a href="/news/1">Acme acquires Bolt Analytics</a></li>
+      <li><a href="/news/2">New CTO appointed</a></li>
+      <li><a href="/news/3">Sustainability report 2026</a></li>
+    </ul>
+    <div class="ad"><img src="/ad2.gif" alt=""></div>
+  </aside>
+
+  <footer>
+    <nav aria-label="Footer">
+      <a href="/tos">Terms</a><a href="/privacy">Privacy</a><a href="/cookies">Cookies</a>
+      <a href="/sitemap">Sitemap</a><a href="/rss">RSS</a>
+    </nav>
+    <p>© 2026 Acme Corp. All rights reserved.</p>
+  </footer>
+
+  <div class="cookie" role="dialog" aria-label="Cookie consent">
+    <p>We use cookies to improve your experience.</p>
+    <button class="btn">Accept all</button><button class="btn">Reject non-essential</button>
+    <a href="/cookies">Manage preferences</a>
+  </div>
+
+  <div class="hidden"><p>Hidden template content that should not appear.</p>
+    <button>Ghost button</button></div>
+
+  <!-- shadow DOM: current lumo snapshot cannot see this at all -->
+  <div id="host"></div>
+  <script>
+    const sr = document.getElementById('host').attachShadow({ mode: 'open' });
+    sr.innerHTML = `<section aria-label="Newsletter">
+      <h2>Subscribe to the Acme brief</h2>
+      <p>Weekly analysis, delivered Tuesdays.</p>
+      <label for="e">Email address</label>
+      <input id="e" type="email" placeholder="you@company.com">
+      <button class="btn">Subscribe</button></section>`;
+  </script>
+</body>
+</html>
