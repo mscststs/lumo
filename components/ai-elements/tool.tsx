@@ -155,10 +155,15 @@ function ToolSectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Scrollable, size-capped mono block. */
+/**
+ * Scrollable, height-capped mono block.
+ *
+ * The only bound on tool output now that `tool-output.ts` no longer truncates
+ * characters, so it is roomier than a single-glance preview.
+ */
 function ToolCodeBlock({ children }: { children: string }) {
   return (
-    <pre className="max-h-40 overflow-auto scrollbar-lumo rounded-md bg-background/80 border border-border/60 p-1.5 text-[0.6875rem] leading-relaxed font-mono whitespace-pre-wrap break-all">
+    <pre className="max-h-80 overflow-auto scrollbar-lumo rounded-md bg-background/80 border border-border/60 p-1.5 text-[0.6875rem] leading-relaxed font-mono whitespace-pre-wrap break-all">
       {children}
     </pre>
   );
@@ -215,14 +220,7 @@ export function ToolOutput({ output }: { output: unknown }) {
           {normalized.caption && <ToolCodeBlock>{normalized.caption}</ToolCodeBlock>}
         </div>
       ) : (
-        <>
-          <ToolCodeBlock>{normalized.text}</ToolCodeBlock>
-          {normalized.truncated && (
-            <div className="text-[0.625rem] text-muted-foreground/70">
-              {t('sidebar.tool.truncated', { count: normalized.totalLength })}
-            </div>
-          )}
-        </>
+        <ToolCodeBlock>{normalized.text}</ToolCodeBlock>
       )}
     </div>
   );

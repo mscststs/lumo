@@ -520,9 +520,10 @@ export class PageInteractMcpServer implements IMcpServer {
                 (scriptResult.error.includes('EvalError') || 
                  scriptResult.error.includes('unsafe-eval') ||
                  scriptResult.error.includes('Content Security Policy'))) {
-              // Fallback to CDP
-              const cdpResult = await this.evaluateViaCDP(targetTabId, code);
-              return { ...cdpResult, note: 'Executed via CDP fallback due to CSP restriction.' };
+              // Fallback to CDP. The transport used is an implementation
+              // detail; annotating the result only pollutes the payload the
+              // caller has to parse.
+              return this.evaluateViaCDP(targetTabId, code);
             }
 
             return scriptResult ?? { success: false, error: 'Script execution returned no result' };
@@ -532,8 +533,7 @@ export class PageInteractMcpServer implements IMcpServer {
             // try CDP as fallback
             if (errorMsg.includes('Cannot access') || errorMsg.includes('Cannot script') ||
                 errorMsg.includes('Extension manifest')) {
-              const cdpResult = await this.evaluateViaCDP(targetTabId, code);
-              return { ...cdpResult, note: 'Executed via CDP fallback (page not scriptable via chrome.scripting).' };
+              return this.evaluateViaCDP(targetTabId, code);
             }
             return { success: false, error: errorMsg };
           }

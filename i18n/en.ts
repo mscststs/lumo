@@ -63,7 +63,6 @@ export const en = {
       output: 'Output',
       screenshot: 'Screenshot',
       unknownError: 'Unknown error',
-      truncated: 'Truncated, {{count}} characters total',
     },
     reasoning: {
       title: 'Reasoning',

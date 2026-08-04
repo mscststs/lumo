@@ -4,16 +4,21 @@
  * All MCP tools (built-in, external, WebMCP) now return a unified
  * CallToolResult format: { content: [{type, text}, ...], isError: boolean }.
  * This module unpacks that structure and classifies the output for display.
+ *
+ * Output is deliberately *not* length-truncated here. Tools that can return
+ * unbounded text already cap themselves at the tool layer (see
+ * `lib/page/output-limit.ts`) and report `limit.truncated` so the model can
+ * page; a second cap in the UI only hid that metadata from the user, because
+ * `limit` is serialised after the long `markdown` field. Height is bounded by
+ * the scroll container instead, and `ToolOutput` only mounts when the user
+ * expands a collapsed call.
  */
-
-/** Max characters of JSON/text shown before truncation. */
-const MAX_TEXT_LENGTH = 2000;
 
 export type NormalizedToolOutput =
   | { kind: 'empty' }
   | { kind: 'image'; url: string; caption?: string }
   | { kind: 'error'; message: string }
-  | { kind: 'text'; text: string; truncated: boolean; totalLength: number };
+  | { kind: 'text'; text: string };
 
 /**
  * MCP CallToolResult content part types.
@@ -110,19 +115,7 @@ function normalizeCallToolResult(result: CallToolResult): NormalizedToolOutput {
   }
 
   const combinedText = textParts.join('\n');
-  const prettyText = prettyPrintIfJson(combinedText);
-  const totalLength = prettyText.length;
-
-  if (totalLength > MAX_TEXT_LENGTH) {
-    return {
-      kind: 'text',
-      text: prettyText.slice(0, MAX_TEXT_LENGTH),
-      truncated: true,
-      totalLength,
-    };
-  }
-
-  return { kind: 'text', text: prettyText, truncated: false, totalLength };
+  return { kind: 'text', text: prettyPrintIfJson(combinedText) };
 }
 
 export function normalizeToolOutput(output: unknown): NormalizedToolOutput {
@@ -148,18 +141,8 @@ export function normalizeToolOutput(output: unknown): NormalizedToolOutput {
   const text = typeof output === 'string'
     ? prettyPrintIfJson(output)
     : safeStringify(output);
-  const totalLength = text.length;
 
-  if (totalLength > MAX_TEXT_LENGTH) {
-    return {
-      kind: 'text',
-      text: text.slice(0, MAX_TEXT_LENGTH),
-      truncated: true,
-      totalLength,
-    };
-  }
-
-  return { kind: 'text', text, truncated: false, totalLength };
+  return { kind: 'text', text };
 }
 
 /** JSON stringify that survives circular refs and bigints. */

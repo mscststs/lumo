@@ -26,16 +26,20 @@ describe('normalizeToCallToolResult', () => {
     });
   });
 
-  it('extracts image parts from an object containing a data URL', () => {
+  it('does not turn a data URL nested in an object into an image part', () => {
+    // Results were once scanned recursively for `data:image/` strings. That
+    // hijacked every tool which merely *reports* image URLs (`page_evaluate`
+    // returning `img.src`) — the payload became an image part plus an
+    // `[image NNKB]` placeholder, losing the data the caller asked for.
+    // Images are opt-in now: emit a `content` array (see page_screenshot).
     const normalized = normalizeToCallToolResult({ success: true, dataUrl: DATA_URL, format: 'png' });
     expect(normalized.isError).toBe(false);
-    expect(normalized.content[0]).toEqual({ type: 'image', data: RED_PNG_DATA, mimeType: 'image/png' });
-
-    const textPart = normalized.content[1] as { type: 'text'; text: string };
-    expect(textPart.type).toBe('text');
-    // The raw base64 must never leak into the text summary.
-    expect(textPart.text).not.toContain(RED_PNG_DATA);
-    expect(textPart.text).toContain('png');
+    expect(normalized.content).toEqual([
+      { type: 'text', text: JSON.stringify({ success: true, dataUrl: DATA_URL, format: 'png' }) },
+    ]);
+    // `lib/ai.ts` still keeps the base64 out of the model prompt; see
+    // tests/image-pipeline.test.ts.
+    expect(normalized.content[0]!.text).toContain(RED_PNG_DATA);
   });
 
   it('treats a bare data URL string as a single image part', () => {

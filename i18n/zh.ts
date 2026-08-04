@@ -65,7 +65,6 @@ export const zh: TranslationSchema = {
       output: '结果',
       screenshot: '截图',
       unknownError: '未知错误',
-      truncated: '内容已截断，共 {{count}} 个字符',
     },
     reasoning: {
       title: '推理过程',

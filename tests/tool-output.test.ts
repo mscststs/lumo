@@ -21,7 +21,11 @@ describe('normalizeToolOutput (UI display path)', () => {
     }
   });
 
-  it('still truncates legacy text-only dumps', () => {
+  it('passes long text through without truncating it', () => {
+    // The UI used to cap text at 2000 chars, which silently cut the `limit`
+    // metadata that page tools serialise *after* their long payload — the user
+    // could no longer tell whether a read had been paged. Height is capped by
+    // the scroll container instead, so the text must arrive intact.
     const hugeJson = JSON.stringify({ dataUrl: `data:image/png;base64,${'A'.repeat(5000)}` });
     const normalized = normalizeToolOutput({
       content: [{ type: 'text', text: hugeJson }],
@@ -30,8 +34,7 @@ describe('normalizeToolOutput (UI display path)', () => {
 
     expect(normalized.kind).toBe('text');
     if (normalized.kind === 'text') {
-      expect(normalized.truncated).toBe(true);
-      expect(normalized.text.length).toBeLessThanOrEqual(2000);
+      expect(normalized.text).toContain('A'.repeat(5000));
     }
   });
 

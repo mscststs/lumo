@@ -3,10 +3,11 @@ import type { PageOutputLimit, PageOutputLimitMeta } from './messages';
 /**
  * Ceiling for a single page-read tool call.
  *
- * Existing tools are unbounded: `page_get_text` / `page_get_html` return the
- * whole page, and `MAX_TEXT_LENGTH = 2000` in `lib/tool-output.ts` only
- * truncates the *UI*, never the model payload. One call can therefore blow the
- * context window.
+ * This is the *only* length bound in the pipeline: `lib/tool-output.ts` shapes
+ * output for display but never truncates, so whatever a tool returns here is
+ * what both the model and the user see. Without it, `page_get_text` /
+ * `page_get_html` return the whole page and one call can blow the context
+ * window.
  */
 export const DEFAULT_MAX_CHARS = 20_000;
 export const HARD_MAX_CHARS = 120_000;

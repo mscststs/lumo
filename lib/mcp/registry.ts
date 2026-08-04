@@ -22,57 +22,19 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | und
 }
 
 /**
- * Recursively collect base64 image data-URLs from an arbitrary tool result.
- * Lets ANY tool that embeds an image (screenshots, charts, OCR results, …) be
- * surfaced as a structured `image` content part instead of a giant text blob.
- */
-function collectImageParts(
-  value: unknown,
-  images: Array<{ type: 'image'; data: string; mimeType: string }> = [],
-): Array<{ type: 'image'; data: string; mimeType: string }> {
-  if (value == null || typeof value !== 'object') return images;
-  if (Array.isArray(value)) {
-    for (const item of value) collectImageParts(item, images);
-    return images;
-  }
-  for (const val of Object.values(value)) {
-    if (typeof val === 'string' && val.startsWith('data:image/')) {
-      const parsed = parseDataUrl(val);
-      if (parsed) images.push({ type: 'image', data: parsed.data, mimeType: parsed.mimeType });
-    } else if (val && typeof val === 'object') {
-      collectImageParts(val, images);
-    }
-  }
-  return images;
-}
-
-/** Stringify a tool result, replacing base64 image data-URLs with a compact placeholder. */
-function stringifyWithoutImages(value: unknown): string {
-  if (value == null) return 'null';
-  if (typeof value === 'string') return value;
-  try {
-    return (
-      JSON.stringify(value, (_key, v) => {
-        if (typeof v === 'string' && v.startsWith('data:image/')) {
-          const comma = v.indexOf(',');
-          const sizeKb = comma > 0 ? ((v.length - comma - 1) / 1024).toFixed(0) : '';
-          return `[image ${sizeKb}KB]`;
-        }
-        return v;
-      }) ?? ''
-    );
-  } catch {
-    return '';
-  }
-}
-
-/**
  * Normalize a tool execute result into MCP CallToolResult format.
  * - If already a CallToolResult, return as-is (images preserved).
  * - If it's an error-shaped object { error: "..." }, wrap as isError: true.
- * - If it contains base64 image data-URLs, split them out into `image` content
- *   parts followed by a compact text summary.
  * - Otherwise wrap the value as a text content part.
+ *
+ * Images must be declared explicitly by the tool, as a
+ * `{ type: 'image', data, mimeType }` content part (see `page_screenshot`).
+ * Scanning arbitrary results for `data:image/` strings was tried and removed:
+ * any tool that merely *reports* image URLs — `page_evaluate` returning
+ * `img.src`, `page_query_selector_all` returning attributes — had its payload
+ * rewritten into an image part plus a `[image NNKB]` placeholder, destroying
+ * the data the caller asked for. Truncated data URLs made it worse, rendering
+ * as a blank box sized by a PNG header with no pixels behind it.
  */
 export function normalizeToCallToolResult(result: unknown): {
   content: Array<{ type: string; [key: string]: unknown }>;
@@ -104,15 +66,6 @@ export function normalizeToCallToolResult(result: unknown): {
     return {
       content: [{ type: 'text', text: (result as Record<string, unknown>).error as string }],
       isError: true,
-    };
-  }
-
-  // Image-bearing result — split into image + compact text parts
-  const images = collectImageParts(result);
-  if (images.length > 0) {
-    return {
-      content: [...images, { type: 'text', text: stringifyWithoutImages(result) }],
-      isError: false,
     };
   }
 
