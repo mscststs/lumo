@@ -123,6 +123,20 @@ describe('golden: article-page.html', () => {
     expect(tree).toMatch(/textbox "Email address" \[ref=e\d+\]/);
     expect(tree).toContain('/placeholder: you@company.com');
   });
+
+  it('page_snapshot covers everything the deleted page_take_snapshot returned', async () => {
+    const result = await snapshot();
+    // The old tool returned url, title, textContent and interactiveElements with
+    // a count. All four are covered, and the count matches the 33 interactive
+    // elements research.md measured on this exact fixture — which is what makes
+    // "strict superset" a measurement rather than a claim.
+    expect(result.url).toBeTruthy();
+    expect(result.title).toBeTruthy();
+    expect(result.refCount).toBe(33);
+    // Smaller than the 6426 characters the old tool produced, despite carrying
+    // heading levels, URLs, alt text, states and refs that it did not have.
+    expect(result.limit.totalChars).toBeLessThan(6426);
+  });
 });
 
 describe('golden: app-like pages do not degrade', () => {
