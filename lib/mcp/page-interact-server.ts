@@ -31,6 +31,95 @@ function toJsonSchema(schema: unknown): Record<string, unknown> {
 }
 
 /**
+ * Wrap user code so CDP's `Runtime.evaluate` accepts the same input as the
+ * `chrome.scripting` path.
+ *
+ * The two paths disagreed on what `code` means. `chrome.scripting` compiles it
+ * as an `AsyncFunction` body, so a top-level `return` and top-level `await` are
+ * both legal — which is what `page_evaluate`'s description promises. CDP
+ * evaluates a *script*, where a top-level `return` is a hard
+ * `SyntaxError: Illegal return statement`. Any code written against the
+ * documented contract therefore failed the moment CSP forced the fallback.
+ *
+ * An async IIFE restores function-body semantics. `awaitPromise: true` on the
+ * CDP side then unwraps the returned promise, so `await` keeps working too.
+ *
+ * Expression handling mirrors the scripting path's precedence: an expression
+ * yields its value without an explicit `return` (`1 + 1`, `document.title`,
+ * `({a: 1})`), so it is wrapped as `return (expr)`. Detection has to happen
+ * here rather than by trial-and-error compilation, because a failed
+ * `Runtime.evaluate` costs a round trip and would surface the wrong error.
+ */
+export function wrapCodeForCdp(code: string): string {
+  const body = looksLikeExpression(code) ? `return (${code.replace(/;\s*$/, '')}\n);` : code;
+  return `(async () => {\n${body}\n})()`;
+}
+
+/**
+ * Decide whether `code` should be treated as a single expression.
+ *
+ * Only the *top level* is inspected. Keywords and `;` nested inside brackets
+ * belong to an inner function body and say nothing about the outer form — an
+ * IIFE like `(() => { const a = 1; return a; })()` is a perfectly good
+ * expression, and `({ const: 1 }).const` uses a keyword as a property name.
+ *
+ * Otherwise conservative: a top-level statement keyword, `return`, or a `;`
+ * separating statements means statement form. A false negative merely requires
+ * the caller's explicit `return` (already the documented fallback); a false
+ * positive would turn working code into a syntax error.
+ */
+function looksLikeExpression(code: string): boolean {
+  const trimmed = code.trim();
+  if (!trimmed) return false;
+  const top = topLevelOnly(stripStringsAndComments(trimmed));
+  // A top-level `return` is only valid in the statement form.
+  if (/(^|[^\w$.])return([^\w$]|$)/.test(top)) return false;
+  // Statement-only keywords cannot appear in an expression position.
+  if (/(^|[^\w$.])(var|let|const|if|for|while|do|switch|throw|try|class|debugger)([^\w$]|$)/.test(top)) {
+    return false;
+  }
+  // A `;` anywhere but the very end means multiple statements.
+  if (/;/.test(top.replace(/;\s*$/, ''))) return false;
+  return true;
+}
+
+/**
+ * Blank the contents of every bracketed group, keeping only depth-0 source.
+ * Lets keyword/`;` detection ignore nested function bodies and object literals.
+ */
+function topLevelOnly(code: string): string {
+  let depth = 0;
+  let out = '';
+  for (const char of code) {
+    if (char === '(' || char === '[' || char === '{') {
+      depth++;
+      out += char;
+      continue;
+    }
+    if (char === ')' || char === ']' || char === '}') {
+      depth = Math.max(0, depth - 1);
+      out += char;
+      continue;
+    }
+    out += depth === 0 ? char : ' ';
+  }
+  return out;
+}
+
+/**
+ * Blank out string/template/regex literals and comments so keyword and `;`
+ * detection cannot be fooled by their contents (e.g. `"return"`, `a/*;*\/b`).
+ */
+function stripStringsAndComments(code: string): string {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+}
+
+/**
  * Page Interaction MCP Server
  * Provides tools for interacting with web page content:
  * - Content reading (`page_read`: Readability → Markdown)
@@ -121,7 +210,7 @@ export class PageInteractMcpServer implements IMcpServer {
    * chrome.scripting is blocked by CSP, or when page_evaluate is called
    * with useCDP=true.
    */
-  private async evaluateViaCDP(tabId: number, expression: string): Promise<{ success: boolean; result?: unknown; error?: string; note?: string }> {
+  private async evaluateViaCDP(tabId: number, expression: string): Promise<{ success: boolean; result?: unknown; error?: string }> {
     // Ensure debugger is attached
     if (!(await attachedTabs.has(tabId))) {
       try {
@@ -137,7 +226,9 @@ export class PageInteractMcpServer implements IMcpServer {
     }
 
     const result = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
-      expression,
+      // `Runtime.evaluate` runs a script, not a function body; see
+      // `wrapCodeForCdp` for why the raw code cannot be passed through.
+      expression: wrapCodeForCdp(expression),
       returnByValue: true,
       awaitPromise: true,
       generatePreview: true,
