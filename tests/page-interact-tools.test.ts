@@ -24,7 +24,6 @@ let scriptResult: unknown = {};
 /** Requests captured from the stubbed `chrome.tabs.sendMessage`. */
 let sent: unknown[] = [];
 let sendResponse: unknown = { ok: true };
-let sendShouldThrow = false;
 
 const ACTIVE_TAB_ID = 7;
 
@@ -33,13 +32,11 @@ beforeEach(() => {
   sent = [];
   scriptResult = {};
   sendResponse = { ok: true };
-  sendShouldThrow = false;
 
   vi.stubGlobal('chrome', {
     tabs: {
       query: vi.fn(async () => [{ id: ACTIVE_TAB_ID }]),
       sendMessage: vi.fn(async (_tabId: number, request: unknown) => {
-        if (sendShouldThrow) throw new Error('Could not establish connection.');
         sent.push(request);
         return sendResponse;
       }),
@@ -198,7 +195,29 @@ describe('ref routing', () => {
 });
 
 describe('content script availability', () => {
-  it('injects the content script and retries when no receiver exists', async () => {
+  it('injects and retries when a foreign listener answers with undefined', async () => {
+    // The case that actually happens. `chrome.tabs.sendMessage` resolves as soon
+    // as *any* listener exists, and every tab has one: the WebMCP bridge
+    // registers at document_start on <all_urls> and returns false for messages
+    // outside its namespace. Declining still resolves the call — with undefined.
+    // Keying injection off a thrown error therefore never injects at all.
+    let injectedYet = false;
+    (chrome.tabs.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(async (_tabId, request) => {
+      if (!injectedYet) return undefined;
+      sent.push(request);
+      return { ok: true, url: 'https://example.com', title: 'T', resolvedMode: 'full', markdown: '# hi', limit: {} };
+    });
+    (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      injectedYet = true;
+      return [{ result: undefined }];
+    });
+
+    const result = await toolFn('page_read')({}) as Record<string, unknown>;
+    expect(result).toMatchObject({ markdown: '# hi' });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('injects and retries when no listener exists at all', async () => {
     let firstCall = true;
     (chrome.tabs.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(async (_tabId, request) => {
       if (firstCall) {
@@ -210,14 +229,30 @@ describe('content script availability', () => {
     });
 
     const result = await toolFn('page_read')({}) as Record<string, unknown>;
-    // A tab that predates the extension has no listener until we inject one.
     expect(injected[0]!.args).toEqual([]);
     expect(sent).toHaveLength(1);
     expect(result).toMatchObject({ markdown: '# hi' });
   });
 
+  it('does not inject when the script already answered', async () => {
+    sendResponse = { ok: true, url: 'u', title: 't', resolvedMode: 'full', markdown: 'm', limit: {} };
+    await toolFn('page_read')({});
+    // Re-injecting on every call would re-run the module on the page.
+    expect(injected).toHaveLength(0);
+  });
+
+  it('reports a page that stays silent after injection', async () => {
+    // Injection succeeded but nothing answered: the page navigated mid-request,
+    // or the script cannot run there. Either way it is not a stale-ref error and
+    // must not be reported as one.
+    (chrome.tabs.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const result = await toolFn('page_read')({}) as { error: string };
+    expect(result.error).toContain('did not respond after injection');
+    expect(result.error).toContain('page_get_text');
+  });
+
   it('explains the escape hatch when injection is impossible', async () => {
-    sendShouldThrow = true;
+    (chrome.tabs.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (chrome.scripting.executeScript as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('Cannot access a chrome:// URL'),
     );

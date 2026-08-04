@@ -49,6 +49,29 @@ describe('content script injection contract', () => {
     expect(sendToContent).toContain('page_get_text');
   });
 
+  it('keys injection off an absent response, not a thrown error', () => {
+    const server = read('lib/mcp/page-interact-server.ts');
+    const sendToContent = server.slice(
+      server.indexOf('private async sendToContent'),
+      server.indexOf('private async requestPage'),
+    );
+    // `chrome.tabs.sendMessage` resolves as soon as *any* listener exists, and
+    // the WebMCP bridge already registers one on every page. A listener declining
+    // a foreign message still resolves the call, with `undefined`. Keying
+    // injection off a rejection therefore never injects, and every page tool
+    // fails on every tab — the regression this pins down.
+    expect(sendToContent).toContain('PageResponse | undefined');
+    expect(sendToContent).toMatch(/if \(first\) return first/);
+  });
+
+  it('guards the content script against answering twice', () => {
+    // Injection is retried per unanswered request, so the file can land in one
+    // document more than once. Two listeners answer the same message twice, and
+    // Chrome closes the port after the first — surfacing a bogus error for a
+    // request that worked.
+    expect(read('entrypoints/content.ts')).toContain('__lumoPageScriptReady');
+  });
+
   it('keeps the page protocol namespaced away from the WebMCP bridge', () => {
     // Both content scripts share chrome.runtime.onMessage.
     expect(read('lib/page/messages.ts')).toContain("PAGE_MESSAGE_PREFIX = 'lumo:page:'");

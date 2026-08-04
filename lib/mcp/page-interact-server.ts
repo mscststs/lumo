@@ -152,32 +152,46 @@ export class PageInteractMcpServer implements IMcpServer {
   /**
    * Send a request to the page content script, injecting it on demand when the
    * tab predates the extension (or was reloaded before the script registered).
+   *
+   * Injection cannot be driven by `sendMessage` rejecting. That only happens when
+   * a tab has *no* listener at all, and every tab already has one: the WebMCP
+   * bridge registers at `document_start` on `<all_urls>` and returns `false` for
+   * messages outside its own namespace. A foreign listener declining a message
+   * still makes `sendMessage` resolve — with `undefined`. So the signal that our
+   * script is absent is an undefined *response*, not a thrown error.
    */
   private async sendToContent(tabId: number, request: PageRequest): Promise<PageResponse> {
-    const send = () => chrome.tabs.sendMessage(tabId, request) as Promise<PageResponse>;
-    let response: PageResponse | undefined;
-    try {
-      response = await send();
-    } catch {
-      // No receiver yet — inject and retry once.
+    const send = async (): Promise<PageResponse | undefined> => {
       try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: [CONTENT_SCRIPT_FILE],
-        });
-      } catch (error) {
-        throw new Error(
-          `Page script unavailable on this page (${error instanceof Error ? error.message : String(error)}). ` +
-            'Restricted pages such as chrome://, the Web Store and other extensions cannot be scripted; ' +
-            'use page_get_text or page_get_html there instead.',
-        );
+        return (await chrome.tabs.sendMessage(tabId, request)) as PageResponse | undefined;
+      } catch {
+        // No listener whatsoever, or the tab went away mid-flight.
+        return undefined;
       }
-      response = await send();
+    };
+
+    const first = await send();
+    if (first) return first;
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [CONTENT_SCRIPT_FILE],
+      });
+    } catch (error) {
+      throw new Error(
+        `Page script unavailable on this page (${error instanceof Error ? error.message : String(error)}). ` +
+          'Restricted pages such as chrome://, the Web Store and other extensions cannot be scripted; ' +
+          'use page_get_text or page_get_html there instead.',
+      );
     }
-    if (!response) {
-      throw new Error('Page script returned no response. Reload the tab and retry.');
-    }
-    return response;
+
+    const second = await send();
+    if (second) return second;
+    throw new Error(
+      'Page script did not respond after injection. The page may have navigated ' +
+        'mid-request; retry, or use page_get_text if the page cannot be scripted.',
+    );
   }
 
   /**

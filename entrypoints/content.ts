@@ -26,6 +26,15 @@ export default defineContentScript({
   allFrames: false,
   registration: 'runtime',
   main() {
+    // Injection is retried whenever a request goes unanswered, so the same file
+    // can land in a document more than once. A second listener would answer the
+    // same message a second time, and Chrome closes the port after the first
+    // response — producing a spurious "message port closed" error for a request
+    // that actually succeeded.
+    const guard = window as typeof window & { __lumoPageScriptReady?: boolean };
+    if (guard.__lumoPageScriptReady) return;
+    guard.__lumoPageScriptReady = true;
+
     chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
       if (!isPageRequest(message)) {
         return false; // not ours — let other listeners handle it
