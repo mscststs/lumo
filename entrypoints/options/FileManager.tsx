@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
 import { storage } from '@/store/storage';
 import { downloadAsZip } from '@/lib/zip-download';
+import { SettingsHeader } from './components/SettingsHeader';
 import type { Conversation } from '@/types';
 
 /**
@@ -243,10 +244,10 @@ export function FileManager() {
 
   return (
     <div className="max-w-4xl">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">{t('options.files.title')}</h2>
-        <p className="text-sm text-muted-foreground mt-1">{t('options.files.description')}</p>
-      </div>
+      <SettingsHeader
+        title={t('options.files.title')}
+        description={t('options.files.description')}
+      />
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 mb-6">

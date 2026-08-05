@@ -4,6 +4,7 @@ import {
   openPanelSlot,
   panelConversationKey,
   panelModelKey,
+  pruneStaleModelSelections,
   shiftPanelSessions,
   type PanelStorageArea,
 } from '@/lib/panel-storage';
@@ -153,5 +154,57 @@ describe('shiftPanelSessions', () => {
     const sessions = ['a', 'b', 'c'];
     shiftPanelSessions(sessions, 1, 3);
     expect(sessions).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('pruneStaleModelSelections', () => {
+  it('clears a selection whose provider was deleted', async () => {
+    const storage = createStorage({ selectedModel: OPUS, selectedModel_1: GPT4O });
+
+    // `anthropic` is gone from the config.
+    const cleared = await pruneStaleModelSelections(storage.area, [providers[0]!]);
+
+    expect(cleared).toEqual(['selectedModel']);
+    expect(storage.store['selectedModel']).toBeUndefined();
+    expect(storage.store['selectedModel_1']).toEqual(GPT4O);
+  });
+
+  it('clears a selection whose model was deleted but provider remains', async () => {
+    const storage = createStorage({ selectedModel: MINI });
+
+    await pruneStaleModelSelections(storage.area, [
+      { id: 'openai', models: [{ id: 'gpt-4o' }] },
+      providers[1]!,
+    ]);
+
+    expect(storage.store['selectedModel']).toBeUndefined();
+  });
+
+  it('prunes closed panels too, since they keep their model on disk', async () => {
+    // Panel 2 is not open, but `closePanelSlot` preserved its choice — it must
+    // not resurrect a deleted model when the panel is reopened.
+    const storage = createStorage({ selectedModel_2: OPUS });
+
+    const cleared = await pruneStaleModelSelections(storage.area, [providers[0]!]);
+
+    expect(cleared).toEqual(['selectedModel_2']);
+  });
+
+  it('leaves still-valid selections and absent keys alone', async () => {
+    const storage = createStorage({ selectedModel: GPT4O });
+
+    const cleared = await pruneStaleModelSelections(storage.area, providers);
+
+    expect(cleared).toEqual([]);
+    expect(storage.store['selectedModel']).toEqual(GPT4O);
+  });
+
+  it('clears everything when the last provider is removed', async () => {
+    const storage = createStorage({ selectedModel: GPT4O, selectedModel_1: OPUS });
+
+    await pruneStaleModelSelections(storage.area, []);
+
+    expect(storage.store['selectedModel']).toBeUndefined();
+    expect(storage.store['selectedModel_1']).toBeUndefined();
   });
 });

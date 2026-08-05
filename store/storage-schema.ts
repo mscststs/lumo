@@ -21,6 +21,7 @@ import type {
 import type { McpSettings } from '@/lib/mcp/types';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
+import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
 
 // ---------------------------------------------------------------------------
 // 1. Schema: all possible storage keys and their value types
@@ -74,7 +75,7 @@ export interface StorageFieldDef<K extends StorageKey> {
 
 const DEFAULT_UI_SETTINGS: UISettings = {
   language: 'en',
-  theme: 'system',
+  theme: DEFAULT_THEME,
   maxSplitPanels: 1,
   sendKey: 'enter',
 };
@@ -106,6 +107,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     exportable: true,
     normalize: (raw) => ({
       ...raw,
+      // Guards configs exported by a build that knows a theme this one does not
+      // (and pre-field configs). An unrecognised value would otherwise reach
+      // `data-theme`, match no token block, and silently leave light tokens.
+      theme: normalizeTheme(raw.theme),
       maxSplitPanels: raw.maxSplitPanels ?? 1,
       sendKey: raw.sendKey ?? 'enter',
     }),

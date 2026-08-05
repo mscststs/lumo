@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { categorizeError, isRetryableCategory } from '@/lib/provider-error';
 import type { ChatErrorCategory } from '@/lib/provider-error';
 
@@ -58,60 +59,73 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
   const { t } = useTranslation();
 
   const friendlyMessage = t(categoryToI18nKey[error.category]);
+  // The friendly copy for `unknown` says nothing actionable, so the raw text is
+  // the only signal the user has — give it more room in that case.
+  const rawClamp = error.category === 'unknown' ? 'line-clamp-3' : 'line-clamp-2';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="mx-2 my-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+      // No horizontal margin: ConversationContent already pads the column, and
+      // insetting further would misalign this card against every message bubble.
+      className="w-full min-w-0 overflow-hidden rounded-lg border border-destructive/25 bg-destructive/5"
     >
-      <div className="flex items-start gap-2.5">
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <p className="text-sm font-medium text-destructive">
+      <div className="flex items-start gap-2 p-2.5">
+        <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-[0.8125rem] font-semibold leading-4 text-destructive">
             {t('sidebar.error.title')}
           </p>
-          <p className="text-xs text-muted-foreground break-words">
+          <p className="text-xs leading-relaxed text-foreground/80 break-words">
             {friendlyMessage}
           </p>
-          {/* Show raw error in a smaller, dimmer line for debugging */}
-          {error.message && error.category !== 'unknown' && (
-            <p className="text-[11px] text-muted-foreground/60 break-all line-clamp-2">
-              {error.message}
-            </p>
-          )}
-          {error.category === 'unknown' && (
-            <p className="text-[11px] text-muted-foreground/60 break-all line-clamp-3">
-              {error.message}
-            </p>
-          )}
         </div>
       </div>
 
+      {/* Raw provider text, sunk into its own block so it reads as a technical
+          detail instead of washed-out prose. Nesting the same tint deepens it
+          against the card without a second hard-coded colour. */}
+      {error.message && (
+        <div className="border-t border-destructive/15 bg-destructive/5 px-2.5 py-1.5">
+          <p
+            className={cn(
+              'font-mono text-[0.6875rem] leading-relaxed text-muted-foreground break-all',
+              rawClamp,
+            )}
+          >
+            {error.message}
+          </p>
+        </div>
+      )}
+
       {/* Retry area */}
-      <div className="mt-2.5 flex items-center justify-end gap-2">
-        {isRetrying && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {t('sidebar.error.retrying', { current: retryAttempt, max: maxRetries })}
+      <div className="flex items-center justify-end gap-2 border-t border-destructive/15 px-2.5 py-1.5">
+        {isRetrying ? (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            <span className="truncate">
+              {t('sidebar.error.retrying', { current: retryAttempt, max: maxRetries })}
+            </span>
           </span>
-        )}
-        {/*
-          Always offered, even for categories `isRetryableError` excludes: that
-          flag only governs *automatic* retries. Once the user fixes the key or
-          tops up credits, a manual retry resumes this conversation instead of
-          forcing them to start a new one.
-        */}
-        {!isRetrying && (
+        ) : (
+          /*
+            Always offered, even for categories `isRetryableError` excludes: that
+            flag only governs *automatic* retries. Once the user fixes the key or
+            tops up credits, a manual retry resumes this conversation instead of
+            forcing them to start a new one.
+          */
           <Button
             variant="outline"
             size="sm"
-            className="h-7 px-2.5 text-xs gap-1.5 border-destructive/30 hover:bg-destructive/10"
+            // `bg-transparent` is required: the outline variant's `bg-background`
+            // would punch an opaque hole through the card's tint.
+            className="h-6 gap-1.5 border-destructive/30 bg-transparent px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={onRetry}
           >
-            <RotateCcw className="h-3 w-3" />
-            {t('sidebar.error.retry')}
+            <RotateCcw className="h-3 w-3 shrink-0" />
+            <span className="truncate">{t('sidebar.error.retry')}</span>
           </Button>
         )}
       </div>

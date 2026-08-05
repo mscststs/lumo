@@ -27,13 +27,22 @@
   --color-muted-foreground: hsl(215.4 16.3% 46.9%);
   --color-accent: hsl(210 40% 96.1%);
   --color-accent-foreground: hsl(222.2 47.4% 11.2%);
-  --color-destructive: hsl(0 84.2% 60.2%);
+  /* Darkened from the shadcn default red-500 (#ef4444), which only reaches
+     3.8:1 on white — below AA for the 12-13px body text the error cards use.
+     red-600 lands at 4.8:1 while keeping white button labels legible. */
+  --color-destructive: hsl(0 72.2% 50.6%);
   --color-destructive-foreground: hsl(210 40% 98%);
   --color-border: hsl(214.3 31.8% 91.4%);
   --color-input: hsl(214.3 31.8% 91.4%);
   --color-ring: hsl(221.2 83.2% 53.3%);
   --color-sidebar: hsl(210 40% 97%);
   --color-sidebar-foreground: hsl(222.2 84% 4.9%);
+  /* Modal scrim. Always a dark wash, never derived from `foreground`: the job
+     of a scrim is to dim what is behind it, and on the dark palettes
+     `foreground` is near-white, which would bleach the page instead. Modals
+     separate from the scrim through their own elevation (border + shadow +
+     `bg-card`), not by inverting it. */
+  --color-overlay: hsl(222.2 47% 4% / 0.45);
   --radius: 0.5rem;
   --color-chat-user: hsl(217 92% 60%);
   --color-chat-user-foreground: hsl(0 0% 100%);
@@ -60,17 +69,79 @@
     --color-muted-foreground: hsl(215 20.2% 65.1%);
     --color-accent: hsl(217.2 32.6% 17.5%);
     --color-accent-foreground: hsl(210 40% 98%);
-    --color-destructive: hsl(0 62.8% 30.6%);
-    --color-destructive-foreground: hsl(210 40% 98%);
+    /* The shadcn dark default (hsl(0 62.8% 30.6%)) is a *dark* red: as
+       `text-destructive` it hits only ~2.2:1 on this background, and
+       `bg-destructive/10` tints are invisible. Lifted to a light red (7.2:1 as
+       text) with a dark label, mirroring the primary treatment above, so the
+       token works both as foreground and as a solid button fill. */
+    --color-destructive: hsl(0 90.6% 70.8%);
+    --color-destructive-foreground: hsl(222.2 47.4% 11.2%);
     --color-border: hsl(217.2 32.6% 17.5%);
     --color-input: hsl(217.2 32.6% 17.5%);
     --color-ring: hsl(217.2 91.2% 59.8%);
     --color-sidebar: hsl(222.2 84% 7%);
     --color-sidebar-foreground: hsl(210 40% 98%);
+    /* Pushed harder than the light palette: a 45% wash over an already dark
+       page reads as barely dimmed, so the modal fails to detach from it. */
+    --color-overlay: hsl(222.2 60% 2% / 0.68);
     --color-chat-user: hsl(217 72% 45%);
     --color-chat-user-foreground: hsl(0 0% 100%);
     --color-scrollbar-thumb: hsl(215 20.2% 65.1% / 0.22);
     --color-scrollbar-thumb-hover: hsl(215 20.2% 65.1% / 0.4);
+  }
+
+  /* ─── Midnight: Google/Material-style dark ─────────────────────────────────
+     Layered on top of `.dark` (higher specificity: class + attribute), so it
+     inherits the `dark:` variant and the Shiki dark overrides and only restates
+     the colour tokens.
+
+     Google's dark surfaces are separated by *lightness*, not by tinting one
+     flat colour: the page sits at 14.9% (#22242a) and every layer floating
+     above it steps up (card 18.5% → popover 21% → muted 22% → hover 26%),
+     while borders sit above all of them at 30% so they stay visible on each
+     surface. Hue is held at 225° with low saturation so the greys read
+     neutral-cool rather than blue. */
+  .dark[data-theme='midnight'] {
+    --color-background: hsl(225 10.5% 14.9%);
+    --color-foreground: hsl(225 10% 90%);
+    --color-card: hsl(225 9% 18.5%);
+    --color-card-foreground: hsl(225 10% 90%);
+    /* Popovers float above cards, so they get their own step up rather than
+       matching the page (which is what the other themes do). */
+    --color-popover: hsl(225 9% 21%);
+    --color-popover-foreground: hsl(225 10% 90%);
+    /* Google Blue 300 (#8ab4f8) — the canonical Material dark accent. Paired
+       with a near-black label at 7.5:1; as `text-primary` it clears 7.4:1 on
+       the page. */
+    --color-primary: hsl(217 89% 76%);
+    --color-primary-foreground: hsl(225 10% 14%);
+    --color-secondary: hsl(225 8% 24%);
+    --color-secondary-foreground: hsl(225 10% 90%);
+    --color-muted: hsl(225 8% 22%);
+    --color-muted-foreground: hsl(225 8% 66%);
+    --color-accent: hsl(225 8% 26%);
+    --color-accent-foreground: hsl(225 10% 92%);
+    /* Google Red 300 (#f28b82). Deliberately a *light* red with a dark label:
+       `text-destructive` is used far more often than `bg-destructive` in this
+       codebase, and it needs to be legible on the dark page (6.7:1 here). */
+    --color-destructive: hsl(5 81% 73%);
+    --color-destructive-foreground: hsl(225 10% 14%);
+    --color-border: hsl(225 8% 30%);
+    --color-input: hsl(225 8% 30%);
+    --color-ring: hsl(217 89% 76%);
+    /* Recessed nav rail, one step *darker* than the page — the inverse of the
+       other themes, matching how Google treats persistent side navigation. */
+    --color-sidebar: hsl(225 10% 12%);
+    --color-sidebar-foreground: hsl(225 10% 90%);
+    /* Neutral-cool to match the 225° greys, rather than the blue-tinted scrim
+       the other dark palette uses. */
+    --color-overlay: hsl(225 10% 4% / 0.68);
+    /* Neutral grey bubble (~#3b3d44), as in Gemini — the user's turn is
+       distinguished by surface elevation rather than by a brand colour. */
+    --color-chat-user: hsl(225 8% 25%);
+    --color-chat-user-foreground: hsl(225 10% 92%);
+    --color-scrollbar-thumb: hsl(225 8% 66% / 0.22);
+    --color-scrollbar-thumb-hover: hsl(225 8% 66% / 0.4);
   }
 }
 
@@ -126,6 +197,74 @@
   /* Prevent the white square where vertical and horizontal bars meet */
   &::-webkit-scrollbar-corner {
     background: transparent;
+  }
+}
+
+/* ─── Radix popover / dialog transitions ─────────────────────────────────────
+   `tailwindcss-animate` is not a dependency, so the `data-[state]:animate-in`
+   classes shadcn ships are no-ops here. These keyframes drive the same
+   `data-state` attributes directly, which keeps the enter/exit motion in CSS —
+   Radix can then delay unmount itself and no `AnimatePresence` wrapper is
+   needed at the call sites.                                                    */
+
+@layer components {
+  @keyframes lumo-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes lumo-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  /* Scales about the element's own centre. No `translate()` here: the dialog is
+     centred by a flex wrapper, not by `-translate-1/2`. Tailwind v4 compiles
+     that utility to the standalone `translate` property, which a `transform`
+     keyframe composes with rather than overriding — restating it here is what
+     made the panel fly in from the top-left corner. */
+  @keyframes lumo-dialog-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes lumo-dialog-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.98); }
+  }
+
+  .dialog-overlay[data-state='open'] {
+    animation: lumo-fade-in 150ms ease-out;
+  }
+
+  .dialog-overlay[data-state='closed'] {
+    animation: lumo-fade-out 120ms ease-in;
+  }
+
+  .dialog-content[data-state='open'] {
+    animation: lumo-dialog-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-content[data-state='closed'] {
+    animation: lumo-dialog-out 120ms ease-in;
+  }
+
+  /* Shared by the Select and DropdownMenu popovers. Radix sets `data-side`, so
+     the panel slides in from the trigger rather than scaling in place. */
+  .popover-panel[data-state='open'] {
+    animation: lumo-fade-in 120ms ease-out;
+  }
+
+  .popover-panel[data-state='closed'] {
+    animation: lumo-fade-out 90ms ease-in;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-overlay,
+    .dialog-content,
+    .popover-panel {
+      animation-duration: 1ms !important;
+    }
   }
 }
 

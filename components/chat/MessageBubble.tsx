@@ -147,6 +147,10 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
           className="h-20 w-20 object-cover"
           alt={image.filename ?? ''}
         />
+        {/* Hover affordance painted over the user's own image pixels, not over a
+            themed surface — so this stays a fixed dark wash rather than using
+            `bg-overlay`, and the icon keeps a literal `text-white`. Tying it to
+            a theme token would make the icon illegible on light themes. */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
           <ImageIcon className="h-4 w-4 text-white" />
         </div>
@@ -159,7 +163,9 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            // Same role as the dialog scrim, so it shares the `overlay` token:
+            // always a dark wash, tuned per palette (see assets/globals.css).
+            className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
             onClick={() => setExpanded(false)}
           >
             <motion.img

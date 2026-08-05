@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { storage } from '@/store/storage';
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/system-prompt';
+import { SettingsHeader } from './components/SettingsHeader';
 import type { SystemPromptSettings } from '@/types';
 
 export function SystemPromptSettingsPage() {
@@ -62,14 +63,10 @@ export function SystemPromptSettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">
-          {t('options.systemPrompt.title')}
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('options.systemPrompt.description')}
-        </p>
-      </div>
+      <SettingsHeader
+        title={t('options.systemPrompt.title')}
+        description={t('options.systemPrompt.description')}
+      />
 
       <div className="space-y-5">
         <div className="flex items-start justify-between gap-4">

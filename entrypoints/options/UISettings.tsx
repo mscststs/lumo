@@ -10,10 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useTheme } from '@/lib/theme';
+import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { storage } from '@/store/storage';
-import type { SendKey, UISettings } from '@/types';
+import { SettingsHeader } from './components/SettingsHeader';
+import type { SendKey, Theme, UISettings } from '@/types';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -79,7 +80,7 @@ export function UISettingsPage() {
   };
 
   const handleThemeChange = async (val: string) => {
-    await setTheme(val as UISettings['theme']);
+    await setTheme(val as Theme);
   };
 
   const handleMaxSplitPanelsChange = async (val: string) => {
@@ -139,10 +140,10 @@ export function UISettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">{t('options.ui.title')}</h2>
-        <p className="text-sm text-muted-foreground mt-1">{t('options.ui.description')}</p>
-      </div>
+      <SettingsHeader
+        title={t('options.ui.title')}
+        description={t('options.ui.description')}
+      />
 
       <div className="space-y-6">
         {/* Language */}
@@ -167,9 +168,11 @@ export function UISettingsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="light">{t('options.ui.themeLight')}</SelectItem>
-              <SelectItem value="dark">{t('options.ui.themeDark')}</SelectItem>
-              <SelectItem value="system">{t('options.ui.themeSystem')}</SelectItem>
+              {THEME_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

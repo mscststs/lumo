@@ -47,9 +47,28 @@ export interface ProviderConfig {
  */
 export type SendKey = 'enter' | 'meta-enter';
 
+/**
+ * A user-selectable colour theme.
+ *
+ * `'system'` is a *preference*, not a palette — it resolves to one of the
+ * concrete themes at apply time based on `prefers-color-scheme`. Every other
+ * member maps 1:1 to a token block in `assets/globals.css`.
+ *
+ * Adding a theme is a two-step change: extend this union, then register it in
+ * `THEMES` (see `lib/theme.ts`) — TypeScript will flag every place that needs
+ * updating, including the i18n label map.
+ */
+export type Theme = 'light' | 'dark' | 'midnight' | 'system';
+
+/**
+ * The subset of {@link Theme} that names an actual palette. `'system'` is
+ * excluded because it always resolves to one of these before being applied.
+ */
+export type ResolvedTheme = Exclude<Theme, 'system'>;
+
 export interface UISettings {
   language: 'en' | 'zh';
-  theme: 'light' | 'dark' | 'system';
+  theme: Theme;
   /** Maximum number of side-by-side chat panels (1–3). Default is 1. */
   maxSplitPanels: 1 | 2 | 3;
   /** Which key combination sends a chat message. Default is Enter. */

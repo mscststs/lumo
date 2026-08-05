@@ -35,6 +35,7 @@ import {
   WEBMCP_SESSION_KEY,
 } from '@/lib/mcp';
 import { storage } from '@/store/storage';
+import { SettingsHeader } from './components/SettingsHeader';
 
 // ============================================================================
 // Hooks
@@ -236,11 +237,10 @@ export function McpSettings() {
 
   return (
     <div className="max-w-2xl">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">{t('options.mcp.title')}</h2>
-        <p className="text-sm text-muted-foreground mt-1">{t('options.mcp.description')}</p>
-      </div>
+      <SettingsHeader
+        title={t('options.mcp.title')}
+        description={t('options.mcp.description')}
+      />
 
       {/* Summary Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">

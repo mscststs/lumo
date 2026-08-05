@@ -188,8 +188,11 @@ export function ToolError({ message }: { message: string }) {
   return (
     <div className="flex flex-col gap-1 min-w-0">
       <ToolSectionLabel>{t('sidebar.tool.error')}</ToolSectionLabel>
-      <div className="flex items-start gap-1.5 rounded-md bg-destructive/10 p-1.5 text-[0.6875rem] text-destructive">
-        <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+      {/* Tinting the whole block `text-destructive` makes the message itself
+          harder to read than the surrounding output; the accent stays on the
+          icon and the message keeps normal body contrast. */}
+      <div className="flex items-start gap-1.5 rounded-md border border-destructive/25 bg-destructive/5 p-1.5 text-[0.6875rem] text-foreground/80">
+        <AlertCircle className="h-3 w-3 shrink-0 mt-0.5 text-destructive" />
         <span className="break-words min-w-0">{message}</span>
       </div>
     </div>

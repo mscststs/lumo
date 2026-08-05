@@ -86,3 +86,50 @@ export function shiftPanelSessions(
   next[panelCount - 1] = null;
   return next;
 }
+
+/**
+ * Highest panel id that can hold a model selection.
+ *
+ * Bounded by `UISettings.maxSplitPanels`, whose maximum is 3 (panels 0–2).
+ * Pruning walks the full range rather than the currently open panels because a
+ * closed panel keeps its model choice on disk (see `closePanelSlot`), and that
+ * stale choice must not resurrect a deleted model when the panel reopens.
+ */
+const MAX_PANEL_ID = 2;
+
+/** A persisted provider/model pair, as stored under `panelModelKey`. */
+interface PanelModelSelection {
+  providerId: string;
+  modelId: string;
+}
+
+/**
+ * Drops every panel's model selection that no longer resolves against
+ * `providers`, so deleting a provider or model in the options page cannot leave
+ * a sidebar panel pointing at something that is gone.
+ *
+ * Clearing the key (rather than writing a replacement) is deliberate:
+ * `useModelSelection.loadData` already falls back to the first configured
+ * model when the key is absent, and it is the single place that policy should
+ * live.
+ *
+ * @param providers The provider list *after* the deletion.
+ * @returns The panel keys that were cleared, for logging/tests.
+ */
+export async function pruneStaleModelSelections(
+  storageArea: PanelStorageArea,
+  providers: { id: string; models: { id: string }[] }[],
+): Promise<string[]> {
+  const keys = Array.from({ length: MAX_PANEL_ID + 1 }, (_, id) => panelModelKey(id));
+  const stored = await storageArea.get(keys);
+
+  const stale = keys.filter((key) => {
+    const selection = stored[key] as PanelModelSelection | null | undefined;
+    if (!selection) return false;
+    const provider = providers.find((p) => p.id === selection.providerId);
+    return !provider?.models.some((m) => m.id === selection.modelId);
+  });
+
+  if (stale.length > 0) await storageArea.remove(stale);
+  return stale;
+}

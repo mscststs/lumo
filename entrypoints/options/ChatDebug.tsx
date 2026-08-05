@@ -21,6 +21,7 @@ import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { panelConversationKey } from '@/lib/panel-storage';
 import { safeStringify } from '@/lib/tool-output';
 import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
+import { SettingsHeader } from './components/SettingsHeader';
 import type { ToolPart } from '@/lib/message-parts';
 
 /** Storage key for the actual visible panel count */
@@ -268,11 +269,11 @@ export function ChatDebugPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="space-y-1">
-        <h2 className="text-xl font-semibold text-foreground">{t('options.chatDebug.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('options.chatDebug.description')}</p>
-      </div>
+      <SettingsHeader
+        title={t('options.chatDebug.title')}
+        description={t('options.chatDebug.description')}
+        className="mb-0"
+      />
 
       {/* Panel switcher (only show when multiple panels visible) */}
       {visiblePanelCount > 1 && (
