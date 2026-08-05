@@ -238,14 +238,6 @@ export function ProviderCard({
                 />
               ))}
             </Reorder.Group>
-            {provider.models.length > 1 && (
-              // Ordering is load-bearing: `useModelSelection` falls back to the
-              // first model of the first provider, so say so rather than leaving
-              // the drag handle's purpose to be guessed.
-              <p className="px-2 pt-1 text-[11px] text-muted-foreground">
-                {t('options.models.reorderHint')}
-              </p>
-            )}
           </>
         )}
       </CollapsibleContent>

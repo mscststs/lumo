@@ -137,7 +137,6 @@ export const en = {
       moveDown: 'Move down',
       moreActions: 'More actions',
       dragToReorder: 'Drag to reorder, or use the arrow keys',
-      reorderHint: 'The first model is used by default in new chats.',
       errors: {
         nameRequired: 'Please enter a provider name.',
         nameDuplicate: 'Another provider already uses this name.',

@@ -47,14 +47,14 @@ function FileIcon({ mimeType }: { mimeType: string }) {
   const category = getPreviewCategory(mimeType);
   switch (category) {
     case 'image':
-      return <Image className="h-4 w-4 text-green-500" />;
+      return <Image className="h-4 w-4 shrink-0 text-green-500" />;
     case 'text':
       if (mimeType.includes('javascript') || mimeType.includes('typescript') || mimeType.includes('json')) {
-        return <FileCode className="h-4 w-4 text-blue-500" />;
+        return <FileCode className="h-4 w-4 shrink-0 text-blue-500" />;
       }
-      return <FileText className="h-4 w-4 text-orange-500" />;
+      return <FileText className="h-4 w-4 shrink-0 text-orange-500" />;
     default:
-      return <File className="h-4 w-4 text-muted-foreground" />;
+      return <File className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }
 }
 

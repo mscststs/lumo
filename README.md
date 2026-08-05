@@ -4,6 +4,27 @@ AI-powered browser sidebar assistant — a Chrome extension that brings a full-f
 
 Lumo connects to third-party LLM APIs and provides deep browser integration through the Model Context Protocol (MCP), enabling the AI to interact with tabs, pages, network, DevTools, and more.
 
+## Installation
+
+### Chrome Web Store (stable)
+
+**[Install Lumo from the Chrome Web Store](https://chromewebstore.google.com/detail/lumo/cgfnadidpooocnkalljpdmelmaponefa)**
+
+This is the easiest way to install and it auto-updates. Note that **the Chrome Web Store version lags behind the code in this repository** — each release has to pass Google's review, so recently merged features and fixes are usually not in it yet.
+
+### Latest build from GitHub Actions (up to date)
+
+Every push to `main` is built by the [Build & Upload Extension](../../actions/workflows/build.yml) workflow, which publishes the packed extension as an artifact:
+
+1. Open the [latest successful workflow run](../../actions/workflows/build.yml?query=is%3Asuccess).
+2. Download the `lumo-chrome-mv3` artifact from the run's **Artifacts** section (requires being signed in to GitHub).
+3. Unzip it — GitHub wraps artifacts in a zip, and inside you get the unpacked extension directory.
+4. Go to `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the unzipped directory.
+
+Caveats of this route: it does **not** auto-update (repeat the steps to upgrade), Chrome will show a "disable developer mode extensions" warning on startup, artifacts expire after GitHub's retention period, and it installs as a separate extension from the Web Store version. Builds from `main` are unreleased code and may be unstable.
+
+You can also [build from source](#getting-started) yourself.
+
 ## Features
 
 ### AI Chat Sidebar

@@ -138,7 +138,6 @@ export const zh: TranslationSchema = {
       moveDown: '下移',
       moreActions: '更多操作',
       dragToReorder: '拖拽排序，也可使用方向键',
-      reorderHint: '新会话默认使用第一个模型。',
       errors: {
         nameRequired: '请输入提供商名称。',
         nameDuplicate: '已有其他提供商使用该名称。',
