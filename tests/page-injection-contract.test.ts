@@ -80,3 +80,67 @@ describe('content script injection contract', () => {
 });
 
 const CONTENT_SCRIPT_FILE_REFERENCE = 'CONTENT_SCRIPT_FILE';
+
+/**
+ * How WXT *types* each entrypoint, which is decided by file name alone.
+ *
+ * Only `content.ts` / `*.content.ts` become content scripts. The two WebMCP
+ * entrypoints are named neither, so WXT builds them as unlisted scripts and
+ * invokes `main()` with no arguments. Declaring them with `defineContentScript`
+ * compiles, type-checks, and then crashes on every page with "Cannot read
+ * properties of undefined (reading 'onInvalidated')" the moment the body touches
+ * the `ctx` the signature promises. It also makes the `matches` / `world` /
+ * `runAt` / `registration` keys look meaningful when WXT discards them — the
+ * real registration is hand-written in `webmcp-manager.ts`.
+ */
+describe('entrypoint type contract', () => {
+  /**
+   * Strip comments before asserting. These files *explain* why they are not
+   * content scripts, so the forbidden strings legitimately appear in prose.
+   */
+  function code(relative: string): string {
+    return read(relative)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+  }
+
+  const UNLISTED = [
+    'entrypoints/content-webmcp-bridge.ts',
+    'entrypoints/content-webmcp-main.ts',
+  ];
+
+  it.each(UNLISTED)('%s declares itself an unlisted script', (file) => {
+    const source = code(file);
+    expect(source).toContain('defineUnlistedScript');
+    expect(source).not.toContain('defineContentScript');
+  });
+
+  it.each(UNLISTED)('%s carries no ignored content-script config', (file) => {
+    const source = code(file);
+    // These keys are silently dropped for unlisted scripts. Keeping them
+    // documents a registration that never happens.
+    for (const key of ['matches:', 'registration:', 'runAt:', 'world:']) {
+      expect(source).not.toContain(key);
+    }
+  });
+
+  it.each(UNLISTED)('%s takes no context parameter', (file) => {
+    // WXT calls `main()` with nothing for an unlisted script.
+    const source = code(file);
+    expect(source).toMatch(/defineUnlistedScript\(\(\) =>/);
+  });
+
+  it('keeps the page entrypoint a real content script', () => {
+    // `content.ts` *does* match WXT's naming rule, so it legitimately gets the
+    // declarative form and a `ContentScriptContext`.
+    expect(code('entrypoints/content.ts')).toContain('defineContentScript');
+  });
+
+  it('injects the WebMCP scripts from the paths WXT emits them to', () => {
+    // An unlisted script lands at the output root, not under content-scripts/.
+    const manager = code('lib/mcp/webmcp-manager.ts');
+    expect(manager).toContain("'content-webmcp-bridge.js'");
+    expect(manager).toContain("'content-webmcp-main.js'");
+    expect(manager).not.toContain('content-scripts/content-webmcp');
+  });
+});

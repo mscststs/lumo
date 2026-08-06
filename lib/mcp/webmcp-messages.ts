@@ -46,6 +46,28 @@ export type WebMcpContentMessage =
   | WebMcpHeartbeatMessage
   | WebMcpUnloadMessage;
 
+/**
+ * Narrow an untrusted `window.postMessage` payload to a content→background
+ * message.
+ *
+ * The MAIN world is the page's own world, so anything on the page can post a
+ * `webmcp:`-prefixed message. Relaying it unchecked would let a page drive
+ * `chrome.runtime.sendMessage` with arbitrary payloads, and would let a
+ * malformed `type` reach `startsWith` on a non-string.
+ */
+export function isWebMcpContentMessage(
+  value: unknown,
+): value is WebMcpContentMessage {
+  if (!value || typeof value !== 'object') return false;
+  const type = (value as { type?: unknown }).type;
+  if (typeof type !== 'string') return false;
+  return (
+    type === 'webmcp:tools-report' ||
+    type === 'webmcp:heartbeat' ||
+    type === 'webmcp:unload'
+  );
+}
+
 // ============================================================================
 // Background → Content Script messages
 // ============================================================================

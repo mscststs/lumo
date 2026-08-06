@@ -103,6 +103,11 @@ async function unregisterContentScripts(): Promise<void> {
 
 /**
  * Inject WebMCP scripts into all existing tabs (for when feature is first enabled).
+ *
+ * `registerContentScripts` only affects documents created from now on, so tabs
+ * the user already has open need an explicit injection. Both scripts guard
+ * against running twice in one document (`__lumoWebmcp*Ready`), which matters
+ * because a tab that is mid-load will *also* receive the registered script.
  */
 async function injectIntoExistingTabs(): Promise<void> {
   try {
@@ -198,8 +203,17 @@ function handleWebMcpMessage(
 
 /**
  * Set up listeners for tab lifecycle events.
+ *
+ * Called from both `initWebMcpManager` and `enableWebMcp`, so it must be
+ * idempotent: registering `onRemoved` twice deletes the same state twice and
+ * writes session storage twice per tab close.
  */
+let tabLifecycleListenersInstalled = false;
+
 function setupTabLifecycleListeners(): void {
+  if (tabLifecycleListenersInstalled) return;
+  tabLifecycleListenersInstalled = true;
+
   // Clean up when a tab is closed
   chrome.tabs.onRemoved.addListener((tabId) => {
     if (tabStates.has(tabId)) {
@@ -238,18 +252,49 @@ async function enableWebMcp(): Promise<void> {
 
 /**
  * Disable WebMCP monitoring.
+ *
+ * Unregistering only stops *future* injections. Every tab the user already has
+ * open keeps a live bridge in its ISOLATED world and a live monitor in its MAIN
+ * world, and the monitor keeps posting on every tool change. Telling the pages
+ * to stand down is what stops that traffic; without it the bridges relay into a
+ * background that no longer cares, and after an extension reload they relay
+ * into a dead `chrome.runtime`.
  */
 async function disableWebMcp(): Promise<void> {
   if (!webmcpActive) return;
   webmcpActive = false;
 
   await unregisterContentScripts();
+  await notifyBridgesGone();
 
   // Clear all tab states
   tabStates.clear();
   await persistTabStates();
 
   console.log('[Lumo WebMCP] Disabled');
+}
+
+/**
+ * Ask every already-injected bridge to detach itself.
+ */
+async function notifyBridgesGone(): Promise<void> {
+  let tabs: chrome.tabs.Tab[];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch {
+    return;
+  }
+
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (!tab.id) return;
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: 'webmcp:shutdown' });
+      } catch {
+        // No bridge in this tab, or the tab is not scriptable.
+      }
+    }),
+  );
 }
 
 // ============================================================================
