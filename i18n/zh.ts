@@ -26,13 +26,44 @@ export const zh: TranslationSchema = {
     pasteImage: '粘贴或拖放图片',
     textAttachment: '文本',
     imageAttachment: '图片',
+    pageContextAttachment: '页面',
     dropHere: '拖放到此处以附加',
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
     contextMenu: {
-      ask: '询问 Lumo',
-      askSelection: '以选中内容询问 Lumo',
-      askImage: '以此图片询问 Lumo',
+      root: 'Lumo',
+      ask: '询问此页面',
+      summarizePage: '总结此页面',
+      translatePage: '翻译此页面',
+      keyPointsPage: '提取页面关键点',
+      extractDataPage: '提取结构化数据',
+      explainPage: '解释此页面',
+      askSelection: '询问选中内容',
+      translateSelection: '翻译选中内容',
+      explainSelection: '解释选中内容',
+      summarizeSelection: '总结选中内容',
+      askImage: '询问此图片',
+      describeImage: '描述此图片',
+      extractTextImage: '提取图片中的文字',
+    },
+    quickActionPrompt: {
+      summarizePage:
+        '阅读这个页面并进行总结：它讲的是什么、主要观点有哪些、结论是什么。用中文简洁作答。',
+      translatePage:
+        '阅读这个页面，并将其主要内容翻译成中文。保留原有结构（标题、列表、表格），不要添加额外评论。',
+      keyPointsPage:
+        '阅读这个页面，用简短的要点列表提取它的关键点。每条只讲一个要点，不要凑字数。',
+      extractDataPage:
+        '阅读这个页面，把其中的结构化数据（表格、列表、商品/联系人/价格等字段）提取为 Markdown 表格。如果页面没有结构化数据，请直接说明。',
+      explainPage:
+        '阅读这个页面，用通俗的语言解释它是什么、用来做什么，就像面对第一次看到它的人一样。',
+      translateSelection: '把选中的文本翻译成中文，只返回译文。',
+      explainSelection:
+        '用通俗的语言解释选中的文本。如果其中包含术语、代码或引用，也一并说明。',
+      summarizeSelection: '简洁地总结选中的文本。',
+      describeImage: '详细描述这张图片：它展示了什么、包含哪些文字、有什么值得注意的地方。',
+      extractTextImage:
+        '提取这张图片中所有可见的文字。保留阅读顺序和排版，只返回文字内容。',
     },
     error: {
       title: '请求失败',

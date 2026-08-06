@@ -15,6 +15,14 @@ export interface UseModelSelectionReturn {
   selectedModelId: string;
   currentModelValue: string;
   allModels: ModelOption[];
+  /**
+   * Whether the initial read of providers and the panel's saved model has
+   * finished. Until it has, `getSelectedProvider()` returns `undefined` simply
+   * because nothing has loaded yet — which is indistinguishable from "no models
+   * configured" without this flag. Callers that act on their own schedule
+   * (rather than in response to a click) must wait for it.
+   */
+  isLoaded: boolean;
   getSelectedProvider: () => ProviderConfig | undefined;
   getSelectedModel: () => ModelConfig | undefined;
   isVisionModel: () => boolean;
@@ -43,6 +51,7 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [selectedModelId, setSelectedModelId] = useState<string>('');
+  const [isLoaded, setIsLoaded] = useState(false);
 
   // Watch for provider changes from options page (applies to all panels)
   useStorageWatchMultiple(
@@ -76,22 +85,28 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
   }, [storageKey]);
 
   const loadData = useCallback(async () => {
-    const provs = await storage.getProviders();
-    setProviders(provs);
+    try {
+      const provs = await storage.getProviders();
+      setProviders(provs);
 
-    // Load this panel's saved model
-    const result = await chrome.storage.local.get(storageKey);
-    const selectedModel = result[storageKey] as { providerId: string; modelId: string } | null | undefined;
+      // Load this panel's saved model
+      const result = await chrome.storage.local.get(storageKey);
+      const selectedModel = result[storageKey] as { providerId: string; modelId: string } | null | undefined;
 
-    if (selectedModel) {
-      setSelectedProviderId(selectedModel.providerId);
-      setSelectedModelId(selectedModel.modelId);
-    } else if (provs.length > 0) {
-      const firstProvider = provs[0]!;
-      if (firstProvider.models.length > 0) {
-        setSelectedProviderId(firstProvider.id);
-        setSelectedModelId(firstProvider.models[0]!.id);
+      if (selectedModel) {
+        setSelectedProviderId(selectedModel.providerId);
+        setSelectedModelId(selectedModel.modelId);
+      } else if (provs.length > 0) {
+        const firstProvider = provs[0]!;
+        if (firstProvider.models.length > 0) {
+          setSelectedProviderId(firstProvider.id);
+          setSelectedModelId(firstProvider.models[0]!.id);
+        }
       }
+    } finally {
+      // Set even when the read throws: a caller awaiting readiness must be
+      // released and allowed to fail loudly, rather than hanging forever.
+      setIsLoaded(true);
     }
   }, [storageKey]);
 
@@ -135,6 +150,7 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
     selectedModelId,
     currentModelValue,
     allModels,
+    isLoaded,
     getSelectedProvider,
     getSelectedModel,
     isVisionModel,

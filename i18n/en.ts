@@ -24,13 +24,46 @@ export const en = {
     pasteImage: 'Paste or drop an image',
     textAttachment: 'Text',
     imageAttachment: 'Image',
+    pageContextAttachment: 'Page',
     dropHere: 'Drop here to attach',
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
     contextMenu: {
-      ask: 'Ask Lumo',
-      askSelection: 'Ask Lumo about selection',
-      askImage: 'Ask Lumo about this image',
+      root: 'Lumo',
+      ask: 'Ask about this page',
+      summarizePage: 'Summarize this page',
+      translatePage: 'Translate this page',
+      keyPointsPage: 'Extract key points',
+      extractDataPage: 'Extract structured data',
+      explainPage: 'Explain this page',
+      askSelection: 'Ask about selection',
+      translateSelection: 'Translate selection',
+      explainSelection: 'Explain selection',
+      summarizeSelection: 'Summarize selection',
+      askImage: 'Ask about this image',
+      describeImage: 'Describe this image',
+      extractTextImage: 'Extract text from image',
+    },
+    quickActionPrompt: {
+      summarizePage:
+        'Read this page and summarize it: what it is about, its main points, and the conclusion. Keep it concise and reply in my language.',
+      translatePage:
+        'Read this page and translate its main content into my language. Preserve the structure (headings, lists, tables) and do not add commentary.',
+      keyPointsPage:
+        'Read this page and extract its key points as a short bulleted list. One idea per bullet, no filler.',
+      extractDataPage:
+        'Read this page and extract the structured data it contains (tables, lists, product/contact/price fields) as a Markdown table. State it plainly if the page holds no structured data.',
+      explainPage:
+        'Read this page and explain what it is and what it is for, in plain language, as if to someone seeing it for the first time.',
+      translateSelection:
+        'Translate the selected text into my language. Return only the translation.',
+      explainSelection:
+        'Explain the selected text in plain language. If it contains jargon, code, or references, unpack those too.',
+      summarizeSelection: 'Summarize the selected text concisely.',
+      describeImage:
+        'Describe this image in detail: what it shows, any text it contains, and anything notable about it.',
+      extractTextImage:
+        'Extract all text visible in this image. Preserve the reading order and layout, and return only the text.',
     },
     error: {
       title: 'Request Failed',

@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Square, ImagePlus, X, FileText } from 'lucide-react';
+import { Send, Square, ImagePlus, X, FileText, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
@@ -13,6 +14,17 @@ export interface ChatInputHandle {
   focus: () => void;
   addImages: (dataUrls: string[]) => void;
   addTextAttachment: (attachment: TextAttachment) => void;
+  /**
+   * Whether the input holds anything the user would lose. Quick-action routing
+   * uses this to avoid landing a generated prompt on top of a draft.
+   */
+  hasContent: () => boolean;
+  /**
+   * Writes `text` into the input. An existing draft is kept and the text is
+   * appended on a new line, so a quick action can never silently discard what
+   * the user typed.
+   */
+  prefill: (text: string) => void;
 }
  
 interface ChatInputProps {
@@ -81,6 +93,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     return () => observer.disconnect();
   }, [input]);
  
+  // The handle closes over `input`/`images`/`textAttachments`, so it must be
+  // rebuilt when they change — otherwise `hasContent` reports a stale draft and
+  // quick-action routing would overwrite text the user just typed.
   useImperativeHandle(ref, () => ({
     focus: () => {
       textareaRef.current?.focus();
@@ -91,7 +106,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     addTextAttachment: (attachment: TextAttachment) => {
       setTextAttachments((prev) => [...prev, attachment]);
     },
-  }));
+    hasContent: () =>
+      input.trim().length > 0 || images.length > 0 || textAttachments.length > 0,
+    prefill: (text: string) => {
+      setInput((prev) => (prev.trim() ? `${prev.trimEnd()}\n${text}` : text));
+    },
+  }), [input, images, textAttachments]);
  
   const handlePaste = (e: React.ClipboardEvent) => {
     if (!isVisionModel) return;
@@ -310,12 +330,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   className="relative shrink-0 group flex items-center gap-1.5 h-14 px-2.5 rounded-lg bg-muted border border-border max-w-[180px]"
                   title={attachment.preview}
                 >
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  {attachment.kind === 'page-context' ? (
+                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
                   <div className="flex flex-col overflow-hidden min-w-0">
                     <span className="text-[10px] text-muted-foreground leading-tight">
-                      {attachment.label
-                        ?? (attachment.kind === 'file-ref' ? t('sidebar.files.file') : null)
-                        ?? (attachment.mediaType === 'text/html' ? 'HTML' : t('sidebar.textAttachment'))}
+                      {attachmentLabel(attachment, t)}
                     </span>
                     <span className="text-xs truncate leading-tight">{attachment.preview}</span>
                   </div>

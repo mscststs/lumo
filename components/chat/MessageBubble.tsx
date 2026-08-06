@@ -1,7 +1,8 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe } from 'lucide-react';
+import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import {
   Message,
@@ -189,9 +190,7 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
   const [expanded, setExpanded] = useState(false);
 
   const isHtml = attachment.mediaType === 'text/html';
-  const label = attachment.label
-    ?? (attachment.kind === 'file-ref' ? t('sidebar.files.file') : null)
-    ?? (isHtml ? 'HTML' : t('sidebar.textAttachment'));
+  const label = attachmentLabel(attachment, t);
 
   const handleDragStart = (e: React.DragEvent) => {
     if (attachment.kind === 'file-ref') {
@@ -220,7 +219,11 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
         className="flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-muted/50 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {attachment.kind === 'page-context' ? (
+          <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
         <span className="text-xs text-muted-foreground/70 truncate flex-1 text-left">
           {attachment.preview}

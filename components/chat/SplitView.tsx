@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChatPanel } from '@/components/chat/ChatPanel';
+import { ChatPanel, type ChatPanelHandle } from '@/components/chat/ChatPanel';
 import { useStorageWatch } from '@/store/useStorageWatch';
+import { useContextMenuPending } from '@/store/useContextMenuPending';
 import { storage } from '@/store/storage';
 import {
   closePanelSlot,
   openPanelSlot,
   shiftPanelSessions,
 } from '@/lib/panel-storage';
+import { routeQuickAction, type PanelRoutingState } from '@/lib/quick-action-routing';
 import type { UISettings } from '@/types';
 
 /** Minimum width for each panel in pixels */
@@ -74,6 +76,9 @@ export function SplitView() {
   const [intendedPanelCount, setIntendedPanelCount] = useState(1);
   // Actually visible panels (may be less than intended due to width constraints)
   const [visiblePanelCount, setVisiblePanelCount] = useState(1);
+  // Whether the persisted panel count has been read back yet. Quick actions wait
+  // for this so they route over the user's real layout, not the initial guess.
+  const [isCountRestored, setIsCountRestored] = useState(false);
 
   // Ratio-based sizes for each panel (index = render position, left-to-right)
   const [panelRatios, setPanelRatios] = useState<number[]>([1]);
@@ -133,6 +138,7 @@ export function SplitView() {
       if (saved && saved >= 1 && saved <= 3) {
         setIntendedPanelCount(saved);
       }
+      setIsCountRestored(true);
       // Mark initial load as done after first layout settles
       requestAnimationFrame(() => {
         initialLoadRef.current = false;
@@ -396,6 +402,95 @@ export function SplitView() {
     return Array.from({ length: visiblePanelCount }, (_, i) => visiblePanelCount - 1 - i);
   }, [visiblePanelCount]);
 
+  // ─── Quick action dispatch ────────────────────────────────────────────────
+
+  // Imperative handles, indexed by panelId. Quick actions need to inspect every
+  // visible panel's live state (streaming? draft?) before choosing a target, so
+  // this cannot be done with props flowing downward.
+  const panelHandlesRef = useRef<Map<number, ChatPanelHandle>>(new Map());
+
+  /**
+   * How many panels have registered their imperative handle. Mirrors
+   * `panelHandlesRef.size` as state, because quick-action readiness has to
+   * re-evaluate when a handle attaches and a ref mutation does not re-render.
+   */
+  const [registeredPanelCount, setRegisteredPanelCount] = useState(0);
+
+  /**
+   * Stable per-panel ref callbacks.
+   *
+   * An inline `ref={(h) => set(panelId, h)}` would be a fresh function every
+   * render, so React would detach with `null` and re-attach on each one. Worse,
+   * the detach deletes by panelId, so a re-render racing with a panel unmount
+   * could drop a handle that had just been registered. Memoising by panelId
+   * keeps each callback identity stable for the panel's lifetime.
+   */
+  const panelRefCallbacksRef = useRef<Map<number, (handle: ChatPanelHandle | null) => void>>(
+    new Map(),
+  );
+
+  const getPanelRefCallback = useCallback((panelId: number) => {
+    const existing = panelRefCallbacksRef.current.get(panelId);
+    if (existing) return existing;
+    const callback = (handle: ChatPanelHandle | null) => {
+      if (handle) {
+        panelHandlesRef.current.set(panelId, handle);
+      } else {
+        panelHandlesRef.current.delete(panelId);
+      }
+      // Published as state so quick-action readiness recomputes: a handle
+      // attaching is what makes its panel routable.
+      setRegisteredPanelCount(panelHandlesRef.current.size);
+    };
+    panelRefCallbacksRef.current.set(panelId, callback);
+    return callback;
+  }, []);
+
+  /**
+   * Whether the layout reflects the user's real configuration *and* every panel
+   * it implies has registered its imperative handle.
+   *
+   * All three inputs are asynchronous: the panel count comes from storage, the
+   * width from the first `ResizeObserver` callback, and the handles from the
+   * children's ref callbacks, which attach a commit after the render that
+   * schedules them. Releasing a quick action early would route it over the
+   * initial single-panel guess and ignore a configured split view.
+   *
+   * The comparison is against `targetVisibleCount` rather than
+   * `visiblePanelCount`: the latter is itself still catching up (an effect writes
+   * it), so it briefly equals the handle count while a second panel is pending —
+   * which would let the gate open one commit too early.
+   */
+  const isLayoutSettled =
+    isCountRestored && containerWidth > 0 && registeredPanelCount >= targetVisibleCount;
+
+  useContextMenuPending(
+    useCallback((pending) => {
+      // Routing iterates the registered handles rather than `visiblePanelCount`.
+      // The handle map is the ground truth for which panels actually exist, and
+      // avoids depending on a count that lands asynchronously.
+      const states: PanelRoutingState[] = [];
+      for (const [panelId, handle] of panelHandlesRef.current) {
+        const { isStreaming, hasContent } = handle.getRoutingState();
+        states.push({ panelId, isStreaming, hasContent });
+      }
+
+      const route = routeQuickAction(states, pending.autoSend);
+      const target =
+        panelHandlesRef.current.get(route.panelId)
+        // `routeQuickAction` falls back to panel 0 when it has nothing to go on;
+        // if even that has not mounted, take any handle rather than drop the
+        // action, since dropping it is what makes the menu look broken.
+        ?? panelHandlesRef.current.values().next().value;
+
+      target?.applyQuickAction(pending, route.delivery);
+    }, []),
+    // Hold the action until the panel count has been restored from storage and
+    // the container has been measured. Dispatching before that would route over
+    // a one-panel layout and ignore the user's split view.
+    { isReady: isLayoutSettled },
+  );
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const dividerWidth = 8;
@@ -440,6 +535,7 @@ export function SplitView() {
             >
               <div className="flex-1 h-full min-w-0 overflow-hidden">
                 <ChatPanel
+                  ref={getPanelRefCallback(panelId)}
                   panelIndex={panelId}
                   showSettings={isRightmost}
                   showSplitButton={isLeftmost && canSplit}

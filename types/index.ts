@@ -85,8 +85,10 @@ export interface TextAttachment {
    * The semantic kind of attachment:
    * - 'text': plain text or HTML content (default if omitted for backwards compat)
    * - 'file-ref': a reference to a file stored in the extension's file system
+   * - 'page-context': the identity (tabId/title/url) of the page a quick action
+   *   was fired from. See `lib/page-context.ts`.
    */
-  kind?: 'text' | 'file-ref';
+  kind?: 'text' | 'file-ref' | 'page-context';
   /** The content type: 'text/plain' or 'text/html' */
   mediaType: 'text/plain' | 'text/html';
   /** The actual text/html content, or `[file: name]` for file-ref kind */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,6 +10,8 @@ import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { useModelSelection } from '@/store/useModelSelection';
 import { useChatStream } from '@/store/useChatStream';
 import { classifyDroppedContent } from '@/lib/drop-content';
+import { buildPageContextAttachment } from '@/lib/page-context';
+import type { QuickActionDelivery } from '@/lib/quick-action-routing';
 import type { TextAttachment, Conversation } from '@/types';
 import type { ContextMenuPendingData } from '@/lib/context-menu';
 
@@ -52,13 +54,23 @@ export interface ChatPanelHandle {
   focus: () => void;
   /** Get the current conversation ID */
   getCurrentSessionId: () => string | null;
+  /**
+   * Routing state for quick actions: whether this panel is mid-stream and
+   * whether its input already holds something the user would lose.
+   */
+  getRoutingState: () => { isStreaming: boolean; hasContent: boolean };
+  /**
+   * Applies a quick action from the right-click menu. `delivery` decides whether
+   * the request fires immediately or the prompt is left in the input to edit.
+   */
+  applyQuickAction: (pending: ContextMenuPendingData, delivery: QuickActionDelivery) => void;
 }
 
 /**
  * A fully independent chat panel with its own conversation state,
  * model selection, history, and input. Used as a child of SplitView.
  */
-export function ChatPanel({
+export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({
   panelIndex,
   showSettings,
   showSplitButton,
@@ -69,7 +81,7 @@ export function ChatPanel({
   occupiedSessionIds,
   onSessionChange,
   isExternalDragActive,
-}: ChatPanelProps) {
+}: ChatPanelProps, ref) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -80,6 +92,7 @@ export function ChatPanel({
     currentModelValue,
     allModels,
     providers,
+    isLoaded: isModelLoaded,
     getSelectedProvider,
     getSelectedModel,
     isVisionModel,
@@ -111,52 +124,6 @@ export function ChatPanel({
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  // ─── Context menu pending data (only first panel consumes) ────────────────
-  useEffect(() => {
-    if (panelIndex !== 0) return;
-
-    const handler = (e: Event) => {
-      const pending = (e as CustomEvent<ContextMenuPendingData>).detail;
-      if (!pending) return;
-
-      if (pending.type === 'image' && pending.imageUrl) {
-        fetch(pending.imageUrl)
-          .then((res) => res.blob())
-          .then((blob) => {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-              const dataUrl = ev.target?.result as string;
-              chatInputRef.current?.addImages([dataUrl]);
-              chatInputRef.current?.focus();
-            };
-            reader.readAsDataURL(blob);
-          })
-          .catch(() => {
-            const attachment: TextAttachment = {
-              id: uuidv4(),
-              mediaType: 'text/plain',
-              content: pending.imageUrl!,
-              preview: pending.imageUrl!.slice(0, 50),
-            };
-            chatInputRef.current?.addTextAttachment(attachment);
-            chatInputRef.current?.focus();
-          });
-      } else if (pending.text) {
-        const attachment: TextAttachment = {
-          id: uuidv4(),
-          mediaType: 'text/plain',
-          content: pending.text,
-          preview: pending.text.slice(0, 50),
-        };
-        chatInputRef.current?.addTextAttachment(attachment);
-        chatInputRef.current?.focus();
-      }
-    };
-
-    window.addEventListener('lumo-context-menu-pending', handler);
-    return () => window.removeEventListener('lumo-context-menu-pending', handler);
-  }, [panelIndex]);
 
   // Notify parent when session changes
   useEffect(() => {
@@ -190,9 +157,175 @@ export function ChatPanel({
     });
   };
 
-  const onSend = (input: string, images: string[], textAttachments: TextAttachment[]) => {
-    void handleSend(input, images, textAttachments, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId);
-  };
+  const onSend = useCallback(
+    (input: string, images: string[], textAttachments: TextAttachment[]) => {
+      void handleSend(input, images, textAttachments, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId);
+    },
+    [handleSend, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId],
+  );
+
+  /** Resolve a dragged or right-clicked image source (data URL or remote URL) into a data URL. */
+  const resolveImageSrc = useCallback(async (src: string): Promise<string | null> => {
+    if (src.startsWith('data:')) {
+      return src.startsWith('data:image/') ? src : null;
+    }
+    try {
+      const blob = await fetch(src).then((res) => res.blob());
+      if (!blob.type.startsWith('image/')) return null;
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = () => reject(new Error(`Failed to read image blob from ${src}`));
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // ─── Quick actions from the right-click menu ──────────────────────────────
+
+  /**
+   * Builds the attachments a quick action contributes, in the order the model
+   * should read them: page identity first (so it knows what it is looking at),
+   * then the selected text.
+   *
+   * The image is resolved separately because it needs an async fetch and only
+   * applies to vision models.
+   */
+  const buildQuickActionAttachments = useCallback(
+    (pending: ContextMenuPendingData): TextAttachment[] => {
+      const attachments: TextAttachment[] = [
+        buildPageContextAttachment(
+          uuidv4(),
+          pending.pageContext,
+          t('sidebar.pageContextAttachment'),
+        ),
+      ];
+
+      if (pending.text) {
+        attachments.push({
+          id: uuidv4(),
+          mediaType: 'text/plain',
+          content: pending.text,
+          preview: pending.text.slice(0, 50),
+        });
+      }
+
+      return attachments;
+    },
+    [t],
+  );
+
+  /**
+   * Resolves the action's image into a data URL, or falls back to a text
+   * attachment holding the URL when the fetch is blocked by CORS or the model
+   * cannot see images.
+   */
+  const resolveQuickActionImage = useCallback(
+    async (
+      imageUrl: string,
+    ): Promise<{ images: string[]; textAttachments: TextAttachment[] }> => {
+      if (isVisionModel()) {
+        const dataUrl = await resolveImageSrc(imageUrl);
+        if (dataUrl) return { images: [dataUrl], textAttachments: [] };
+      }
+      // Degrade to the URL as text rather than dropping the payload: the model
+      // may still be able to reason about it, and the user sees what happened.
+      return {
+        images: [],
+        textAttachments: [
+          {
+            id: uuidv4(),
+            mediaType: 'text/plain',
+            content: imageUrl,
+            preview: imageUrl.slice(0, 50),
+          },
+        ],
+      };
+    },
+    [isVisionModel, resolveImageSrc],
+  );
+
+  const runQuickAction = useCallback(
+    (pending: ContextMenuPendingData, delivery: QuickActionDelivery) => {
+      void (async () => {
+        const attachments = buildQuickActionAttachments(pending);
+        let images: string[] = [];
+
+        if (pending.type === 'image' && pending.imageUrl) {
+          const resolved = await resolveQuickActionImage(pending.imageUrl);
+          images = resolved.images;
+          attachments.push(...resolved.textAttachments);
+        }
+
+        if (delivery === 'send' && pending.prompt) {
+          // Routing only picks `send` for an idle panel with an empty input, so
+          // there is no draft to merge and `handleSend`'s own guards cover the
+          // race where a stream started in between.
+          onSend(pending.prompt, images, attachments);
+          return;
+        }
+
+        if (images.length > 0) chatInputRef.current?.addImages(images);
+        for (const attachment of attachments) {
+          chatInputRef.current?.addTextAttachment(attachment);
+        }
+        if (pending.prompt) chatInputRef.current?.prefill(pending.prompt);
+        chatInputRef.current?.focus();
+      })();
+    },
+    [buildQuickActionAttachments, resolveQuickActionImage, onSend],
+  );
+
+  /**
+   * A quick action that arrived before the panel's model selection had loaded.
+   *
+   * On a cold open the side panel mounts and dispatches the action while its
+   * providers are still being read from `chrome.storage`. Acting immediately
+   * would hit `handleSend`'s `if (!provider || !model) return` guard and drop the
+   * action silently — exactly the bug where picking a menu item with the panel
+   * closed only opened the panel. It would also misread `isVisionModel()` as
+   * false and downgrade images to plain URLs.
+   *
+   * So the action is parked here and replayed once the model is known.
+   */
+  const deferredQuickActionRef = useRef<
+    { pending: ContextMenuPendingData; delivery: QuickActionDelivery } | null
+  >(null);
+
+  const applyQuickAction = useCallback(
+    (pending: ContextMenuPendingData, delivery: QuickActionDelivery) => {
+      if (!isModelLoaded) {
+        // Last one wins: a newer action supersedes a stale parked one.
+        deferredQuickActionRef.current = { pending, delivery };
+        return;
+      }
+      runQuickAction(pending, delivery);
+    },
+    [isModelLoaded, runQuickAction],
+  );
+
+  useEffect(() => {
+    if (!isModelLoaded) return;
+    const deferred = deferredQuickActionRef.current;
+    if (!deferred) return;
+    deferredQuickActionRef.current = null;
+    runQuickAction(deferred.pending, deferred.delivery);
+  }, [isModelLoaded, runQuickAction]);
+
+  useImperativeHandle(ref, () => ({
+    addImages: (urls: string[]) => chatInputRef.current?.addImages(urls),
+    addTextAttachment: (attachment: TextAttachment) =>
+      chatInputRef.current?.addTextAttachment(attachment),
+    focus: () => chatInputRef.current?.focus(),
+    getCurrentSessionId: () => currentConversation?.id ?? null,
+    getRoutingState: () => ({
+      isStreaming,
+      hasContent: chatInputRef.current?.hasContent() ?? false,
+    }),
+    applyQuickAction,
+  }), [currentConversation?.id, isStreaming, applyQuickAction]);
 
   const onRetry = () => {
     handleRetry(getSelectedProvider, getSelectedModel);
@@ -252,25 +385,6 @@ export function ChatPanel({
     };
     chatInputRef.current?.addTextAttachment(attachment);
   };
-
-  /** Resolve a dragged image source (data URL or remote URL) into a data URL. */
-  const resolveImageSrc = useCallback(async (src: string): Promise<string | null> => {
-    if (src.startsWith('data:')) {
-      return src.startsWith('data:image/') ? src : null;
-    }
-    try {
-      const blob = await fetch(src).then((res) => res.blob());
-      if (!blob.type.startsWith('image/')) return null;
-      return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve(ev.target?.result as string);
-        reader.onerror = () => reject(new Error(`Failed to read image blob from ${src}`));
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      return null;
-    }
-  }, []);
 
   const handlePanelDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -448,4 +562,4 @@ export function ChatPanel({
       />
     </div>
   );
-}
+});
