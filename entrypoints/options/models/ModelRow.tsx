@@ -127,12 +127,15 @@ export function ModelRow({
           )}
         </button>
 
-        <span
-          aria-hidden
-          className="hidden shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-100 sm:inline"
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`${t('common.edit')} ${model.displayName}`}
+          onClick={onEdit}
+          className="hidden h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 sm:inline-flex"
         >
           <Pencil className="h-3 w-3" />
-        </span>
+        </Button>
 
         <Button
           variant="ghost"
