@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
+import { themePreloadPlugin } from './lib/build/theme-preload-plugin';
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -44,7 +45,7 @@ export default defineConfig({
     },
   },
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), themePreloadPlugin()],
     build: {
       // Chrome 拒绝复用跨 script world 的 chrome-extension:// 预加载资源
       // (Resource::CanReuse -> kCrossWorldExtensionResourceMismatch)，导致

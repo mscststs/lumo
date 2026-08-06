@@ -3,9 +3,9 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import '@/assets/globals.css';
 import '@/i18n';
-import { initI18nFromStorage } from '@/i18n';
+import { bootstrapPage } from '@/lib/page-bootstrap';
 
-initI18nFromStorage().then(() => {
+bootstrapPage().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />

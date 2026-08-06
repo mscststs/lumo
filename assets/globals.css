@@ -53,6 +53,11 @@
 
 @layer base {
   .dark {
+    /* Themes the things CSS tokens cannot reach: native scrollbars, form
+       controls, and the canvas the compositor paints outside `body`. Declared
+       here rather than on a separate `html.dark` rule so `midnight` inherits it
+       through the same specificity chain as the colour tokens. */
+    color-scheme: dark;
     --color-background: hsl(222.2 84% 4.9%);
     --color-foreground: hsl(210 40% 98%);
     --color-card: hsl(222.2 84% 4.9%);
@@ -162,6 +167,33 @@
   body {
     @apply bg-background text-foreground;
     font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  /* ─── First-paint surface ───────────────────────────────────────────────────
+     `body` alone is not enough. The compositor paints the canvas from `html`,
+     and it does so before `body` has any layout, so a themed `body` still
+     flashes the browser default white first. Propagating the token to `html`
+     makes the very first frame the right colour. */
+  html {
+    background-color: var(--color-background);
+  }
+
+  /* Last-resort anti-FOUC for the window before `applyTheme` runs.
+     `theme-preload.js` normally sets `data-theme` synchronously in `<head>`, so
+     this only engages when that script is unavailable (blocked, or a stale
+     cached HTML that predates it). `:not([data-theme])` makes it self-
+     disabling: the moment a theme is painted the attribute exists and these
+     declarations stop matching, so they can never fight the real tokens.
+
+     Only `system` + OS-dark is recoverable without reading storage; an explicit
+     `dark`/`midnight` preference under an OS-light setting is what the preload
+     script exists to cover. Values mirror the `.dark` palette above and are
+     pinned by tests/theme.test.ts. */
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) {
+      background-color: hsl(222.2 84% 4.9%);
+      color-scheme: dark;
+    }
   }
 }
 
