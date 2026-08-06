@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { attachmentLabel } from '@/lib/attachment-display';
-import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
@@ -36,10 +36,12 @@ interface ChatInputProps {
   isInternalDrag: boolean;
   onInternalFileDrop?: (fileName: string) => void;
   onInternalTextDrop?: (text: string) => void;
+  /** Receives a re-attached `TextAttachment` drag that carried a full attachment payload. */
+  onInternalAttachmentDrop?: (attachment: TextAttachment) => void;
 }
- 
+
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { isStreaming, isVisionModel, onSend, onStop, isInternalDrag, onInternalFileDrop, onInternalTextDrop },
+  { isStreaming, isVisionModel, onSend, onStop, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
   ref,
 ) {
   const { t } = useTranslation();
@@ -271,7 +273,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       return;
     }
 
-    // Check for file reference first
+    // Check for a full attachment payload next. Any `TextAttachment.kind`
+    // (page-context, file-ref, plain text, html, ...) round-trips through this
+    // single path with kind/label/mediaType preserved.
+    const attachmentJson = e.dataTransfer.getData(LUMO_ATTACHMENT_MIME);
+    if (attachmentJson && onInternalAttachmentDrop) {
+      try {
+        const attachment = JSON.parse(attachmentJson) as TextAttachment;
+        if (attachment && typeof attachment.content === 'string') {
+          onInternalAttachmentDrop(attachment);
+          return;
+        }
+      } catch {
+        // Malformed payload: fall through to the legacy text handling below.
+      }
+    }
+
+    // Check for file reference next
     const fileName = e.dataTransfer.getData(LUMO_FILE_REF_MIME);
     if (fileName && onInternalFileDrop) {
       onInternalFileDrop(fileName);
@@ -283,7 +301,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (text?.trim() && onInternalTextDrop) {
       onInternalTextDrop(text.trim());
     }
-  }, [isInternalDrag, isVisionModel, onInternalFileDrop, onInternalTextDrop]);
+  }, [isInternalDrag, isVisionModel, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop]);
  
   return (
     <div

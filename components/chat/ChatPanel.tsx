@@ -484,6 +484,17 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     chatInputRef.current?.focus();
   }, []);
 
+  /**
+   * Re-attaches a text attachment dragged from a transcript card into the input.
+   * The full attachment round-trips through the drag payload, so `kind`/`label`
+   * (e.g. a `page-context` chip) are preserved rather than degrading to text.
+   * A fresh id avoids collisions with the card left behind in the transcript.
+   */
+  const addInternalAttachmentDrop = useCallback((attachment: TextAttachment) => {
+    chatInputRef.current?.addTextAttachment({ ...attachment, id: uuidv4() });
+    chatInputRef.current?.focus();
+  }, []);
+
   return (
     <div
       className="relative flex flex-col h-full w-full bg-background overflow-hidden"
@@ -559,6 +570,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isInternalDrag={isInternalDrag}
         onInternalFileDrop={addFileReference}
         onInternalTextDrop={addInternalTextDrop}
+        onInternalAttachmentDrop={addInternalAttachmentDrop}
       />
     </div>
   );

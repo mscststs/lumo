@@ -15,3 +15,17 @@ export const LUMO_FILE_REF_MIME = 'application/x-lumo-file-ref';
  * input box). Carries the image data URL.
  */
 export const LUMO_IMAGE_DRAG_MIME = 'application/x-lumo-image';
+
+/**
+ * Custom MIME type used for internal text-attachment drags within the sidebar.
+ *
+ * Carries the *entire* `TextAttachment` serialised as JSON rather than a
+ * decomposed fragment. The alternative — mapping each attachment kind to its
+ * own custom MIME type and drop-handler branch, as image/file drags do — forces
+ * every new `TextAttachment.kind` to be taught to both the drag source and the
+ * drop target, and silently degrades anything untaught to plain text. Serialising
+ * the full attachment means `kind`, `label`, `mediaType`, `preview` and `content`
+ * all round-trip exactly, so a `page-context` chip dragged back into the input
+ * box is re-added as a page rather than dissolving into generic text.
+ */
+export const LUMO_ATTACHMENT_MIME = 'application/x-lumo-attachment';

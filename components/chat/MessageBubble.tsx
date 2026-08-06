@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
-import { LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import {
   Message,
   MessageContent,
@@ -193,6 +193,10 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
   const label = attachmentLabel(attachment, t);
 
   const handleDragStart = (e: React.DragEvent) => {
+    // Internal sidebar drops receive the whole attachment so the chip round-trips
+    // exactly (kind/label/mediaType preserved) instead of degrading to plain text.
+    e.dataTransfer.setData(LUMO_ATTACHMENT_MIME, JSON.stringify(attachment));
+
     if (attachment.kind === 'file-ref') {
       // Extract file name from content format `[file: name]`
       const match = /^\[file:\s*(.+)\]$/.exec(attachment.content);
