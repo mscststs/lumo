@@ -209,11 +209,11 @@ export function ChatPanel({
    * Wrap handleSelectConversation to prevent selecting occupied sessions
    */
   const handleSelectConversationFiltered = useCallback(
-    async (conversation: Conversation) => {
-      if (occupiedSessionIds.includes(conversation.id) && conversation.id !== currentConversation?.id) {
+    async (id: string) => {
+      if (occupiedSessionIds.includes(id) && id !== currentConversation?.id) {
         return; // Cannot select a session occupied by another panel
       }
-      await handleSelectConversation(conversation);
+      await handleSelectConversation(id);
     },
     [occupiedSessionIds, currentConversation?.id, handleSelectConversation],
   );

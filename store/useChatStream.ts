@@ -7,6 +7,8 @@ import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
 import { resolveSystemPrompt } from '@/lib/system-prompt';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
+import { toError } from '@/lib/provider-error';
+import type { ConversationMeta } from '@/lib/conversation-store';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
 import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment } from '@/types';
 
@@ -27,7 +29,11 @@ interface AssistantTurn {
 }
 
 export interface UseChatStreamReturn {
-  conversations: Conversation[];
+  /**
+   * History list entries. Summaries rather than full conversations — the list
+   * never needs message bodies. See `useConversations`.
+   */
+  conversations: ConversationMeta[];
   currentConversation: Conversation | null;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (open: boolean) => void;
@@ -45,7 +51,7 @@ export interface UseChatStreamReturn {
   handleRetry: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
   handleStop: () => void;
   handleNewChat: () => void;
-  handleSelectConversation: (conversation: Conversation) => Promise<void>;
+  handleSelectConversation: (id: string) => Promise<void>;
   handleDeleteConversation: (id: string) => Promise<void>;
   handleClearAllConversations: () => Promise<void>;
 }
@@ -70,6 +76,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     current: currentConversation,
     save: saveConversation,
     open: openConversation,
+    openById: openConversationById,
     remove: removeConversation,
     clearAll: clearAllConversations,
   } = useConversations({
@@ -136,16 +143,19 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   );
 
   const handleNewChat = useCallback(() => {
-    void switchConversation(null);
+    void switchConversation(null).catch((error) => {
+      console.error('[Lumo] Failed to start a new chat:', error);
+    });
   }, [switchConversation]);
 
   const handleSelectConversation = useCallback(
-    async (conversation: Conversation) => {
+    async (id: string) => {
       setIsHistoryOpen(false);
-      if (conversation.id === currentConversation?.id) return;
-      await switchConversation(conversation);
+      if (id === currentConversation?.id) return;
+      abortActiveStream();
+      await openConversationById(id);
     },
-    [currentConversation?.id, switchConversation],
+    [currentConversation?.id, abortActiveStream, openConversationById],
   );
 
   const handleDeleteConversation = useCallback(
@@ -171,6 +181,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
    * succeeded. It is dropped when its fingerprint no longer matches the request
    * about to be sent (different conversation, provider, model, or history
    * length), because the snapshot is a provider-shaped model prompt.
+   *
+   * `canCreate` lets the final save insert the conversation when the initial
+   * write of the user turn failed. Normally the save must *not* insert, so a
+   * stream settling after the user deleted its conversation cannot resurrect it.
    */
    const executeStream = useCallback(
     async (
@@ -179,6 +193,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       model: ModelConfig,
       attempt: number,
       resume?: ResumeState | null,
+      { canCreate = false }: { canCreate?: boolean } = {},
     ) => {
       // Reuse the system prompt snapshot stored in the conversation so that
       // time-injected prompts stay stable across messages and provider prompt
@@ -276,7 +291,16 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
         if (!updatedConv) return;
 
-        await saveConversation(updatedConv);
+        // Surfaced rather than swallowed: this used to reject into
+        // `chatStream`'s already-settled `onFinish`, so a failed save left the
+        // reply on screen but absent from disk — it vanished on reload with no
+        // indication anything had gone wrong.
+        try {
+          await saveConversation(updatedConv, { create: canCreate });
+        } catch (error) {
+          if (stale) return;
+          setChatError(classifyError(toError(error)));
+        }
       };
 
       await chatStream({
@@ -322,7 +346,15 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
                 model,
                 nextAttempt,
                 resumeForRetry,
-              );
+                { canCreate },
+              ).catch((retryError) => {
+                // Same hazard as the initial send: an unhandled rejection here
+                // would leave `isStreaming` stuck true with nothing on screen.
+                setIsStreaming(false);
+                setStreamingTurn(null);
+                setIsRetrying(false);
+                setChatError(classifyError(toError(retryError)));
+              });
             }, delay);
           } else {
             setIsStreaming(false);
@@ -414,10 +446,48 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       setStreamingTurn(null);
 
       const convWithUserMessage = conv;
-      await openConversation(convWithUserMessage);
-      await saveConversation(convWithUserMessage, { create: true });
 
-      await executeStream(convWithUserMessage, provider, model, 0);
+      // The pointer write is best-effort and applies its state update
+      // synchronously, so the user message renders regardless of whether the
+      // write lands.
+      void openConversation(convWithUserMessage).catch(() => {
+        // Losing the pointer only costs conversation restoration on next open.
+      });
+
+      // The user turn is persisted before the request because `persist` saves
+      // with `insertIfMissing: false` — it must not resurrect a conversation the
+      // user deleted mid-stream, which also means it cannot create this one.
+      //
+      // Crucially this is no longer allowed to gate the request. It used to be a
+      // bare `await`, so a storage failure meant `executeStream` was never
+      // reached while `isStreaming` stayed true: the composer sat on "thinking"
+      // forever showing no error, and `handleSend`'s own `isStreaming` guard
+      // then silently swallowed every further attempt.
+      let persistedUserTurn = true;
+      try {
+        await saveConversation(convWithUserMessage, { create: true });
+      } catch (error) {
+        persistedUserTurn = false;
+        // Reported, but the turn still goes to the model: losing history is far
+        // less disruptive than losing the ability to talk to the assistant.
+        setChatError(classifyError(toError(error)));
+      }
+
+      try {
+        await executeStream(convWithUserMessage, provider, model, 0, undefined, {
+          canCreate: !persistedUserTurn,
+        });
+      } catch (error) {
+        // `chatStream` reports provider failures through `onError`; reaching here
+        // means something outside the stream broke (a failed settings read, a
+        // storage fault). Without this the rejection escaped into ChatPanel's
+        // `void handleSend(...)` and left the panel hung.
+        setIsStreaming(false);
+        setStreamingParts([]);
+        setStreamingTurn(null);
+        setIsRetrying(false);
+        setChatError(classifyError(toError(error)));
+      }
     },
     [isStreaming, currentConversation, openConversation, saveConversation, executeStream],
   );
@@ -445,7 +515,12 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         setStreamingTurn(null);
       }
 
-      void executeStream(currentConversation, provider, model, 0, resume);
+      void executeStream(currentConversation, provider, model, 0, resume).catch((error) => {
+        setIsStreaming(false);
+        setStreamingTurn(null);
+        setIsRetrying(false);
+        setChatError(classifyError(toError(error)));
+      });
     },
     [currentConversation, isStreaming, executeStream],
   );

@@ -14,9 +14,17 @@
  * expands a collapsed call.
  */
 
+import { parseBlobRef } from '@/lib/blob-ref';
+
 export type NormalizedToolOutput =
   | { kind: 'empty' }
   | { kind: 'image'; url: string; caption?: string }
+  /**
+   * A screenshot whose bytes live in the `blobs` store rather than in the
+   * conversation record. `ref` is resolved to an object URL only when the call is
+   * expanded — see `useBlobImageUrl`.
+   */
+  | { kind: 'image-ref'; ref: string; caption?: string }
   | { kind: 'error'; message: string }
   | { kind: 'text'; text: string };
 
@@ -97,11 +105,19 @@ function normalizeCallToolResult(result: CallToolResult): NormalizedToolOutput {
     (p): p is CallToolImagePart => p.type === 'image' && typeof (p as any).data === 'string',
   );
   if (imagePart) {
-    const url = `data:${imagePart.mimeType || 'image/png'};base64,${imagePart.data}`;
     const textParts = result.content
       .filter((p): p is CallToolTextPart => p.type === 'text')
       .map((p) => p.text);
     const caption = textParts.length > 0 ? textParts.join('\n') : undefined;
+
+    // Persisted screenshots carry a reference instead of base64; the bytes are
+    // fetched lazily so opening a long conversation does not load every image.
+    const ref = parseBlobRef(imagePart.data);
+    if (ref) {
+      return { kind: 'image-ref', ref: imagePart.data, ...(caption ? { caption } : {}) };
+    }
+
+    const url = `data:${imagePart.mimeType || 'image/png'};base64,${imagePart.data}`;
     return { kind: 'image', url, ...(caption ? { caption } : {}) };
   }
 

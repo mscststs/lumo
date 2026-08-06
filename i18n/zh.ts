@@ -36,6 +36,7 @@ export const zh: TranslationSchema = {
     },
     error: {
       title: '请求失败',
+      storageTitle: '回复未保存',
       retry: '重试',
       retrying: '正在重试 ({{current}}/{{max}})...',
       networkError: '网络连接失败，请检查网络连接。',
@@ -44,6 +45,7 @@ export const zh: TranslationSchema = {
       rateLimitError: '请求频率超限，将自动重试。',
       serverError: '模型服务返回错误，请稍后再试。',
       timeoutError: '请求超时，请重试。',
+      storageError: '回复已显示，但未能保存，重新加载后将会丢失。请删除部分对话以释放空间。',
       unknownError: '发生了未知错误。',
     },
     history: {
@@ -64,6 +66,7 @@ export const zh: TranslationSchema = {
       input: '入参',
       output: '结果',
       screenshot: '截图',
+      screenshotUnavailable: '截图不可用',
       unknownError: '未知错误',
     },
     reasoning: {

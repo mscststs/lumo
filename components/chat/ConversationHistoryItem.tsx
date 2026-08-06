@@ -3,14 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { Trash2, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { extractText, normalizeMessage } from '@/lib/message-parts';
 import { useRelativeTime } from '@/lib/use-relative-time';
-import type { Conversation } from '@/types';
+import type { ConversationMeta } from '@/lib/conversation-store';
 
 interface ConversationHistoryItemProps {
-  conversation: Conversation;
+  conversation: ConversationMeta;
   isActive: boolean;
-  onSelect: (conversation: Conversation) => void;
+  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -26,10 +25,9 @@ export function ConversationHistoryItem({
   // extension surfaces and jarring inside a narrow side panel.
   const [isConfirming, setIsConfirming] = useState(false);
 
-  const lastMessage = conversation.messages[conversation.messages.length - 1];
-  const preview = lastMessage
-    ? extractText(normalizeMessage(lastMessage)).replace(/\s+/g, ' ').trim()
-    : '';
+  // Precomputed when the conversation was saved, so rendering the list never
+  // touches message bodies.
+  const preview = conversation.preview;
 
   return (
     <div
@@ -40,7 +38,7 @@ export function ConversationHistoryItem({
     >
       <button
         type="button"
-        onClick={() => onSelect(conversation)}
+        onClick={() => onSelect(conversation.id)}
         className="w-full text-left px-2.5 py-2 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
       >
         {/* pr leaves room for the hover actions so long titles never sit under them */}

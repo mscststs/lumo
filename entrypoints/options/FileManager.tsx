@@ -17,10 +17,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
-import { storage } from '@/store/storage';
+import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
 import { downloadAsZip } from '@/lib/zip-download';
 import { SettingsHeader } from './components/SettingsHeader';
-import type { Conversation } from '@/types';
 
 /**
  * Format file size to human-readable string.
@@ -137,7 +136,7 @@ export function FileManager() {
   const { t } = useTranslation();
   const [files, setFiles] = useState<FileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [downloadingFolder, setDownloadingFolder] = useState<string | null>(null);
@@ -147,7 +146,8 @@ export function FileManager() {
     try {
       const [fileList, convList] = await Promise.all([
         fileStorage.listFiles(),
-        storage.getConversations(),
+        // Summaries only — this view needs titles, never message bodies.
+        listConversationMeta(),
       ]);
       setFiles(fileList);
       setConversations(convList);

@@ -5,13 +5,12 @@ import { X, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
-import { extractText, normalizeMessage } from '@/lib/message-parts';
-import type { Conversation } from '@/types';
+import type { ConversationMeta } from '@/lib/conversation-store';
 
 interface ConversationHistoryProps {
-  conversations: Conversation[];
+  conversations: ConversationMeta[];
   currentId: string | null;
-  onSelect: (conversation: Conversation) => void;
+  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onClearAll: () => void;
   onClose: () => void;
@@ -29,21 +28,19 @@ export function ConversationHistory({
   const [query, setQuery] = useState('');
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
 
-  const sorted = useMemo(
-    () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt),
-    [conversations],
-  );
-
+  // Already ordered by the store (most recently updated first).
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return sorted;
-    return sorted.filter((conversation) => {
-      if (conversation.title.toLowerCase().includes(needle)) return true;
-      return conversation.messages.some((message) =>
-        extractText(normalizeMessage(message)).toLowerCase().includes(needle),
-      );
-    });
-  }, [sorted, query]);
+    if (!needle) return conversations;
+    // Titles and the stored preview only. Searching full message bodies would
+    // mean loading every conversation from the database on each keystroke; the
+    // list is intentionally backed by summaries alone.
+    return conversations.filter(
+      (conversation) =>
+        conversation.title.toLowerCase().includes(needle) ||
+        conversation.preview.toLowerCase().includes(needle),
+    );
+  }, [conversations, query]);
 
   return (
     <motion.div

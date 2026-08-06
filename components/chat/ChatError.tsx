@@ -52,6 +52,7 @@ const categoryToI18nKey: Record<ChatErrorCategory, string> = {
   rateLimit: 'sidebar.error.rateLimitError',
   server: 'sidebar.error.serverError',
   timeout: 'sidebar.error.timeoutError',
+  storage: 'sidebar.error.storageError',
   unknown: 'sidebar.error.unknownError',
 };
 
@@ -62,6 +63,13 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
   // The friendly copy for `unknown` says nothing actionable, so the raw text is
   // the only signal the user has — give it more room in that case.
   const rawClamp = error.category === 'unknown' ? 'line-clamp-3' : 'line-clamp-2';
+
+  // A storage failure is not a failed request: the model already replied and the
+  // reply is on screen, only saving it failed. Calling that "Request Failed"
+  // would be wrong, and offering a retry would re-run the model call and append a
+  // duplicate turn, so the card becomes a plain warning instead.
+  const isPersistenceFailure = error.category === 'storage';
+  const title = isPersistenceFailure ? t('sidebar.error.storageTitle') : t('sidebar.error.title');
 
   return (
     <motion.div
@@ -76,7 +84,7 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
         <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-[0.8125rem] font-semibold leading-4 text-destructive">
-            {t('sidebar.error.title')}
+            {title}
           </p>
           <p className="text-xs leading-relaxed text-foreground/80 break-words">
             {friendlyMessage}
@@ -101,34 +109,36 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
       )}
 
       {/* Retry area */}
-      <div className="flex items-center justify-end gap-2 border-t border-destructive/15 px-2.5 py-1.5">
-        {isRetrying ? (
-          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-            <span className="truncate">
-              {t('sidebar.error.retrying', { current: retryAttempt, max: maxRetries })}
+      {!isPersistenceFailure && (
+        <div className="flex items-center justify-end gap-2 border-t border-destructive/15 px-2.5 py-1.5">
+          {isRetrying ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              <span className="truncate">
+                {t('sidebar.error.retrying', { current: retryAttempt, max: maxRetries })}
+              </span>
             </span>
-          </span>
-        ) : (
-          /*
-            Always offered, even for categories `isRetryableError` excludes: that
-            flag only governs *automatic* retries. Once the user fixes the key or
-            tops up credits, a manual retry resumes this conversation instead of
-            forcing them to start a new one.
-          */
-          <Button
-            variant="outline"
-            size="sm"
-            // `bg-transparent` is required: the outline variant's `bg-background`
-            // would punch an opaque hole through the card's tint.
-            className="h-6 gap-1.5 border-destructive/30 bg-transparent px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={onRetry}
-          >
-            <RotateCcw className="h-3 w-3 shrink-0" />
-            <span className="truncate">{t('sidebar.error.retry')}</span>
-          </Button>
-        )}
-      </div>
+          ) : (
+            /*
+              Always offered, even for categories `isRetryableError` excludes: that
+              flag only governs *automatic* retries. Once the user fixes the key or
+              tops up credits, a manual retry resumes this conversation instead of
+              forcing them to start a new one.
+            */
+            <Button
+              variant="outline"
+              size="sm"
+              // `bg-transparent` is required: the outline variant's `bg-background`
+              // would punch an opaque hole through the card's tint.
+              className="h-6 gap-1.5 border-destructive/30 bg-transparent px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onRetry}
+            >
+              <RotateCcw className="h-3 w-3 shrink-0" />
+              <span className="truncate">{t('sidebar.error.retry')}</span>
+            </Button>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }

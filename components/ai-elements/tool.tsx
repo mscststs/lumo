@@ -16,6 +16,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { normalizeToolOutput, safeStringify, summarizeToolInput } from '@/lib/tool-output';
+import { useBlobImageUrl } from '@/lib/use-blob-image-url';
 import type { ToolPart } from '@/lib/message-parts';
 
 /**
@@ -199,6 +200,43 @@ export function ToolError({ message }: { message: string }) {
   );
 }
 
+/**
+ * A screenshot kept outside the conversation record.
+ *
+ * Split into its own component so the blob is fetched only once this subtree
+ * mounts, which happens when the user expands the call.
+ */
+function ToolBlobImage({ blobReference, caption }: { blobReference: string; caption?: string }) {
+  const { t } = useTranslation();
+  const state = useBlobImageUrl(blobReference);
+
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      {state.status === 'ready' ? (
+        <img
+          src={state.url}
+          alt={t('sidebar.tool.screenshot')}
+          className="max-h-48 w-full rounded-md border border-border/60 object-contain bg-background/80"
+        />
+      ) : (
+        // A fixed-height placeholder keeps the transcript from jumping when the
+        // image arrives. `loading` must read differently from a real failure —
+        // treating the two alike made every expand flash an error first.
+        <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/50">
+          {state.status === 'loading' ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
+          ) : (
+            <span className="px-2 text-center text-[0.6875rem] text-muted-foreground">
+              {t('sidebar.tool.screenshotUnavailable')}
+            </span>
+          )}
+        </div>
+      )}
+      {caption && <ToolCodeBlock>{caption}</ToolCodeBlock>}
+    </div>
+  );
+}
+
 export function ToolOutput({ output }: { output: unknown }) {
   const { t } = useTranslation();
   const normalized = React.useMemo(() => normalizeToolOutput(output), [output]);
@@ -213,7 +251,9 @@ export function ToolOutput({ output }: { output: unknown }) {
     <div className="flex flex-col gap-1 min-w-0">
       <ToolSectionLabel>{t('sidebar.tool.output')}</ToolSectionLabel>
 
-      {normalized.kind === 'image' ? (
+      {normalized.kind === 'image-ref' ? (
+        <ToolBlobImage blobReference={normalized.ref} caption={normalized.caption} />
+      ) : normalized.kind === 'image' ? (
         <div className="flex flex-col gap-1 min-w-0">
           <img
             src={normalized.url}

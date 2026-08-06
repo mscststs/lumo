@@ -79,8 +79,7 @@ export function useProviders(): UseProvidersReturn {
    * Persists a new list.
    *
    * Reads the current value back from storage first so a concurrent write from
-   * another context is not clobbered by this tab's stale copy — the same
-   * pattern `storage.upsertConversation` uses.
+   * another context is not clobbered by this tab's stale copy.
    */
   const commit = useCallback(
     async (update: (current: ProviderConfig[]) => ProviderConfig[], { prune = false } = {}) => {

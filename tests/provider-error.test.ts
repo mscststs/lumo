@@ -223,12 +223,44 @@ describe('isRetryableError', () => {
   it('does not auto-retry deterministic failures', () => {
     expect(isRetryableError('auth')).toBe(false);
     expect(isRetryableError('quota')).toBe(false);
+    // The disk will not have more room a second later, and the reply itself
+    // already succeeded — retrying would only re-run the model call.
+    expect(isRetryableError('storage')).toBe(false);
   });
 
   it('auto-retries transient failures', () => {
     for (const category of ['network', 'rateLimit', 'server', 'timeout', 'unknown'] as const) {
       expect(isRetryableError(category)).toBe(true);
     }
+  });
+});
+
+describe('classifyError for browser storage failures', () => {
+  it('does not mistake a Chrome storage quota error for a depleted account', () => {
+    // Regression: this message contains "quota", so the provider heuristics read
+    // it as `quota` and told the user to top up an account that was fine. The
+    // real fault is local storage being full.
+    const info = classifyError(new Error('Resource::kQuotaBytes quota exceeded'));
+    expect(info.category).toBe('storage');
+  });
+
+  it('recognises the IndexedDB quota DOMException by name', () => {
+    // The message is localised by the browser, so the name is the reliable signal.
+    const error = new Error('The current transaction exceeded its quota limitations.');
+    error.name = 'QuotaExceededError';
+    expect(classifyError(error).category).toBe('storage');
+  });
+
+  it('recognises an aborted database transaction', () => {
+    expect(classifyError(new Error('Chat DB transaction aborted')).category).toBe('storage');
+  });
+
+  it('does not steal genuine provider quota failures', () => {
+    // The provider path must still win for account-level exhaustion.
+    expect(classifyError(new Error(QUOTA_MESSAGE)).category).toBe('quota');
+    expect(
+      classifyError(new Error('429 insufficient_quota: You exceeded your current quota.')).category,
+    ).toBe('quota');
   });
 });
 

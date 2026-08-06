@@ -1,7 +1,6 @@
 import type {
   ProviderConfig,
   UISettings,
-  Conversation,
   SystemPromptSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
@@ -46,6 +45,28 @@ async function setField<K extends StorageKey>(
  */
 export type AppConfig = Partial<StorageSchema>;
 
+/**
+ * Key chat history used to live under, before it moved to IndexedDB.
+ *
+ * Not part of `StorageSchema`: nothing reads it any more. It only needs deleting.
+ */
+const LEGACY_CONVERSATIONS_KEY = 'conversations';
+
+/**
+ * Delete the abandoned chat-history key.
+ *
+ * Old conversations are intentionally not migrated, but the key cannot simply be
+ * ignored: a large enough value occupies the whole 10 MB `local` quota, and
+ * `chrome.storage` enforces that budget across the *area*, not per key. That is
+ * why the original bug broke unrelated writes too — saving a model selection
+ * failed because chat history had eaten the entire allowance.
+ *
+ * Idempotent, so it is safe to call on every startup.
+ */
+export async function dropLegacyConversationsKey(): Promise<void> {
+  await chrome.storage.local.remove(LEGACY_CONVERSATIONS_KEY);
+}
+
 // ---------------------------------------------------------------------------
 // Public API — preserves the exact same method signatures for compatibility
 // ---------------------------------------------------------------------------
@@ -68,36 +89,20 @@ export const storage = {
     await setField('uiSettings', settings);
   },
 
-  // ----- Conversations -----
-  async getConversations(): Promise<Conversation[]> {
-    return getField('conversations');
-  },
-  async setConversations(conversations: Conversation[]): Promise<void> {
-    await setField('conversations', conversations);
-  },
+  // ----- Conversation change broadcast -----
 
   /**
-   * Inserts or replaces a conversation and returns the persisted list.
-   * Reads immediately before writing so concurrent updates from another
-   * context are not clobbered by a stale in-memory copy.
+   * Announce that the conversation database changed.
    *
-   * Pass `insertIfMissing: false` to skip conversations that no longer exist —
-   * a stream settling after its conversation was deleted must not recreate it.
+   * Conversations live in IndexedDB, which has no cross-context change event, so
+   * a bounded counter in `chrome.storage` carries the signal instead (see
+   * `storage-schema.ts`). Read-modify-write is fine here: the value is only ever
+   * compared for inequality, so a racing bump that lands on the same number
+   * still delivers a change event to every other context.
    */
-  async upsertConversation(
-    conversation: Conversation,
-    { insertIfMissing = true }: { insertIfMissing?: boolean } = {},
-  ): Promise<Conversation[]> {
-    const all = await this.getConversations();
-    const idx = all.findIndex((c) => c.id === conversation.id);
-    if (idx >= 0) {
-      all[idx] = conversation;
-    } else {
-      if (!insertIfMissing) return all;
-      all.unshift(conversation);
-    }
-    await this.setConversations(all);
-    return all;
+  async bumpConversationsRevision(): Promise<void> {
+    const current = await getField('conversationsRevision');
+    await setField('conversationsRevision', current + 1);
   },
 
   // ----- Current Conversation ID -----

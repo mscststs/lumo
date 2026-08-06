@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { storage } from './storage';
 import { useStorageWatch } from './useStorageWatch';
 import { panelConversationKey } from '@/lib/panel-storage';
+import {
+  clearConversations,
+  deleteConversation,
+  getConversation,
+  listConversationMeta,
+  saveConversation as persistConversation,
+  type ConversationMeta,
+} from '@/lib/conversation-store';
 import type { Conversation } from '@/types';
 
 interface UseConversationsOptions {
@@ -21,17 +29,27 @@ interface UseConversationsOptions {
 /**
  * Owns the conversation list and the currently open conversation.
  *
- * Storage is the source of truth for the list, so writes from another window's
- * side panel show up here immediately. `current` is deliberately *not* synced
- * from storage: another window switching conversations must not yank the
- * conversation out from under an in-flight stream in this one.
+ * The list is exposed as lightweight `ConversationMeta` summaries rather than
+ * full conversations: the history UI only needs titles, timestamps and a
+ * preview, and loading every message body to render it is what made the
+ * previous single-key layout scale badly. The open conversation is read in full,
+ * on demand.
+ *
+ * IndexedDB is the source of truth. Because it has no cross-context change
+ * event, writes bump `conversationsRevision` in `chrome.storage` and every
+ * context re-reads the summaries when it changes — so a write from another
+ * window's side panel still shows up here immediately.
+ *
+ * `current` is deliberately *not* re-synced from that signal: another window
+ * switching conversations must not yank the conversation out from under an
+ * in-flight stream in this one.
  */
 export function useConversations(options?: UseConversationsOptions) {
   const panelId = options?.panelId ?? 0;
   const storageKey = panelConversationKey(panelId);
   const occupiedSessionIds = options?.occupiedSessionIds;
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [current, setCurrent] = useState<Conversation | null>(null);
   // Lets callbacks read the open conversation without depending on it, so the
   // identities returned below stay stable across renders.
@@ -42,28 +60,39 @@ export function useConversations(options?: UseConversationsOptions) {
   const occupiedRef = useRef(occupiedSessionIds);
   occupiedRef.current = occupiedSessionIds;
 
+  const refreshList = useCallback(async () => {
+    setConversations(await listConversationMeta());
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
-      const list = await storage.getConversations();
-      if (cancelled) return;
-      setConversations(list);
+    void (async () => {
+      try {
+        const list = await listConversationMeta();
+        if (cancelled) return;
+        setConversations(list);
 
-      // Restore previously open conversation from this panel's storage key
-      const result = await chrome.storage.local.get(storageKey);
-      const currentId = result[storageKey] as string | null | undefined;
-      if (cancelled) return;
-      if (currentId) {
+        // Restore previously open conversation from this panel's storage key
+        const result = await chrome.storage.local.get(storageKey);
+        const currentId = result[storageKey] as string | null | undefined;
+        if (cancelled || !currentId) return;
+
         // Check if this conversation is already occupied by another panel
-        const isOccupied = occupiedRef.current?.includes(currentId) ?? false;
-        if (isOccupied) {
+        if (occupiedRef.current?.includes(currentId) ?? false) {
           // Fall back to new chat and clear storage to avoid stale conflicts
           setCurrent(null);
           await chrome.storage.local.set({ [storageKey]: null });
-        } else {
-          setCurrent(list.find((c) => c.id === currentId) ?? null);
+          return;
         }
+
+        const restored = await getConversation(currentId);
+        if (cancelled) return;
+        setCurrent(restored);
+      } catch (error) {
+        // A failed restore must not leave the panel unusable: a blank chat is a
+        // working fallback, and the list stays empty rather than half-applied.
+        console.error('[Lumo] Failed to restore conversations:', error);
       }
     })();
 
@@ -72,11 +101,14 @@ export function useConversations(options?: UseConversationsOptions) {
     };
   }, [storageKey]);
 
-  useStorageWatch<Conversation[]>(
-    'conversations',
-    useCallback((newValue) => {
-      setConversations(newValue ?? []);
-    }, []),
+  // IndexedDB has no `onChanged`; this counter is the cross-context signal.
+  useStorageWatch<number>(
+    'conversationsRevision',
+    useCallback(() => {
+      void refreshList().catch((error) => {
+        console.error('[Lumo] Failed to refresh conversation list:', error);
+      });
+    }, [refreshList]),
   );
 
   /**
@@ -87,8 +119,11 @@ export function useConversations(options?: UseConversationsOptions) {
    * must not be resurrected.
    */
   const save = useCallback(async (conversation: Conversation, { create = false } = {}) => {
-    setConversations(await storage.upsertConversation(conversation, { insertIfMissing: create }));
-  }, []);
+    const written = await persistConversation(conversation, { insertIfMissing: create });
+    if (!written) return;
+    await refreshList();
+    await storage.bumpConversationsRevision();
+  }, [refreshList]);
 
   /** Makes `conversation` the open one (pass `null` to start a fresh chat). */
   const open = useCallback(async (conversation: Conversation | null) => {
@@ -97,27 +132,46 @@ export function useConversations(options?: UseConversationsOptions) {
   }, [storageKey]);
 
   /**
+   * Opens a conversation by id, loading its messages.
+   *
+   * The history list carries summaries, so selecting an entry has to fetch the
+   * full record before it can be shown.
+   */
+  const openById = useCallback(async (id: string) => {
+    const conversation = await getConversation(id);
+    if (!conversation) {
+      // Deleted in another context between render and click.
+      await refreshList();
+      return null;
+    }
+    setCurrent(conversation);
+    await chrome.storage.local.set({ [storageKey]: conversation.id });
+    return conversation;
+  }, [storageKey, refreshList]);
+
+  /**
    * Deletes a conversation. Returns whether the open one was removed, so the
    * caller can abort a stream that no longer has anywhere to land.
    */
   const remove = useCallback(async (id: string) => {
-    const remaining = (await storage.getConversations()).filter((c) => c.id !== id);
-    await storage.setConversations(remaining);
-    setConversations(remaining);
+    await deleteConversation(id);
+    await refreshList();
+    await storage.bumpConversationsRevision();
 
     if (currentRef.current?.id !== id) return false;
 
     setCurrent(null);
     await chrome.storage.local.set({ [storageKey]: null });
     return true;
-  }, [storageKey]);
+  }, [storageKey, refreshList]);
 
   const clearAll = useCallback(async () => {
-    await storage.setConversations([]);
+    await clearConversations();
     await chrome.storage.local.set({ [storageKey]: null });
     setConversations([]);
     setCurrent(null);
+    await storage.bumpConversationsRevision();
   }, [storageKey]);
 
-  return { conversations, current, save, open, remove, clearAll };
+  return { conversations, current, save, open, openById, remove, clearAll };
 }

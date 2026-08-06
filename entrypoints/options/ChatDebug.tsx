@@ -15,10 +15,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { panelConversationKey } from '@/lib/panel-storage';
+import { getConversation } from '@/lib/conversation-store';
 import { safeStringify } from '@/lib/tool-output';
 import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
 import { SettingsHeader } from './components/SettingsHeader';
@@ -181,44 +181,49 @@ export function ChatDebugPage() {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, [selectedPanel]);
 
+  /**
+   * Resolve the conversation the selected panel currently has open.
+   *
+   * Shared by the initial load and both change watchers below, which previously
+   * each reimplemented it against the old single-key layout.
+   */
+  const loadPanelConversation = useCallback(async (panelId: number) => {
+    const convKey = panelConversationKey(panelId);
+    const result = await chrome.storage.local.get(convKey);
+    const currentId = result[convKey] as string | null | undefined;
+    if (!currentId) return null;
+    return getConversation(currentId);
+  }, []);
+
   // Load conversation when selected panel changes
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    (async () => {
-      const convKey = panelConversationKey(selectedPanel);
-      const convResult = await chrome.storage.local.get(convKey);
-      const currentId = convResult[convKey] as string | null | undefined;
-      if (cancelled) return;
-
-      if (!currentId) {
+    void (async () => {
+      try {
+        const loaded = await loadPanelConversation(selectedPanel);
+        if (cancelled) return;
+        setConversation(loaded);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[Lumo] Failed to load conversation for debug view:', error);
         setConversation(null);
-        setLoading(false);
-        return;
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      const conversations = await storage.getConversations();
-      if (cancelled) return;
-      setConversation(conversations.find((c) => c.id === currentId) ?? null);
-      setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedPanel]);
+  }, [selectedPanel, loadPanelConversation]);
 
-  // Watch for changes to conversations (live updates while streaming)
-  useStorageWatch<Conversation[]>(
-    'conversations',
-    useCallback((newConversations) => {
-      if (!newConversations) return;
-      const convKey = panelConversationKey(selectedPanel);
-      chrome.storage.local.get(convKey).then((result) => {
-        const currentId = result[convKey] as string | null | undefined;
-        if (!currentId) {
-          setConversation(null);
-          return;
-        }
-        setConversation(newConversations.find((c) => c.id === currentId) ?? null);
-      });
-    }, [selectedPanel]),
+  // Live updates while streaming. Conversations live in IndexedDB, which has no
+  // change event, so this watches the revision counter and re-reads.
+  useStorageWatch<number>(
+    'conversationsRevision',
+    useCallback(() => {
+      void loadPanelConversation(selectedPanel)
+        .then(setConversation)
+        .catch(() => { /* transient read failure; the next bump retries */ });
+    }, [selectedPanel, loadPanelConversation]),
   );
 
   // Watch for the selected panel's currentConversationId changes
@@ -229,16 +234,16 @@ export function ChatDebugPage() {
       areaName: string,
     ) => {
       if (areaName !== 'local') return;
-      if (convKey in changes) {
-        const newId = changes[convKey]?.newValue as string | null | undefined;
-        if (!newId) {
-          setConversation(null);
-          return;
-        }
-        storage.getConversations().then((conversations) => {
-          setConversation(conversations.find((c) => c.id === newId) ?? null);
-        });
+      if (!(convKey in changes)) return;
+
+      const newId = changes[convKey]?.newValue as string | null | undefined;
+      if (!newId) {
+        setConversation(null);
+        return;
       }
+      void getConversation(newId)
+        .then(setConversation)
+        .catch(() => { /* the panel will re-read on the next revision bump */ });
     };
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);

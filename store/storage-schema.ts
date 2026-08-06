@@ -10,12 +10,25 @@
  * 1. Define its type in `StorageSchema` interface
  * 2. Add a `StorageFieldDef` entry in `STORAGE_FIELDS`
  * 3. Done — export/import/watch types all derive from this file.
+ *
+ * ## What belongs here
+ *
+ * `chrome.storage.local` is capped at 10 MB (the `unlimitedStorage` permission
+ * is deliberately not requested) and serialises a whole key on every write, so
+ * this area is reserved for values that are **bounded in size** and need
+ * `onChanged` to reach other extension contexts — settings, selections and
+ * pointers.
+ *
+ * Data that grows with use must not live here. Chat history used to, under a
+ * single `conversations` key, which exhausted the quota and made every
+ * subsequent write throw `Resource::kQuotaBytes quota exceeded`. It now lives in
+ * IndexedDB (`lib/conversation-store.ts`); `conversationsRevision` below is the
+ * bounded counter that replaces it as the change-broadcast channel.
  */
 
 import type {
   ProviderConfig,
   UISettings,
-  Conversation,
   SystemPromptSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
@@ -30,15 +43,24 @@ import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
 /**
  * The single source of truth for what lives in chrome.storage.local.
  * Every key used anywhere in the app MUST be listed here.
+ *
+ * Every value here is bounded — see the note at the top of this file.
  */
 export interface StorageSchema {
   providers: ProviderConfig[];
   uiSettings: UISettings;
-  conversations: Conversation[];
   currentConversationId: string | null;
   selectedModel: { providerId: string; modelId: string } | null;
   mcpSettings: McpSettings;
   systemPrompt: SystemPromptSettings;
+  /**
+   * Bumped after every write to the conversation database.
+   *
+   * IndexedDB has no cross-context change event, so this counter is the signal
+   * other contexts (a second side panel, the options page) watch to know they
+   * should re-read. Only the counter crosses `chrome.storage`, never the data.
+   */
+  conversationsRevision: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,9 +156,9 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     defaultValue: null,
     exportable: true,
   },
-  conversations: {
-    key: 'conversations',
-    defaultValue: [],
+  conversationsRevision: {
+    key: 'conversationsRevision',
+    defaultValue: 0,
     exportable: false,
   },
   currentConversationId: {

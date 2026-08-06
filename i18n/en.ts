@@ -34,6 +34,7 @@ export const en = {
     },
     error: {
       title: 'Request Failed',
+      storageTitle: 'Reply Not Saved',
       retry: 'Retry',
       retrying: 'Retrying ({{current}}/{{max}})...',
       networkError: 'Network connection failed. Please check your connection.',
@@ -42,6 +43,7 @@ export const en = {
       rateLimitError: 'Rate limit reached. Will retry automatically.',
       serverError: 'The model service returned an error. Please try again later.',
       timeoutError: 'Request timed out. Please try again.',
+      storageError: 'The reply is shown here but could not be saved, so it will be missing after a reload. Delete some conversations to free up space.',
       unknownError: 'An unexpected error occurred.',
     },
     history: {
@@ -62,6 +64,7 @@ export const en = {
       input: 'Input',
       output: 'Output',
       screenshot: 'Screenshot',
+      screenshotUnavailable: 'Screenshot unavailable',
       unknownError: 'Unknown error',
     },
     reasoning: {

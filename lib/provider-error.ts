@@ -188,7 +188,33 @@ export type ChatErrorCategory =
   | 'rateLimit'
   | 'server'
   | 'timeout'
+  | 'storage'
   | 'unknown';
+
+/**
+ * Detect a browser-storage failure.
+ *
+ * Checked before every provider heuristic because the strings overlap
+ * dangerously: Chrome's `Resource::kQuotaBytes quota exceeded` contains "quota"
+ * and would otherwise be read as a depleted provider account, sending the user
+ * off to top up an account that is perfectly fine.
+ */
+function isStorageFailure(error: Error): boolean {
+  // `QuotaExceededError` is the DOMException name IndexedDB raises when the
+  // origin's allowance is gone; the `kQuotaBytes` string is what
+  // `chrome.storage` throws.
+  if (error.name === 'QuotaExceededError') return true;
+
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('kquotabytes') ||
+    msg.includes('quota_bytes') ||
+    msg.includes('quotaexceedederror') ||
+    msg.includes('indexeddb') ||
+    msg.includes('chat db') ||
+    msg.includes('transaction aborted')
+  );
+}
 
 /**
  * Classify a failure for display and retry decisions.
@@ -199,6 +225,10 @@ export type ChatErrorCategory =
  * only inside a sentence, so matching alone read it as a transient server error.
  */
 export function categorizeError(error: Error): ChatErrorCategory {
+  // Before anything provider-shaped: a storage fault has no provider code or
+  // status, and its message would be misread by the text heuristics below.
+  if (isStorageFailure(error)) return 'storage';
+
   const { code, statusCode } = providerErrorInfo(error);
 
   const fromCode = categorizeByCode(code);
@@ -329,8 +359,10 @@ function categorizeByMessage(message: string): ChatErrorCategory {
  * Whether a category is safe to auto-retry.
  *
  * Auth and quota failures are deterministic: retrying burns the backoff delay
- * and hits the same wall, so they surface immediately instead.
+ * and hits the same wall, so they surface immediately instead. Storage failures
+ * are the same — the disk will not have more room a second later, and the reply
+ * itself already succeeded, so a retry would only re-run the model call.
  */
 export function isRetryableCategory(category: ChatErrorCategory): boolean {
-  return category !== 'auth' && category !== 'quota';
+  return category !== 'auth' && category !== 'quota' && category !== 'storage';
 }
