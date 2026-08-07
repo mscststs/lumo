@@ -138,6 +138,17 @@ export interface ChatMessage {
    * The actual content is also stored in `parts` as text parts for sending to the model.
    */
   textAttachments?: TextAttachment[];
+  /**
+   * Set on an assistant turn that never reached its natural end — the user hit
+   * stop, or the panel was torn down (side panel closed, split panel removed)
+   * while the reply was still streaming.
+   *
+   * Such a turn is persisted deliberately, because losing a half-written answer
+   * is worse than showing a truncated one. The flag exists so the UI can say so:
+   * without it a truncated reply is indistinguishable from a complete one, and
+   * the user cannot tell whether the model actually finished its thought.
+   */
+  interrupted?: boolean;
   timestamp: number;
 }
 

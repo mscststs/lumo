@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe } from 'lucide-react';
+import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import {
@@ -48,6 +48,10 @@ export const MessageBubble = memo(function MessageBubble({
           <MessagePartList parts={parts} isStreaming={isStreaming} />
         </MessageContent>
 
+        {/* Only meaningful once the turn has settled: while streaming, a reply
+            being unfinished is the expected state, not something to flag. */}
+        {!isStreaming && message.interrupted && <InterruptedNotice />}
+
         {!isStreaming && (
           <MessageActions>
             <MessageAction
@@ -63,6 +67,25 @@ export const MessageBubble = memo(function MessageBubble({
     </motion.div>
   );
 });
+
+/**
+ * Marks a reply that stopped before the model was done — the user hit stop, the
+ * panel was closed mid-stream, or the request failed partway.
+ *
+ * Without it a truncated answer is indistinguishable from a complete one, which
+ * is worse than not persisting it at all: the user would trust a cut-off answer.
+ * `min-w-0` + `break-words` because the side panel is user-resizable down to a
+ * narrow column, where an unwrapped label would force the bubble to overflow.
+ */
+function InterruptedNotice() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <CircleSlash className="h-3 w-3 shrink-0" />
+      <span className="min-w-0 break-words">{t('sidebar.interrupted')}</span>
+    </div>
+  );
+}
 
 /** Attachment cards rendered outside the message bubble. */
 function UserAttachments({ parts, textAttachments }: { parts: ChatMessagePart[]; textAttachments?: TextAttachment[] }) {

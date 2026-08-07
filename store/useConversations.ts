@@ -125,6 +125,23 @@ export function useConversations(options?: UseConversationsOptions) {
     await storage.bumpConversationsRevision();
   }, [refreshList]);
 
+  /**
+   * Writes a mid-stream snapshot of the open conversation: durability only, no
+   * observable side effects.
+   *
+   * Unlike `save` this deliberately skips `refreshList` and the revision bump.
+   * A streaming turn checkpoints every second or so, and each of those would
+   * otherwise re-read every summary in the database and wake every other side
+   * panel — turning a crash-safety measure into a performance problem. The list
+   * catches up when the turn finally settles through `save`.
+   *
+   * Never inserts: a checkpoint for a conversation the user deleted mid-stream
+   * must not bring it back.
+   */
+  const saveDraft = useCallback(async (conversation: Conversation) => {
+    await persistConversation(conversation, { insertIfMissing: false });
+  }, []);
+
   /** Makes `conversation` the open one (pass `null` to start a fresh chat). */
   const open = useCallback(async (conversation: Conversation | null) => {
     setCurrent(conversation);
@@ -173,5 +190,5 @@ export function useConversations(options?: UseConversationsOptions) {
     await storage.bumpConversationsRevision();
   }, [storageKey]);
 
-  return { conversations, current, save, open, openById, remove, clearAll };
+  return { conversations, current, save, saveDraft, open, openById, remove, clearAll };
 }

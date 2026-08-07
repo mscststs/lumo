@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { chatStream, resumeFingerprint } from '@/lib/ai';
 import type { ResumeState } from '@/lib/ai';
@@ -16,6 +16,15 @@ import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Convers
 const MAX_RETRIES = 3;
 /** Base delay in ms for exponential backoff (doubles each attempt) */
 const RETRY_BASE_DELAY = 1500;
+/**
+ * Minimum gap between mid-stream checkpoints of the in-flight assistant turn.
+ *
+ * A turn can emit hundreds of chunks per second, so checkpointing on every
+ * update would queue an IndexedDB write per token. One second bounds how much of
+ * a reply an abrupt teardown can cost while keeping writes far apart enough to
+ * stay off the render path.
+ */
+const CHECKPOINT_INTERVAL = 1000;
 
 /**
  * Identity of one assistant turn, allocated before the first chunk arrives so
@@ -75,6 +84,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     conversations,
     current: currentConversation,
     save: saveConversation,
+    saveDraft: saveConversationDraft,
     open: openConversation,
     openById: openConversationById,
     remove: removeConversation,
@@ -110,9 +120,50 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   // twice. Held in a ref because it must survive the delay between a failure
   // and the retry without re-rendering.
   const resumeStateRef = useRef<ResumeState | null>(null);
+  /**
+   * How to write the in-flight turn to disk right now.
+   *
+   * Set for the duration of a stream and cleared when it settles. This is what
+   * makes an interrupted reply recoverable: `onFinish` is the only place a turn
+   * was ever persisted, and it never runs when the panel is torn down
+   * mid-stream, so the reply was lost outright. Teardown handlers and the
+   * throttled checkpoint both go through this.
+   *
+   * A ref rather than state because the teardown effect must read the *current*
+   * writer without re-subscribing on every chunk.
+   */
+  const checkpointRef = useRef<((parts: ChatMessagePart[]) => Promise<void>) | null>(null);
+  /** Parts as of the latest update, for teardown to flush without React state. */
+  const livePartsRef = useRef<ChatMessagePart[]>([]);
+  /** When the last checkpoint was written, to throttle the next one. */
+  const lastCheckpointAtRef = useRef(0);
+  /** Guards against overlapping checkpoint writes to the same record. */
+  const checkpointInFlightRef = useRef(false);
+
+  /**
+   * Persists the in-flight turn as an interrupted message, if there is one worth
+   * keeping. Safe to call when no stream is running.
+   *
+   * Used by every path that abandons a stream without letting it settle, so a
+   * partial reply survives instead of vanishing.
+   */
+  const flushInterruptedTurn = useCallback(() => {
+    const checkpoint = checkpointRef.current;
+    const parts = livePartsRef.current;
+    if (!checkpoint || !hasRenderableParts(parts)) return;
+    // Fire-and-forget: callers include synchronous teardown paths that cannot
+    // await. The write itself is a single IndexedDB transaction already in
+    // flight by the time this returns.
+    void checkpoint(parts).catch((error) => {
+      console.error('[Lumo] Failed to persist the interrupted reply:', error);
+    });
+  }, []);
 
   // Cancels the in-flight request and invalidates its pending callbacks.
   const abortActiveStream = useCallback(() => {
+    // Before the request id is cleared, so the partial reply is still attributed
+    // to the turn that produced it.
+    flushInterruptedTurn();
     activeRequestIdRef.current = null;
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -122,13 +173,52 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     }
     resumeStateRef.current = null;
     streamingTurnRef.current = null;
+    checkpointRef.current = null;
+    livePartsRef.current = [];
     setIsStreaming(false);
     setStreamingParts([]);
     setStreamingTurn(null);
     setChatError(null);
     setIsRetrying(false);
     setRetryAttempt(0);
-  }, []);
+  }, [flushInterruptedTurn]);
+
+  /**
+   * Last-chance persistence when the panel goes away mid-stream.
+   *
+   * This is the case that silently destroyed replies: the assistant turn was
+   * only ever written from `chatStream`'s `onFinish`, and closing the side panel
+   * (or hiding/removing a split panel) tears the document down before that runs.
+   * The user message had already been saved, so reopening showed a question with
+   * no answer and no indication anything had been lost.
+   *
+   * Two triggers, because neither alone is enough:
+   * - `visibilitychange` fires while the document is still alive, which is the
+   *   only point at which an async IndexedDB write can still be relied on to
+   *   commit. Closing the side panel hides it first, so this is the trigger that
+   *   actually saves the reply.
+   * - unmount covers teardown that never hides the document: a split panel being
+   *   closed or collapsed by a width change.
+   *
+   * `pagehide`/`beforeunload` are deliberately not used: by then only synchronous
+   * work is guaranteed to run, and IndexedDB is asynchronous, so a write started
+   * there is not guaranteed to land.
+   */
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flushInterruptedTurn();
+    };
+    document.addEventListener('visibilitychange', onHidden);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      flushInterruptedTurn();
+      // Stop the request and any pending retry: nothing is left to render into,
+      // and a retry firing after unmount would spend a model call for nobody.
+      abortControllerRef.current?.abort();
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    };
+  }, [flushInterruptedTurn]);
 
   /**
    * Leaves the current conversation: any in-flight stream is abandoned and the
@@ -242,33 +332,69 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       streamingTurnRef.current = turn;
       setStreamingTurn(turn);
 
+      /**
+       * The conversation with this turn's assistant message appended, or `null`
+       * when the turn has produced nothing worth storing.
+       *
+       * `interrupted` marks a reply that stopped short of its natural end, so the
+       * UI can distinguish a truncated answer from a complete one.
+       */
+      const withAssistantTurn = (
+        parts: ChatMessagePart[],
+        { interrupted }: { interrupted: boolean },
+      ): Conversation | null => {
+        if (!hasRenderableParts(parts)) return null;
+        return {
+          ...convWithUserMessage,
+          messages: [
+            ...convWithUserMessage.messages,
+            {
+              // Same id and timestamp the streaming bubble already rendered
+              // under, so the hand-off from "live" to "saved" reuses the
+              // existing DOM instead of unmounting and remounting the reply.
+              ...turn,
+              role: 'assistant',
+              parts,
+              ...(interrupted ? { interrupted: true } : {}),
+            } satisfies ChatMessage,
+          ],
+          updatedAt: Date.now(),
+        };
+      };
+
+      /**
+       * Writes the turn as it currently stands, flagged as interrupted.
+       *
+       * Registered for the whole stream so teardown paths can reach it. Uses the
+       * draft writer, which skips the list refresh and the cross-panel broadcast:
+       * a checkpoint is about durability, not about telling anyone.
+       */
+      const writeCheckpoint = async (parts: ChatMessagePart[]) => {
+        const snapshot = withAssistantTurn(parts, { interrupted: true });
+        if (!snapshot) return;
+        lastCheckpointAtRef.current = Date.now();
+        await saveConversationDraft(snapshot);
+      };
+      checkpointRef.current = writeCheckpoint;
+      livePartsRef.current = latestParts;
+      // Seeded so the first chunk of a fresh turn is not checkpointed instantly.
+      lastCheckpointAtRef.current = Date.now();
+
       const persist = async (parts: ChatMessagePart[]) => {
         const stale = isStale();
-        const renderable = hasRenderableParts(parts);
-
-        const updatedConv: Conversation | null = renderable
-          ? {
-              ...convWithUserMessage,
-              messages: [
-                ...convWithUserMessage.messages,
-                {
-                  // Same id and timestamp the streaming bubble already rendered
-                  // under, so the hand-off from "live" to "saved" reuses the
-                  // existing DOM instead of unmounting and remounting the reply.
-                  ...turn,
-                  role: 'assistant',
-                  parts,
-                } satisfies ChatMessage,
-              ],
-              updatedAt: Date.now(),
-            }
-          : null;
+        // A settled turn is complete unless the user or a teardown cut it short,
+        // which is exactly when the signal was aborted.
+        const updatedConv = withAssistantTurn(parts, {
+          interrupted: controller.signal.aborted,
+        });
 
         if (!stale) {
           activeRequestIdRef.current = null;
           abortControllerRef.current = null;
           resumeStateRef.current = null;
           streamingTurnRef.current = null;
+          checkpointRef.current = null;
+          livePartsRef.current = [];
 
           // These all land in a single React commit: the finished message is
           // appended to the conversation in the very same render that drops the
@@ -314,11 +440,38 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         onStepComplete: (checkpoint) => {
           if (isStale()) return;
           resumeStateRef.current = { ...checkpoint, fingerprint };
+          // A completed step is the most valuable thing to have on disk: it may
+          // represent a tool call that took seconds and had side effects. Written
+          // unconditionally, bypassing the throttle.
+          void writeCheckpoint(checkpoint.parts).catch((error) => {
+            console.error('[Lumo] Failed to checkpoint the reply:', error);
+          });
         },
         onUpdate: (parts) => {
           latestParts = parts;
+          livePartsRef.current = parts;
           if (isStale()) return;
           setStreamingParts(parts);
+
+          // Throttled snapshot, so an abrupt teardown loses at most a second of
+          // the reply rather than all of it. `checkpointInFlightRef` keeps writes
+          // serialised: overlapping transactions on the same record would race,
+          // and a slow write must not queue a backlog behind it.
+          const now = Date.now();
+          if (
+            checkpointInFlightRef.current ||
+            now - lastCheckpointAtRef.current < CHECKPOINT_INTERVAL
+          ) {
+            return;
+          }
+          checkpointInFlightRef.current = true;
+          void writeCheckpoint(parts)
+            .catch((error) => {
+              console.error('[Lumo] Failed to checkpoint the reply:', error);
+            })
+            .finally(() => {
+              checkpointInFlightRef.current = false;
+            });
         },
         onFinish: persist,
         onError: (error) => {
@@ -366,11 +519,21 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
             activeRequestIdRef.current = null;
             // Snapshot is intentionally kept so the manual retry button can
             // still resume from the last completed step.
+
+            // Persist whatever the failed turn produced. `onError` and `onFinish`
+            // are mutually exclusive, so without this a reply that streamed for a
+            // while and then hit a non-retryable error stayed on screen but was
+            // never written — and vanished on reload. Kept flagged as interrupted
+            // because the model never finished; the manual retry can still resume
+            // it, which overwrites this snapshot under the same message id.
+            void writeCheckpoint(latestParts).catch((persistError) => {
+              console.error('[Lumo] Failed to persist the failed reply:', persistError);
+            });
           }
         },
       });
     },
-    [saveConversation, openConversation],
+    [saveConversation, saveConversationDraft, openConversation],
   );
 
   const handleSend = useCallback(
@@ -444,6 +607,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       // ...and gets a fresh assistant identity, allocated by `executeStream`.
       streamingTurnRef.current = null;
       setStreamingTurn(null);
+      // The previous turn's checkpoint writer must not be reachable once a new
+      // turn starts, or a teardown could write the old reply onto the new turn.
+      checkpointRef.current = null;
+      livePartsRef.current = [];
 
       const convWithUserMessage = conv;
 
@@ -530,7 +697,21 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
-    abortControllerRef.current?.abort();
+
+    const controller = abortControllerRef.current;
+    if (controller) {
+      // A live request settles through `chatStream`'s abort path, which routes the
+      // partial turn into `onFinish` → `persist`. Flushing here as well would
+      // race two writes of the same message against each other.
+      controller.abort();
+    } else {
+      // No request in flight: the user stopped while a retry was waiting out its
+      // backoff, so nothing will settle and nothing would otherwise be saved.
+      flushInterruptedTurn();
+      checkpointRef.current = null;
+      livePartsRef.current = [];
+    }
+
     // Stopping is an explicit abandon: the partial turn is persisted by
     // `chatStream`'s abort path, so there is nothing left to resume into.
     resumeStateRef.current = null;
@@ -538,7 +719,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     setChatError(null);
     setIsRetrying(false);
     setRetryAttempt(0);
-  }, []);
+  }, [flushInterruptedTurn]);
 
   /**
    * The in-flight turn as a `ChatMessage`. Memoised on the turn identity + parts

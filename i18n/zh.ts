@@ -30,6 +30,7 @@ export const zh: TranslationSchema = {
     dropHere: '拖放到此处以附加',
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
+    interrupted: '回复已中断',
     contextMenu: {
       root: 'Lumo',
       ask: '询问此页面',

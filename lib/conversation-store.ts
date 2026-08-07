@@ -93,17 +93,20 @@ function toolOutputContent(part: ChatMessagePart): ToolContent[] | undefined {
  * Rewrite the `content` array of a tool part's output.
  * Returns the original part untouched when `map` changed nothing, so unaffected
  * messages keep their object identity and React can skip re-rendering them.
+ *
+ * `map` receives the entry's index so callers can derive a stable per-entry
+ * identity from it.
  */
 function mapToolContent(
   part: ChatMessagePart,
-  map: (entry: ToolContent) => ToolContent,
+  map: (entry: ToolContent, index: number) => ToolContent,
 ): ChatMessagePart {
   const content = toolOutputContent(part);
   if (!content) return part;
 
   let changed = false;
-  const next = content.map((entry) => {
-    const mapped = map(entry);
+  const next = content.map((entry, index) => {
+    const mapped = map(entry, index);
     if (mapped !== entry) changed = true;
     return mapped;
   });
@@ -115,13 +118,13 @@ function mapToolContent(
 
 function mapMessageParts(
   messages: ChatMessage[],
-  map: (part: ChatMessagePart) => ChatMessagePart,
+  map: (part: ChatMessagePart, message: ChatMessage) => ChatMessagePart,
 ): ChatMessage[] {
   return messages.map((message) => {
     if (!message.parts || message.parts.length === 0) return message;
     let changed = false;
     const parts = message.parts.map((part) => {
-      const mapped = map(part);
+      const mapped = map(part, message);
       if (mapped !== part) changed = true;
       return mapped;
     });
@@ -143,6 +146,14 @@ function base64ToBlob(data: string, mimeType: string): Blob {
  *
  * Already-offloaded entries are left alone, so re-saving a conversation does not
  * duplicate blobs.
+ *
+ * Blob ids are *derived* from the image's position in the conversation
+ * (`message id : tool call id : entry index`) rather than minted from a counter
+ * and a clock. That makes offloading idempotent: the same screenshot always maps
+ * to the same key, so re-saving overwrites its own blob instead of appending a
+ * new copy. This matters because an in-flight turn is now checkpointed to disk
+ * repeatedly while it streams — a clock-based id would have written a fresh
+ * duplicate of every screenshot on each checkpoint.
  */
 function offloadToolImages(conversation: Conversation): {
   conversation: Conversation;
@@ -150,8 +161,8 @@ function offloadToolImages(conversation: Conversation): {
 } {
   const blobs: StoredBlob[] = [];
 
-  const messages = mapMessageParts(conversation.messages, (part) =>
-    mapToolContent(part, (entry) => {
+  const messages = mapMessageParts(conversation.messages, (part, message) =>
+    mapToolContent(part, (entry, index) => {
       if (!isToolImageContent(entry)) return entry;
 
       // Already offloaded. This is the common case, not an edge case: reading a
@@ -160,9 +171,13 @@ function offloadToolImages(conversation: Conversation): {
       // before decoding because the marker is not base64 — decoding it would
       // throw on every subsequent turn.
       if (typeof entry.blobId === 'string' || (entry.data && parseBlobRef(entry.data))) {
-        // Drop the render-only marker so it never reaches disk.
-        const { data: _marker, ...rest } = entry;
-        return rest as ToolContent;
+        // Drop the render-only marker so it never reaches disk. When only the
+        // marker is present, recover the id from it so the reference survives.
+        const { data: marker, ...rest } = entry;
+        const recovered = marker ? parseBlobRef(marker) : undefined;
+        return (
+          typeof rest.blobId === 'string' ? rest : { ...rest, blobId: recovered }
+        ) as ToolContent;
       }
 
       if (typeof entry.data !== 'string') return entry;
@@ -178,7 +193,8 @@ function offloadToolImages(conversation: Conversation): {
         return { ...rest, mimeType };
       }
 
-      const id = `${conversation.id}:${blobs.length}:${Date.now()}`;
+      const toolCallId = (part as { toolCallId?: string }).toolCallId ?? part.type;
+      const id = `${conversation.id}:${message.id}:${toolCallId}:${index}`;
       blobs.push({ id, conversationId: conversation.id, blob });
 
       const { data: _inlined, ...rest } = entry;
