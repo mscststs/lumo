@@ -217,6 +217,28 @@ export function ProviderCard({
               // happens once on drag end.
               values={order}
               onReorder={setOrder}
+              /*
+                Scopes the rows' layout animation to this list.
+
+                `ModelRow` is a `Reorder.Item` with `layout="position"`, and
+                motion measures layout against the *viewport*
+                (`getBoundingClientRect`). So any change that moved these rows on
+                the page at all — adding or removing a model in an earlier
+                provider card, which reflows every card below it — looked
+                identical to a reorder: motion counter-translated every row by
+                the full displacement and animated it back, so untouched cards
+                visibly drifted into place.
+
+                `layoutRoot` makes this group the reference frame, so its
+                children compare their position *within the list* instead. Both
+                props are required: `layoutRoot` is only consulted on a node that
+                projects, which `layout` is what establishes. The group itself
+                does not animate — motion forces `type: false` and `delay: 0` on
+                a layout root, so it snaps to its new position while the rows
+                keep sliding for a genuine reorder.
+              */
+              layout
+              layoutRoot
               className="flex flex-col gap-1"
             >
               {order.map((model, index) => (
