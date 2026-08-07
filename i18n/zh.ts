@@ -95,6 +95,7 @@ export const zh: TranslationSchema = {
       completed: '已完成',
       error: '出错',
       denied: '已拒绝',
+      interrupted: '已中断',
       input: '入参',
       output: '结果',
       screenshot: '截图',

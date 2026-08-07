@@ -95,6 +95,7 @@ export const en = {
       completed: 'Done',
       error: 'Error',
       denied: 'Denied',
+      interrupted: 'Interrupted',
       input: 'Input',
       output: 'Output',
       screenshot: 'Screenshot',

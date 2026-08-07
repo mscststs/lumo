@@ -7,6 +7,7 @@ import {
   Check,
   AlertCircle,
   Ban,
+  CircleSlash,
   ShieldQuestion,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,9 +30,40 @@ import type { ToolPart } from '@/lib/message-parts';
 
 type ToolState = ToolPart['state'];
 
+/**
+ * States a tool call can be *left* in rather than reach.
+ *
+ * A tool part is persisted exactly as it stood, so a turn cut short while a tool
+ * was still running keeps one of these on disk forever. Both render as a
+ * spinner, which is only honest while the turn is live.
+ */
+const UNSETTLED_STATES = new Set<ToolState>(['input-streaming', 'input-available']);
+
+/**
+ * A tool state as displayed, which is not always the state that was stored.
+ *
+ * `interrupted` has no counterpart in the AI SDK because it is not something a
+ * tool call reaches — it is what an unsettled call *becomes* once the turn
+ * around it is over.
+ */
+export type ToolDisplayState = ToolState | 'interrupted';
+
+/**
+ * Resolves how a stored state should read now.
+ *
+ * Reopening a conversation whose last turn was interrupted mid-tool used to show
+ * that call spinning forever: the part still said `input-available`, and nothing
+ * in the display knew the turn had ended, so the UI claimed work was in progress
+ * that no longer had a request behind it. `isStreaming` is that missing piece —
+ * an unsettled call is only pending while the turn producing it is live.
+ */
+export function toolDisplayState(state: ToolState, isStreaming: boolean): ToolDisplayState {
+  return !isStreaming && UNSETTLED_STATES.has(state) ? 'interrupted' : state;
+}
+
 /** Terminal states are collapsed by default to keep long tool chains scannable. */
 const STATUS_META: Record<
-  ToolState,
+  ToolDisplayState,
   { icon: React.ElementType; className: string; i18nKey: string; spin?: boolean }
 > = {
   'input-streaming': {
@@ -71,9 +103,23 @@ const STATUS_META: Record<
     className: 'text-muted-foreground',
     i18nKey: 'sidebar.tool.denied',
   },
+  // Never streamed by the SDK — derived by `toolDisplayState` for a call the
+  // turn abandoned. `CircleSlash` matches the interrupted-reply notice on the
+  // bubble, so the two read as the same event.
+  interrupted: {
+    icon: CircleSlash,
+    className: 'text-muted-foreground',
+    i18nKey: 'sidebar.tool.interrupted',
+  },
 };
 
-export function ToolStatusIcon({ state, className }: { state: ToolState; className?: string }) {
+export function ToolStatusIcon({
+  state,
+  className,
+}: {
+  state: ToolDisplayState;
+  className?: string;
+}) {
   const meta = STATUS_META[state] ?? STATUS_META['input-available'];
   const Icon = meta.icon;
   return (
@@ -83,7 +129,7 @@ export function ToolStatusIcon({ state, className }: { state: ToolState; classNa
   );
 }
 
-export function useToolStatusLabel(state: ToolState): string {
+export function useToolStatusLabel(state: ToolDisplayState): string {
   const { t } = useTranslation();
   const meta = STATUS_META[state] ?? STATUS_META['input-available'];
   return t(meta.i18nKey);
@@ -92,16 +138,22 @@ export function useToolStatusLabel(state: ToolState): string {
 interface ToolProps {
   part: ToolPart;
   name: string;
+  /**
+   * Whether the turn this call belongs to is still streaming. Drives the
+   * pending-vs-interrupted distinction — see `toolDisplayState`.
+   */
+  isStreaming?: boolean;
   className?: string;
 }
 
-export function Tool({ part, name, className }: ToolProps) {
+export function Tool({ part, name, isStreaming = false, className }: ToolProps) {
   const { t } = useTranslation();
-  const statusLabel = useToolStatusLabel(part.state);
+  const state = toolDisplayState(part.state, isStreaming);
+  const statusLabel = useToolStatusLabel(state);
   const inputSummary = summarizeToolInput(part.input);
   // Failures are expanded up front; successful calls stay collapsed so long
   // tool chains remain scannable in a narrow sidebar.
-  const failed = part.state === 'output-error';
+  const failed = state === 'output-error';
 
   return (
     <Collapsible
@@ -124,11 +176,11 @@ export function Tool({ part, name, className }: ToolProps) {
           </span>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0 pl-1">
-          <ToolStatusIcon state={part.state} />
+          <ToolStatusIcon state={state} />
           <span
             className={cn(
               'hidden @[16rem]:inline text-[0.625rem]',
-              STATUS_META[part.state]?.className ?? 'text-muted-foreground',
+              STATUS_META[state]?.className ?? 'text-muted-foreground',
             )}
           >
             {statusLabel}
@@ -138,9 +190,9 @@ export function Tool({ part, name, className }: ToolProps) {
 
       <CollapsibleContent className="border-t border-border/60 px-2 py-1.5 flex flex-col gap-1.5">
         <ToolInput input={part.input} />
-        {part.state === 'output-error' ? (
+        {state === 'output-error' ? (
           <ToolError message={part.errorText ?? t('sidebar.tool.unknownError')} />
-        ) : part.state === 'output-available' ? (
+        ) : state === 'output-available' ? (
           <ToolOutput output={part.output} />
         ) : null}
       </CollapsibleContent>

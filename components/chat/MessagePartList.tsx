@@ -23,7 +23,18 @@ export function MessagePartList({ parts, isStreaming = false }: MessagePartListP
 
         if (isToolUIPart(part)) {
           const toolPart = part as ToolPart;
-          return <Tool key={key} part={toolPart} name={toolPartName(toolPart)} />;
+          return (
+            <Tool
+              key={key}
+              part={toolPart}
+              name={toolPartName(toolPart)}
+              // Not `part.state === 'streaming'` like the text parts below: a
+              // tool part has no such state, and its own state cannot tell a
+              // call that is still running from one the turn abandoned. Only the
+              // turn being live distinguishes the two.
+              isStreaming={isStreaming}
+            />
+          );
         }
 
         switch (part.type) {

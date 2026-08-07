@@ -76,11 +76,16 @@ export const MessageBubble = memo(function MessageBubble({
  * is worse than not persisting it at all: the user would trust a cut-off answer.
  * `min-w-0` + `break-words` because the side panel is user-resizable down to a
  * narrow column, where an unwrapped label would force the bubble to overflow.
+ *
+ * The assistant `Message` is a gapless column — only the user variant sets one —
+ * so every direct child owns its own separation from the reply above it, the way
+ * `MessageActions` does with `pt-1`. Without `pt-1.5` this label sat flush
+ * against the last line of prose and read as part of the answer.
  */
 function InterruptedNotice() {
   const { t } = useTranslation();
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex min-w-0 items-center gap-1.5 pt-1.5 text-xs text-muted-foreground">
       <CircleSlash className="h-3 w-3 shrink-0" />
       <span className="min-w-0 break-words">{t('sidebar.interrupted')}</span>
     </div>
