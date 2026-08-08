@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
+import { useEvent } from '@/lib/event-bus';
 import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
 import { downloadAsZip } from '@/lib/zip-download';
 import { SettingsHeader } from './components/SettingsHeader';
@@ -141,8 +142,8 @@ export function FileManager() {
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [downloadingFolder, setDownloadingFolder] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [fileList, convList] = await Promise.all([
         fileStorage.listFiles(),
@@ -154,13 +155,24 @@ export function FileManager() {
     } catch (err) {
       console.error('Failed to load files:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  /**
+   * Live updates from other contexts.
+   *
+   * The list was loaded once on mount, so a file an agent wrote after this tab
+   * was opened never appeared. Reloads are silent: a full-list refresh must not
+   * replace the table with a spinner while the user is reading it.
+   */
+  useEvent('files:changed', () => {
+    void refresh(true);
+  });
 
   const entries = useMemo(() => groupFilesByDirectory(files), [files]);
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Download,
@@ -16,6 +16,7 @@ import { code } from '@streamdown/code';
 import { cjk } from '@streamdown/cjk';
 import { cn } from '@/lib/utils';
 import { ThemeInit } from '@/lib/theme';
+import { useEvent } from '@/lib/event-bus';
 import { CodeView } from './CodeView';
 import {
   fileStorage,
@@ -42,46 +43,99 @@ export default function App() {
     return params.get('file');
   }, []);
 
-  const loadFile = useCallback(async () => {
-    if (!fileName) {
-      setError('No file specified');
-      setLoading(false);
-      return;
-    }
+  /**
+   * The blob URL currently handed to the <img>, tracked outside React state.
+   *
+   * Reloading has to revoke the previous URL, and the cleanup closure cannot read
+   * it from state: it would capture whatever value existed when the effect ran,
+   * so every reload after the first would leak a blob. A ref always holds the
+   * live value.
+   */
+  const objectUrlRef = useRef<string | null>(null);
 
-    try {
-      const meta = await fileStorage.getMetadata(fileName);
-      if (!meta) {
-        setError(t('options.preview.fileNotFound'));
+  const setObjectUrlSafely = useCallback((url: string | null) => {
+    if (objectUrlRef.current && objectUrlRef.current !== url) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+    objectUrlRef.current = url;
+    setObjectUrl(url);
+  }, []);
+
+  /**
+   * Load (or reload) the file.
+   *
+   * `silent` distinguishes a reload driven by a `files:changed` event from the
+   * initial mount. A reload keeps the current content on screen instead of
+   * flashing the loading state, because an agent editing a file writes
+   * repeatedly and a spinner between every write makes the preview unreadable.
+   */
+  const loadFile = useCallback(
+    async (silent = false) => {
+      if (!fileName) {
+        setError('No file specified');
         setLoading(false);
         return;
       }
 
-      setMetadata(meta);
-      const category = getPreviewCategory(meta.mimeType);
+      if (!silent) setLoading(true);
 
-      if (category === 'image') {
-        const url = await fileStorage.getObjectUrl(fileName);
-        setObjectUrl(url);
-      } else if (category === 'text') {
-        const text = await fileStorage.readFileAsText(fileName);
-        setContent(text);
-      } else {
-        setError(t('options.preview.unsupported'));
+      try {
+        const meta = await fileStorage.getMetadata(fileName);
+        if (!meta) {
+          // Covers the file being deleted while open: drop the stale content
+          // rather than keep rendering a file that no longer exists.
+          setError(t('options.preview.fileNotFound'));
+          setMetadata(null);
+          setContent(null);
+          setObjectUrlSafely(null);
+          return;
+        }
+
+        setMetadata(meta);
+        const category = getPreviewCategory(meta.mimeType);
+
+        if (category === 'image') {
+          const url = await fileStorage.getObjectUrl(fileName);
+          setObjectUrlSafely(url);
+          setContent(null);
+          setError(null);
+        } else if (category === 'text') {
+          const text = await fileStorage.readFileAsText(fileName);
+          setContent(text);
+          setObjectUrlSafely(null);
+          setError(null);
+        } else {
+          setError(t('options.preview.unsupported'));
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [fileName, t]);
+    },
+    [fileName, t, setObjectUrlSafely],
+  );
 
   useEffect(() => {
-    loadFile();
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    void loadFile();
   }, [loadFile]);
+
+  // Revoke the outstanding blob URL on unmount only. Reloads revoke their own
+  // predecessor via `setObjectUrlSafely`.
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, []);
+
+  /**
+   * Live updates. The MCP file tools run in the side panel, so a write reaches
+   * this tab as a `files:changed` broadcast rather than any DOM or storage event.
+   */
+  useEvent('files:changed', ({ names }) => {
+    if (!fileName || !names.includes(fileName)) return;
+    void loadFile(true);
+  });
 
   const handleDownload = async () => {
     if (!fileName) return;
@@ -308,30 +362,53 @@ function TextPreview({
  * then postMessage the HTML content to it for rendering.
  */
 function HtmlPreview({ content }: { content: string }) {
-  const iframeRef = useCallback(
-    (iframe: HTMLIFrameElement | null) => {
-      if (!iframe) return;
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const readyRef = useRef(false);
 
-      const sendContent = () => {
-        iframe.contentWindow?.postMessage({ html: content }, '*');
-      };
+  // Latest content, so the ready handshake always posts current HTML even if it
+  // arrives before the first render settles.
+  const contentRef = useRef(content);
+  contentRef.current = content;
 
-      // Listen for sandbox ready signal
-      const handleMessage = (e: MessageEvent) => {
-        if (e.data?.type === 'sandbox-ready') {
-          sendContent();
-          window.removeEventListener('message', handleMessage);
-        }
-      };
-      window.addEventListener('message', handleMessage);
+  const post = useCallback(() => {
+    iframeRef.current?.contentWindow?.postMessage({ html: contentRef.current }, '*');
+  }, []);
 
-      // Also try sending after load (in case ready was missed)
-      iframe.addEventListener('load', () => {
-        setTimeout(sendContent, 50);
-      });
-    },
-    [content],
-  );
+  // Handshake and load, attached once for the life of the iframe.
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type !== 'sandbox-ready') return;
+      readyRef.current = true;
+      post();
+    };
+    window.addEventListener('message', handleMessage);
+
+    const iframe = iframeRef.current;
+    const handleLoad = () => {
+      // Fallback for a ready signal that arrived before this listener existed.
+      window.setTimeout(post, 50);
+    };
+    iframe?.addEventListener('load', handleLoad);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      iframe?.removeEventListener('load', handleLoad);
+    };
+  }, [post]);
+
+  /**
+   * Re-post when the file changes under a live preview.
+   *
+   * This used to be a ref callback keyed on `content`, which only runs when the
+   * node mounts or unmounts — the iframe stays mounted across a reload, so an
+   * edited HTML file kept rendering its original content forever. Guarded on the
+   * handshake because posting before the sandbox is listening is dropped, and the
+   * handshake itself posts the first payload.
+   */
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post();
+  }, [content, post]);
 
   const sandboxUrl = chrome.runtime.getURL('/sandbox.html');
 

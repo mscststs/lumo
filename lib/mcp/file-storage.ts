@@ -3,7 +3,13 @@
  *
  * Stores files as Blobs in IndexedDB with metadata for management.
  * Supports text and binary files with conversation source tracking.
+ *
+ * Writes and deletes announce themselves on the event bus, because IndexedDB has
+ * no change event of its own and every view of these files (the preview tab, the
+ * options file manager, the side panel's conversation file list) would otherwise
+ * have to poll to stay correct.
  */
+import { emitEvent } from '@/lib/event-bus';
 
 export interface FileMetadata {
   /** File name (unique identifier) */
@@ -204,7 +210,14 @@ class FileStorage {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const request = store.put(storedFile);
-      request.onsuccess = () => resolve(metadata);
+      request.onsuccess = () => {
+        // Announced here rather than in the MCP tools because this is the only
+        // path every writer shares: `file_write`, `file_edit` and `file_patch`
+        // all land here, and so would any future caller that would otherwise
+        // have to remember to announce itself.
+        emitEvent('files:changed', { names: [name], reason: 'write' });
+        resolve(metadata);
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -279,7 +292,10 @@ class FileStorage {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const request = store.delete(name);
-      request.onsuccess = () => resolve(true);
+      request.onsuccess = () => {
+        emitEvent('files:changed', { names: [name], reason: 'delete' });
+        resolve(true);
+      };
       request.onerror = () => reject(request.error);
     });
   }

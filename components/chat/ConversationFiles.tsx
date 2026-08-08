@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronUp, Download, Eye, FileText, Image, FileCode, File, CornerDownLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
+import { useEvent } from '@/lib/event-bus';
 import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,14 +39,10 @@ interface ConversationFilesProps {
   onReference: (fileName: string) => void;
 }
 
-/** Polling interval to detect IndexedDB file changes (ms). */
-const POLL_INTERVAL = 3000;
-
 export function ConversationFiles({ conversationId, onReference }: ConversationFilesProps) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<FileMetadata[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadFiles = useCallback(async () => {
     if (!conversationId) {
@@ -60,20 +57,23 @@ export function ConversationFiles({ conversationId, onReference }: ConversationF
     }
   }, [conversationId]);
 
-  // Initial load + polling for real-time updates
+  // Initial load. Updates arrive as events, so there is nothing to poll.
   useEffect(() => {
     void loadFiles();
-
-    intervalRef.current = setInterval(() => {
-      void loadFiles();
-    }, POLL_INTERVAL);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
   }, [loadFiles]);
+
+  /**
+   * Live updates.
+   *
+   * This replaced a 3-second `setInterval` that hit IndexedDB forever, even while
+   * idle and even while the section was collapsed — the pattern
+   * `useConversations` deliberately avoids so a background write does not wake
+   * every panel. The file tools run in this same context, and the bus delivers
+   * locally as well as across contexts, so a tool write is seen immediately.
+   */
+  useEvent('files:changed', () => {
+    void loadFiles();
+  });
 
   // Reset expanded state when conversation changes
   useEffect(() => {
