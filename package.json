@@ -14,6 +14,7 @@
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prepare": "git config core.hooksPath .githooks || true",
     "postinstall": "wxt prepare"
   },
   "overrides": {

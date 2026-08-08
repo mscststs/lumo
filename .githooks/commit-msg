@@ -1,0 +1,19 @@
+#!/bin/sh
+# 拦下带 co-author 尾注的提交信息。
+# co-author 会把这条提交同时挂到另一个人（或 AI）名下，污染仓库的贡献者列表，
+# 所以在提交落地之前就拒绝，而不是事后 rebase 去擦。
+set -eu
+
+# 覆盖 Co-authored-by / Co-Authored-By / Co-author / co_authored_by 这些写法
+pattern='^[[:space:]]*co[-_ ]?authored?([-_ ]?by)?[[:space:]]*:'
+
+# --strip-comments 去掉 git 自己塞进模板的 # 注释行，避免误伤
+hits=$(git stripspace --strip-comments <"$1" | grep -inE "$pattern" || true)
+
+if [ -n "$hits" ]; then
+	echo "提交被拒绝：提交信息里出现了 co-author 尾注" >&2
+	echo "$hits" | sed 's/^/  /' >&2
+	echo >&2
+	echo "删掉这些行后重新提交。（校验来自 .githooks/commit-msg）" >&2
+	exit 1
+fi

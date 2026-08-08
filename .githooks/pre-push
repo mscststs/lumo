@@ -1,0 +1,37 @@
+#!/bin/sh
+# 推送前再查一遍即将发出去的提交。
+# commit-msg 只能管住本地新写的提交信息；rebase、cherry-pick、merge 或者 --no-verify
+# 带进来的历史绕得过它，所以这里兜底 —— 也顺带保证 PR 里的提交不带 co-author。
+set -eu
+
+pattern='^[[:space:]]*co[-_ ]?authored?([-_ ]?by)?[[:space:]]*:'
+zero=$(printf '%040d' 0)
+bad=''
+
+# stdin 每行格式：<local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	# 删除远端分支，没有提交需要检查
+	[ "$local_sha" = "$zero" ] && continue
+
+	if [ "$remote_sha" = "$zero" ]; then
+		# 新分支：只看其它远端分支还没有的提交
+		commits=$(git rev-list "$local_sha" --not --remotes)
+	else
+		commits=$(git rev-list "$remote_sha".."$local_sha")
+	fi
+
+	for sha in $commits; do
+		if git log -1 --format=%B "$sha" | grep -qiE "$pattern"; then
+			bad="$bad$(git log -1 --format='  %h %s' "$sha")
+"
+		fi
+	done
+done
+
+if [ -n "$bad" ]; then
+	echo "推送被拒绝：以下提交的信息里带着 co-author 尾注" >&2
+	printf '%s' "$bad" >&2
+	echo >&2
+	echo "用 git rebase -i 或 git commit --amend 清掉尾注后再推。（校验来自 .githooks/pre-push）" >&2
+	exit 1
+fi
