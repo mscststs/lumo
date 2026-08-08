@@ -6,9 +6,9 @@
  * `quick-action-routing.test.ts`; what is tested here is the wiring around it,
  * where two cold-open hazards live:
  *
- * 1. `visiblePanelCount` is still its initial `1` on the frame the action
- *    dispatches, because the saved panel count is read asynchronously. Routing
- *    must not use it to decide which panels exist, or panels 1–2 become
+ * 1. The layout is still its initial single panel on the frame the action
+ *    dispatches, because it is read asynchronously from storage. Routing must not
+ *    use the rendered count to decide which panels exist, or panels 1–2 become
  *    invisible and a busy panel 0 wins by default.
  * 2. An action must never be silently dropped — that is what made the menu look
  *    broken when the panel had been closed.
@@ -47,7 +47,7 @@ vi.mock('@/components/chat/ChatPanel', async () => {
   };
 });
 
-/** The panel count SplitView will read back from storage. */
+/** The panel layout SplitView will read back from storage. */
 let savedPanelCount = 1;
 
 vi.mock('@/store/storage', () => ({
@@ -58,14 +58,21 @@ vi.mock('@/store/storage', () => ({
       maxSplitPanels: 3,
       sendKey: 'enter',
     }),
+    // Deliberately slow, so the action dispatches before the layout has been
+    // restored — hazard 1 above.
+    getSplitViewLayout: async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return { order: Array.from({ length: savedPanelCount }, (_, i) => savedPanelCount - 1 - i) };
+    },
+    setSplitViewLayout: async () => {},
+    setSplitViewVisible: async () => {},
   },
 }));
 
 vi.mock('@/store/useStorageWatch', () => ({ useStorageWatch: () => {} }));
 vi.mock('@/lib/panel-storage', () => ({
-  closePanelSlot: vi.fn(),
+  releasePanelSlot: vi.fn(),
   openPanelSlot: vi.fn(),
-  shiftPanelSessions: (s: unknown[]) => s,
 }));
 
 /**
@@ -119,14 +126,7 @@ beforeEach(() => {
   g.chrome = {
     storage: {
       local: {
-        get: async (key: string) => {
-          // Deliberately slow, so the action dispatches before the panel count
-          // has been restored.
-          await new Promise((r) => setTimeout(r, 30));
-          return key === 'splitView_intendedPanelCount'
-            ? { splitView_intendedPanelCount: savedPanelCount }
-            : {};
-        },
+        get: async () => ({}),
         set: async () => {},
       },
       // Mirrors real session storage: the payload is read once and the panel
@@ -170,7 +170,7 @@ describe('SplitView quick action dispatch', () => {
 
   it('routes to an idle sibling instead of a busy panel 0', async () => {
     // Regression for hazard 1: routing must enumerate the panels that actually
-    // exist. If it trusted `visiblePanelCount` — still 1 when the action
+    // exist. If it trusted the rendered count — still 1 when the action
     // dispatches — panel 1 would be invisible and this would land on the busy
     // panel 0 as a prefill instead of sending on panel 1.
     savedPanelCount = 2;

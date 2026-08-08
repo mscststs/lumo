@@ -6,21 +6,35 @@
  * input for the user to edit. The policy, in priority order:
  *
  * 1. Prefer a panel that is idle (not streaming) **and** has an empty input —
- *    that one can be sent without destroying anything. Rightmost first, since
- *    panel 0 is the primary panel the user's eye is on.
+ *    that one can be sent without destroying anything. Rightmost first, since the
+ *    rightmost panel is the primary one the user's eye is on.
  * 2. Otherwise we must prefill. Prefer a panel with an empty input even if it is
  *    streaming: dropping the prompt into empty space costs the user nothing,
  *    whereas landing on a draft forces them to disentangle two texts.
- * 3. Otherwise every input holds a draft: fall back to the rightmost panel,
- *    i.e. panel 0. It always exists.
+ * 3. Otherwise every input holds a draft: fall back to the rightmost panel. It
+ *    always exists.
  *
- * "Rightmost first" means ascending panel id (see SplitView's id scheme: 0 is
- * rightmost). Only auto-sendable actions can reach outcome `send`; an action
- * with no prompt has nothing to send and is always a prefill.
+ * "Rightmost first" is ascending **logical index**, not ascending slot. The two
+ * used to be the same thing, but panels can now be reordered, so a panel's slot
+ * says where its data lives while its logical index says where it sits (see
+ * `panel-order.ts`). Routing is about what the user is looking at, so it must
+ * follow position — otherwise dragging a panel would silently change which one
+ * the context menu talks to.
+ *
+ * Only auto-sendable actions can reach outcome `send`; an action with no prompt
+ * has nothing to send and is always a prefill.
  */
 
 export interface PanelRoutingState {
-  panelId: number;
+  /** Storage slot — the panel's identity, and what the caller routes back to. */
+  slot: number;
+  /**
+   * Position from the right: 0 is the primary (rightmost) panel.
+   *
+   * Derived from the panel order rather than from `slot`, so a reordered layout
+   * routes to the panel the user actually sees on the right.
+   */
+  logicalIndex: number;
   /** The panel is mid-stream and cannot accept a send. */
   isStreaming: boolean;
   /** The panel's input already holds text or attachments. */
@@ -30,7 +44,12 @@ export interface PanelRoutingState {
 export type QuickActionDelivery = 'send' | 'prefill';
 
 export interface QuickActionRoute {
-  panelId: number;
+  /**
+   * The chosen panel's slot, or `undefined` when there were no panels to choose
+   * from. The caller decides the fallback, since only it knows which panels have
+   * actually mounted.
+   */
+  slot: number | undefined;
   delivery: QuickActionDelivery;
 }
 
@@ -45,14 +64,17 @@ export function routeQuickAction(
   panels: readonly PanelRoutingState[],
   canAutoSend: boolean,
 ): QuickActionRoute {
-  // Rightmost first: panel 0 is the primary panel, so ascending id is the
-  // preference order in every tier below.
-  const ordered = [...panels].sort((a, b) => a.panelId - b.panelId);
+  // Rightmost first: the rightmost panel is the primary one, so ascending
+  // logical index is the preference order in every tier below. Ties break on
+  // slot to keep the outcome deterministic.
+  const ordered = [...panels].sort(
+    (a, b) => a.logicalIndex - b.logicalIndex || a.slot - b.slot,
+  );
 
   if (canAutoSend) {
     const sendable = ordered.find((panel) => !panel.isStreaming && !panel.hasContent);
     if (sendable) {
-      return { panelId: sendable.panelId, delivery: 'send' };
+      return { slot: sendable.slot, delivery: 'send' };
     }
   }
 
@@ -61,8 +83,8 @@ export function routeQuickAction(
   // a draft would leave the user with two texts merged in one box.
   const emptyInput = ordered.find((panel) => !panel.hasContent);
   if (emptyInput) {
-    return { panelId: emptyInput.panelId, delivery: 'prefill' };
+    return { slot: emptyInput.slot, delivery: 'prefill' };
   }
 
-  return { panelId: ordered[0]?.panelId ?? 0, delivery: 'prefill' };
+  return { slot: ordered[0]?.slot, delivery: 'prefill' };
 }

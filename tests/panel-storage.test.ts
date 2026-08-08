@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  closePanelSlot,
   openPanelSlot,
   panelConversationKey,
   panelModelKey,
   pruneStaleModelSelections,
-  shiftPanelSessions,
+  releasePanelSlot,
   type PanelStorageArea,
 } from '@/lib/panel-storage';
 
@@ -57,12 +56,12 @@ const MINI = { providerId: 'openai', modelId: 'gpt-4o-mini' };
 const OPUS = { providerId: 'anthropic', modelId: 'claude-opus' };
 
 describe('panel storage keys', () => {
-  it('keeps panel 0 on the unsuffixed keys for backward compatibility', () => {
+  it('keeps slot 0 on the unsuffixed keys for backward compatibility', () => {
     expect(panelConversationKey(0)).toBe('currentConversationId');
     expect(panelModelKey(0)).toBe('selectedModel');
   });
 
-  it('suffixes secondary panels', () => {
+  it('suffixes secondary slots', () => {
     expect(panelConversationKey(1)).toBe('currentConversationId_1');
     expect(panelModelKey(2)).toBe('selectedModel_2');
   });
@@ -81,7 +80,7 @@ describe('closing and re-opening a panel', () => {
   });
 
   it('restores the panel model choice after close + re-split', async () => {
-    await closePanelSlot(storage.area, 1, 2);
+    await releasePanelSlot(storage.area, 1);
 
     // The conversation is released so another panel may claim it...
     expect(storage.store['currentConversationId_1']).toBeUndefined();
@@ -95,8 +94,8 @@ describe('closing and re-opening a panel', () => {
     expect(storage.store['currentConversationId_1']).toBeNull();
   });
 
-  it('leaves panel 0 untouched when closing panel 1', async () => {
-    await closePanelSlot(storage.area, 1, 2);
+  it('leaves slot 0 untouched when closing slot 1', async () => {
+    await releasePanelSlot(storage.area, 1);
 
     expect(storage.store['selectedModel']).toEqual(GPT4O);
     expect(storage.store['currentConversationId']).toBe('conv-0');
@@ -108,8 +107,12 @@ describe('closing and re-opening a panel', () => {
   });
 });
 
-describe('closing a middle panel shifts higher slots down', () => {
-  it('moves panel 2 into panel 1 and vacates the top slot', async () => {
+describe('closing a middle panel leaves every sibling alone', () => {
+  it('does not move any other slot, so no sibling remounts', async () => {
+    // This is the regression that motivated slot/position separation. The old
+    // `closePanelSlot` shifted slot 2's data down into slot 1 to keep ids
+    // contiguous, which forced that panel to remount and aborted its stream.
+    // Slots are now sparse, so closing the middle panel is purely local.
     const storage = createStorage({
       selectedModel: GPT4O,
       currentConversationId: 'conv-0',
@@ -119,41 +122,26 @@ describe('closing a middle panel shifts higher slots down', () => {
       currentConversationId_2: 'conv-2',
     });
 
-    await closePanelSlot(storage.area, 1, 3);
+    await releasePanelSlot(storage.area, 1);
 
-    // Panel 2's state slides down into slot 1.
-    expect(storage.store['selectedModel_1']).toEqual(MINI);
-    expect(storage.store['currentConversationId_1']).toBe('conv-2');
-    // The vacated top slot gives up its conversation but keeps its model.
-    expect(storage.store['currentConversationId_2']).toBeUndefined();
-    // Panel 0 is never involved.
+    // Slot 2 keeps both its conversation and its model: it is still open, and
+    // may still be mid-stream.
+    expect(storage.store['selectedModel_2']).toEqual(MINI);
+    expect(storage.store['currentConversationId_2']).toBe('conv-2');
+    // The closed slot gives up its conversation but keeps its model.
+    expect(storage.store['currentConversationId_1']).toBeUndefined();
+    expect(storage.store['selectedModel_1']).toEqual(OPUS);
+    // Slot 0 is never involved.
     expect(storage.store['selectedModel']).toEqual(GPT4O);
     expect(storage.store['currentConversationId']).toBe('conv-0');
   });
 
-  it('treats a missing source slot as empty rather than throwing', async () => {
+  it('tolerates closing a slot that holds nothing', async () => {
     const storage = createStorage({ selectedModel_1: OPUS });
 
-    await closePanelSlot(storage.area, 1, 3);
+    await releasePanelSlot(storage.area, 2);
 
-    expect(storage.store['selectedModel_1']).toBeNull();
-    expect(storage.store['currentConversationId_1']).toBeNull();
-  });
-});
-
-describe('shiftPanelSessions', () => {
-  it('shifts claims down and clears the vacated slot', () => {
-    expect(shiftPanelSessions(['a', 'b', 'c'], 1, 3)).toEqual(['a', 'c', null]);
-  });
-
-  it('clears the top slot when it is the one closed', () => {
-    expect(shiftPanelSessions(['a', 'b', null], 1, 2)).toEqual(['a', null, null]);
-  });
-
-  it('does not mutate its input', () => {
-    const sessions = ['a', 'b', 'c'];
-    shiftPanelSessions(sessions, 1, 3);
-    expect(sessions).toEqual(['a', 'b', 'c']);
+    expect(storage.store['selectedModel_1']).toEqual(OPUS);
   });
 });
 
@@ -180,10 +168,11 @@ describe('pruneStaleModelSelections', () => {
     expect(storage.store['selectedModel']).toBeUndefined();
   });
 
-  it('prunes closed panels too, since they keep their model on disk', async () => {
-    // Panel 2 is not open, but `closePanelSlot` preserved its choice — it must
-    // not resurrect a deleted model when the panel is reopened.
+  it('prunes closed slots too, since they keep their model on disk', async () => {
+    // Slot 2 is not open, but `releasePanelSlot` preserved its choice — it must
+    // not resurrect a deleted model when the slot is reused.
     const storage = createStorage({ selectedModel_2: OPUS });
+
 
     const cleared = await pruneStaleModelSelections(storage.area, [providers[0]!]);
 

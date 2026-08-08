@@ -4,6 +4,7 @@ import type {
   SystemPromptSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
+import { MAX_SLOT_ID, defaultOrder, type PanelLayout } from '@/lib/panel-order';
 import {
   STORAGE_FIELDS,
   EXPORTABLE_KEYS,
@@ -53,6 +54,15 @@ export type AppConfig = Partial<StorageSchema>;
 const LEGACY_CONVERSATIONS_KEY = 'conversations';
 
 /**
+ * Keys the split view layout used before it became an explicit panel order.
+ *
+ * `splitView_intendedPanelCount` held a count, from which position was derived
+ * as `count-1-i`. Now that panels can be reordered, position is stored directly.
+ */
+const LEGACY_PANEL_COUNT_KEY = 'splitView_intendedPanelCount';
+const LEGACY_VISIBLE_COUNT_KEY = 'splitView_visiblePanelCount';
+
+/**
  * Delete the abandoned chat-history key.
  *
  * Old conversations are intentionally not migrated, but the key cannot simply be
@@ -65,6 +75,37 @@ const LEGACY_CONVERSATIONS_KEY = 'conversations';
  */
 export async function dropLegacyConversationsKey(): Promise<void> {
   await chrome.storage.local.remove(LEGACY_CONVERSATIONS_KEY);
+}
+
+/**
+ * Convert a stored panel *count* into an explicit panel *order*.
+ *
+ * Split view used to derive each panel's position from its slot id, so a count
+ * was enough to describe the layout. Reordering makes position independent of
+ * slot, so the order is now stored outright.
+ *
+ * The count maps to `defaultOrder`, which reproduces exactly the arrangement the
+ * old code rendered — slot 0 rightmost, descending leftward — so a user who
+ * upgrades mid-session finds their panels where they left them.
+ *
+ * Idempotent, and skips writing if a layout already exists, so a downgrade
+ * followed by an upgrade cannot overwrite a real order with a stale count.
+ */
+export async function migrateLegacyPanelCount(): Promise<void> {
+  const stored = await chrome.storage.local.get([
+    'splitViewLayout',
+    LEGACY_PANEL_COUNT_KEY,
+  ]);
+
+  const count = stored[LEGACY_PANEL_COUNT_KEY];
+  // Drop the old keys either way: leaving them behind invites a future reader
+  // from reviving a layout the user has since changed.
+  await chrome.storage.local.remove([LEGACY_PANEL_COUNT_KEY, LEGACY_VISIBLE_COUNT_KEY]);
+
+  if (stored['splitViewLayout'] !== undefined) return;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) return;
+
+  await setField('splitViewLayout', { order: defaultOrder(Math.min(count, MAX_SLOT_ID + 1)) });
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +162,29 @@ export const storage = {
     model: { providerId: string; modelId: string } | null,
   ): Promise<void> {
     await setField('selectedModel', model);
+  },
+
+  // ----- Split view layout -----
+
+  /**
+   * The panels the user has open, left to right.
+   *
+   * Normalised on read, so callers can trust the order contains no duplicates
+   * and no slot outside the allocatable range.
+   */
+  async getSplitViewLayout(): Promise<PanelLayout> {
+    return getField('splitViewLayout');
+  },
+  async setSplitViewLayout(layout: PanelLayout): Promise<void> {
+    await setField('splitViewLayout', layout);
+  },
+
+  /** The panels currently on screen, for other contexts to name them by position. */
+  async getSplitViewVisible(): Promise<PanelLayout> {
+    return getField('splitViewVisible');
+  },
+  async setSplitViewVisible(layout: PanelLayout): Promise<void> {
+    await setField('splitViewVisible', layout);
   },
 
   // ----- MCP Settings -----

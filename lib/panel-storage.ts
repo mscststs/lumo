@@ -1,13 +1,24 @@
 /**
- * Per-panel storage layout and the slot migrations that split view performs.
+ * Per-panel storage layout: the keys each panel's state lives under.
  *
- * Each panel keeps its own conversation pointer and model choice. Panel 0 uses
- * the unsuffixed keys so conversations created before split view existed keep
- * working; secondary panels get a `_${panelId}` suffix.
+ * Each panel keeps its own conversation pointer and model choice, keyed by its
+ * *slot*. Slot 0 uses the unsuffixed keys so conversations created before split
+ * view existed keep working; other slots get a `_${slot}` suffix.
  *
- * The migrations live here, apart from the component, so they can be tested
- * against a stub storage rather than re-implemented by a test.
+ * A slot is assigned when a panel opens and never changes while it is mounted.
+ * That is deliberate and load-bearing: `useConversations` keys its restore effect
+ * off the conversation key, so changing a mounted panel's slot would re-read the
+ * conversation from disk and clobber an in-flight stream. Screen position is
+ * therefore tracked separately, as an order of slots — see `panel-order.ts`.
+ *
+ * Consequently there are no slot migrations here. An earlier version shifted
+ * every higher slot's data down when a panel closed, to keep slot ids
+ * contiguous; that forced the shifted panels to remount and aborted their
+ * streams. Slots are now allowed to be sparse (`{0, 2}` is fine), so closing a
+ * panel touches only its own keys.
  */
+
+import { MAX_SLOT_ID } from '@/lib/panel-order';
 
 /** Minimal slice of `chrome.storage.local` these helpers need. */
 export interface PanelStorageArea {
@@ -17,17 +28,17 @@ export interface PanelStorageArea {
 }
 
 /** Storage key holding the conversation a panel currently has open. */
-export function panelConversationKey(panelId: number): string {
-  return panelId === 0 ? 'currentConversationId' : `currentConversationId_${panelId}`;
+export function panelConversationKey(slot: number): string {
+  return slot === 0 ? 'currentConversationId' : `currentConversationId_${slot}`;
 }
 
 /** Storage key holding a panel's selected provider/model pair. */
-export function panelModelKey(panelId: number): string {
-  return panelId === 0 ? 'selectedModel' : `selectedModel_${panelId}`;
+export function panelModelKey(slot: number): string {
+  return slot === 0 ? 'selectedModel' : `selectedModel_${slot}`;
 }
 
 /**
- * Opens a new panel on a blank conversation.
+ * Opens a panel in `slot` on a blank conversation.
  *
  * The slot's model choice is deliberately left untouched, so re-opening a panel
  * restores the model it last used instead of snapping back to the first
@@ -35,69 +46,28 @@ export function panelModelKey(panelId: number): string {
  */
 export async function openPanelSlot(
   storageArea: PanelStorageArea,
-  panelId: number,
+  slot: number,
 ): Promise<void> {
-  await storageArea.set({ [panelConversationKey(panelId)]: null });
+  await storageArea.set({ [panelConversationKey(slot)]: null });
 }
 
 /**
- * Removes a panel, shifting every higher slot down by one so panel ids stay
- * contiguous.
+ * Releases a closed panel's slot.
  *
- * The vacated top slot only gives up its conversation — another panel may now
- * open it — while its model choice is preserved, matching `openPanelSlot`.
- *
- * @param closedPanelId The panel the user closed.
- * @param panelCount How many panels existed before the close.
+ * Only the conversation is given up, so another panel may claim it; the model
+ * choice is preserved to match `openPanelSlot`. No other slot is read or
+ * written — sibling panels keep their storage, stay mounted, and keep streaming.
  */
-export async function closePanelSlot(
+export async function releasePanelSlot(
   storageArea: PanelStorageArea,
-  closedPanelId: number,
-  panelCount: number,
+  slot: number,
 ): Promise<void> {
-  for (let id = closedPanelId; id < panelCount - 1; id++) {
-    const sourceId = id + 1;
-    const source = await storageArea.get([
-      panelModelKey(sourceId),
-      panelConversationKey(sourceId),
-    ]);
-    await storageArea.set({
-      [panelModelKey(id)]: source[panelModelKey(sourceId)] ?? null,
-      [panelConversationKey(id)]: source[panelConversationKey(sourceId)] ?? null,
-    });
-  }
-
-  await storageArea.remove(panelConversationKey(panelCount - 1));
+  await storageArea.remove(panelConversationKey(slot));
 }
 
 /**
- * Shifts an array of per-panel session ids to match `closePanelSlot`, clearing
- * the vacated top slot. Pure, so the component can feed it straight to setState.
+ * A persisted provider/model pair, as stored under `panelModelKey`.
  */
-export function shiftPanelSessions(
-  sessions: (string | null)[],
-  closedPanelId: number,
-  panelCount: number,
-): (string | null)[] {
-  const next = [...sessions];
-  for (let id = closedPanelId; id < panelCount - 1; id++) {
-    next[id] = next[id + 1] ?? null;
-  }
-  next[panelCount - 1] = null;
-  return next;
-}
-
-/**
- * Highest panel id that can hold a model selection.
- *
- * Bounded by `UISettings.maxSplitPanels`, whose maximum is 3 (panels 0–2).
- * Pruning walks the full range rather than the currently open panels because a
- * closed panel keeps its model choice on disk (see `closePanelSlot`), and that
- * stale choice must not resurrect a deleted model when the panel reopens.
- */
-const MAX_PANEL_ID = 2;
-
-/** A persisted provider/model pair, as stored under `panelModelKey`. */
 interface PanelModelSelection {
   providerId: string;
   modelId: string;
@@ -107,6 +77,10 @@ interface PanelModelSelection {
  * Drops every panel's model selection that no longer resolves against
  * `providers`, so deleting a provider or model in the options page cannot leave
  * a sidebar panel pointing at something that is gone.
+ *
+ * Walks every allocatable slot rather than the open panels: a closed panel keeps
+ * its model choice on disk (see `releasePanelSlot`), and that stale choice must
+ * not resurrect a deleted model when the slot is reused.
  *
  * Clearing the key (rather than writing a replacement) is deliberate:
  * `useModelSelection.loadData` already falls back to the first configured
@@ -120,7 +94,7 @@ export async function pruneStaleModelSelections(
   storageArea: PanelStorageArea,
   providers: { id: string; models: { id: string }[] }[],
 ): Promise<string[]> {
-  const keys = Array.from({ length: MAX_PANEL_ID + 1 }, (_, id) => panelModelKey(id));
+  const keys = Array.from({ length: MAX_SLOT_ID + 1 }, (_, slot) => panelModelKey(slot));
   const stored = await storageArea.get(keys);
 
   const stale = keys.filter((key) => {

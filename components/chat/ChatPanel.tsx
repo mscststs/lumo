@@ -16,13 +16,19 @@ import type { TextAttachment, Conversation } from '@/types';
 import type { ContextMenuPendingData } from '@/lib/context-menu';
 
 export interface ChatPanelProps {
-  /** Panel ID: 0 = rightmost (primary), 1 = second from right, 2 = leftmost */
+  /**
+   * Storage slot — this panel's identity, and the suffix on its storage keys.
+   *
+   * Deliberately independent of where the panel sits on screen: it must stay
+   * constant for the panel's whole lifetime, because the hooks below key their
+   * state off it (see `panel-storage.ts`). Position comes in as the role flags.
+   */
   panelIndex: number;
-  /** Whether to show the settings button (only on rightmost panel, panelId=0) */
+  /** Whether to show the settings button (only on the rightmost panel) */
   showSettings: boolean;
-  /** Whether to show the split window button (only on leftmost panel) */
+  /** Whether to show the split window button (only on the leftmost panel) */
   showSplitButton: boolean;
-  /** Whether to show the close button (panels other than panelId=0) */
+  /** Whether to show the close button (every panel but the rightmost) */
   showClose: boolean;
   /** Callback when split button is clicked */
   onSplit?: () => void;
@@ -36,13 +42,10 @@ export interface ChatPanelProps {
   onSessionChange?: (panelIndex: number, sessionId: string | null) => void;
   /** Whether an external drag is happening (from browser or another panel) */
   isExternalDragActive?: boolean;
-  /** Callback when something is dropped onto this panel from outside */
-  onExternalDrop?: (panelIndex: number, data: ExternalDropData) => void;
-}
-
-export interface ExternalDropData {
-  type: 'image' | 'text' | 'html';
-  content: string;
+  /** Starts a reorder drag. Absent when there is nothing to reorder. */
+  onReorderPointerDown?: (event: React.PointerEvent) => void;
+  /** Whether this panel is being dragged, for cursor feedback. */
+  isDragging?: boolean;
 }
 
 export interface ChatPanelHandle {
@@ -81,6 +84,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   occupiedSessionIds,
   onSessionChange,
   isExternalDragActive,
+  onReorderPointerDown,
+  isDragging,
 }: ChatPanelProps, ref) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
@@ -543,6 +548,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onClose={showClose ? onClose : undefined}
         showSplitButton={showSplitButton}
         onSplit={onSplit}
+        onReorderPointerDown={onReorderPointerDown}
+        isDragging={isDragging}
       />
 
       <ChatMessageList

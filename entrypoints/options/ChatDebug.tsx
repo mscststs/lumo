@@ -20,12 +20,11 @@ import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { panelConversationKey } from '@/lib/panel-storage';
 import { getConversation } from '@/lib/conversation-store';
 import { safeStringify } from '@/lib/tool-output';
+import { storage } from '@/store/storage';
+import type { PanelLayout } from '@/lib/panel-order';
 import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
 import { SettingsHeader } from './components/SettingsHeader';
 import type { ToolPart } from '@/lib/message-parts';
-
-/** Storage key for the actual visible panel count */
-const VISIBLE_PANELS_KEY = 'splitView_visiblePanelCount';
 
 /**
  * Debug entry representing one logical "card" in the timeline.
@@ -149,37 +148,35 @@ export function ChatDebugPage() {
   const { t } = useTranslation();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [visiblePanelCount, setVisiblePanelCount] = useState(1);
+  /**
+   * The panels on screen in the side panel, left to right.
+   *
+   * Read as an order rather than a count because panels can be reordered: a
+   * count would only say how many there are, and this view has to name each one
+   * by the position the user actually sees it in.
+   */
+  const [visibleOrder, setVisibleOrder] = useState<number[]>([0]);
   const [selectedPanel, setSelectedPanel] = useState(0);
 
-  // Load visible panel count on mount
+  // Load the visible layout on mount
   useEffect(() => {
-    chrome.storage.local.get(VISIBLE_PANELS_KEY).then((result) => {
-      const count = (result[VISIBLE_PANELS_KEY] as number | undefined) ?? 1;
-      setVisiblePanelCount(count);
+    void storage.getSplitViewVisible().then((layout) => {
+      setVisibleOrder(layout.order);
     });
   }, []);
 
-  // Watch for visible panel count changes
-  useEffect(() => {
-    const listener = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string,
-    ) => {
-      if (areaName !== 'local') return;
-      if (VISIBLE_PANELS_KEY in changes) {
-        const newCount = changes[VISIBLE_PANELS_KEY]?.newValue as number | undefined;
-        if (newCount && newCount >= 1) {
-          setVisiblePanelCount(newCount);
-          if (selectedPanel >= newCount) {
-            setSelectedPanel(0);
-          }
-        }
-      }
-    };
-    chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
-  }, [selectedPanel]);
+  // Watch for layout changes (a split, close, reorder, or width-driven collapse)
+  useStorageWatch<PanelLayout>(
+    'splitViewVisible',
+    useCallback((newValue) => {
+      const order = newValue?.order;
+      if (!order || order.length === 0) return;
+      setVisibleOrder(order);
+      // The selected panel may have just been closed or hidden. Fall back to the
+      // primary panel, which is the rightmost entry and always exists.
+      setSelectedPanel((prev) => (order.includes(prev) ? prev : order[order.length - 1]!));
+    }, []),
+  );
 
   /**
    * Resolve the conversation the selected panel currently has open.
@@ -249,14 +246,20 @@ export function ChatDebugPage() {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, [selectedPanel]);
 
-  const getPanelSideLabel = (panelId: number): string => {
-    if (visiblePanelCount <= 1) return t('options.chatDebug.panelRight');
-    if (visiblePanelCount === 2) {
-      return panelId === 0 ? t('options.chatDebug.panelRight') : t('options.chatDebug.panelLeft');
-    }
-    if (panelId === 0) return t('options.chatDebug.panelRight');
-    if (panelId === 1) return t('options.chatDebug.panelMiddle');
-    return t('options.chatDebug.panelLeft');
+  /**
+   * Names a panel by where it sits, not by which storage slot it uses.
+   *
+   * Position and slot are independent now that panels can be reordered, so the
+   * label has to come from the order — deriving it from the slot id would tell
+   * the user "right panel" while they are looking at it on the left.
+   */
+  const getPanelSideLabel = (slot: number): string => {
+    const position = visibleOrder.indexOf(slot);
+    const count = visibleOrder.length;
+    if (position < 0 || count <= 1) return t('options.chatDebug.panelRight');
+    if (position === count - 1) return t('options.chatDebug.panelRight');
+    if (position === 0) return t('options.chatDebug.panelLeft');
+    return t('options.chatDebug.panelMiddle');
   };
 
   const timeline = useMemo(
@@ -281,19 +284,27 @@ export function ChatDebugPage() {
       />
 
       {/* Panel switcher (only show when multiple panels visible) */}
-      {visiblePanelCount > 1 && (
-        <div className="flex items-center gap-2">
+      {visibleOrder.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-muted-foreground shrink-0">{t('options.chatDebug.panelSelect')}</span>
           <div className="flex gap-1">
-            {Array.from({ length: visiblePanelCount }, (_, i) => visiblePanelCount - 1 - i).map((panelId) => (
+            {/*
+              Rendered in `visibleOrder`, which is already left to right, so the
+              buttons sit in the same arrangement as the panels they select.
+              Reversing this to put the primary panel first inverts the control
+              relative to the sidebar: the button labelled "left panel" ends up on
+              the right, which is actively misleading now that panels can be
+              reordered and the labels are the only cue.
+            */}
+            {visibleOrder.map((slot) => (
               <Button
-                key={panelId}
-                variant={selectedPanel === panelId ? 'default' : 'outline'}
+                key={slot}
+                variant={selectedPanel === slot ? 'default' : 'outline'}
                 size="sm"
                 className="h-7 text-xs px-3"
-                onClick={() => setSelectedPanel(panelId)}
+                onClick={() => setSelectedPanel(slot)}
               >
-                {getPanelSideLabel(panelId)}
+                {getPanelSideLabel(slot)}
               </Button>
             ))}
           </div>

@@ -35,6 +35,11 @@ import type { McpSettings } from '@/lib/mcp/types';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
 import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
+import {
+  DEFAULT_PANEL_LAYOUT,
+  normalizeOrder,
+  type PanelLayout,
+} from '@/lib/panel-order';
 
 // ---------------------------------------------------------------------------
 // 1. Schema: all possible storage keys and their value types
@@ -61,6 +66,25 @@ export interface StorageSchema {
    * should re-read. Only the counter crosses `chrome.storage`, never the data.
    */
   conversationsRevision: number;
+  /**
+   * Split view layout: which panels are open and, left to right, where they sit.
+   *
+   * The order *is* the layout — it carries both the panel count and each panel's
+   * position, so there is no separate count to fall out of sync with it. Only the
+   * user's intent is stored; how many panels actually fit is recomputed from the
+   * side panel's width on every render, and a width-driven collapse deliberately
+   * leaves this untouched so the layout returns when the window widens again.
+   */
+  splitViewLayout: PanelLayout;
+  /**
+   * The panels actually on screen right now, left to right.
+   *
+   * Distinct from `splitViewLayout` because the side panel may be too narrow to
+   * fit everything the user asked for. Published by the side panel purely so
+   * other contexts (the options page's chat debug view) can name a panel by the
+   * position the user sees; nothing reads it back to drive layout.
+   */
+  splitViewVisible: PanelLayout;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +189,24 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     key: 'currentConversationId',
     defaultValue: null,
     exportable: false,
+  },
+  splitViewLayout: {
+    key: 'splitViewLayout',
+    defaultValue: DEFAULT_PANEL_LAYOUT,
+    // Not exportable: the layout describes one window's arrangement, and a
+    // config imported onto a machine with a narrower side panel would restore
+    // panels that cannot fit.
+    exportable: false,
+    // Repairs an order written by a build that allows more panels than this one,
+    // or a partial write. A malformed order would surface as duplicate React
+    // keys or a panel rendered at a position that does not exist.
+    normalize: (raw) => ({ order: normalizeOrder(raw?.order) }),
+  },
+  splitViewVisible: {
+    key: 'splitViewVisible',
+    defaultValue: DEFAULT_PANEL_LAYOUT,
+    exportable: false,
+    normalize: (raw) => ({ order: normalizeOrder(raw?.order) }),
   },
 };
 

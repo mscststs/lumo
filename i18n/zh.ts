@@ -20,6 +20,7 @@ export const zh: TranslationSchema = {
     selectModel: '选择模型',
     settings: '设置',
     splitWindow: '分屏窗口',
+    closePanel: '关闭面板',
     placeholder: '输入消息...',
     send: '发送',
     thinking: '思考中...',

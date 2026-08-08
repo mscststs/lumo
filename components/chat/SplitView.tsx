@@ -4,12 +4,17 @@ import { ChatPanel, type ChatPanelHandle } from '@/components/chat/ChatPanel';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { useContextMenuPending } from '@/store/useContextMenuPending';
 import { storage } from '@/store/storage';
+import { openPanelSlot, releasePanelSlot } from '@/lib/panel-storage';
 import {
-  closePanelSlot,
-  openPanelSlot,
-  shiftPanelSessions,
-} from '@/lib/panel-storage';
+  addPanel,
+  equalRatios,
+  isSameOrder,
+  normalizeOrder,
+  ratiosForOrder,
+  removePanel,
+} from '@/lib/panel-order';
 import { routeQuickAction, type PanelRoutingState } from '@/lib/quick-action-routing';
+import { usePanelDrag } from '@/components/chat/usePanelDrag';
 import type { UISettings } from '@/types';
 
 /** Minimum width for each panel in pixels */
@@ -18,10 +23,8 @@ const MIN_PANEL_WIDTH = 360;
 const THRESHOLD_2_PANELS = 750;
 /** Width threshold to allow 3 panels */
 const THRESHOLD_3_PANELS = 1150;
-/** Storage key for persisting the user's intended panel count */
-const INTENDED_PANELS_KEY = 'splitView_intendedPanelCount';
-/** Storage key for the actual visible panel count (for other pages to read) */
-const VISIBLE_PANELS_KEY = 'splitView_visiblePanelCount';
+/** Width of the draggable divider between two panels, in pixels */
+const DIVIDER_WIDTH = 8;
 
 /** Duration for panel width transitions (ms) */
 const TRANSITION_DURATION_MS = 300;
@@ -39,57 +42,86 @@ function computeMaxPanels(containerWidth: number, userMax: 1 | 2 | 3): number {
 /**
  * SplitView manages multiple ChatPanels side by side with draggable dividers.
  *
- * Key concepts:
- * - intendedPanelCount: user's desired number of panels (persisted). Changed
- *   only by explicit user actions (split button / close button).
- * - visiblePanelCount: how many panels are actually rendered, constrained by
- *   available width. = min(intendedPanelCount, allowedByWidth).
- * - Hiding a panel because the window got too narrow is temporary: only the
- *   in-memory session claim is dropped, so another panel may take that
- *   conversation over meanwhile. Storage is left untouched, so when width
- *   restores the panel resumes the same conversation (unless it was claimed).
- * - Manual close (X button) permanently reduces intendedPanelCount. It releases
- *   the slot's conversation but keeps its model choice, so re-splitting reopens
- *   the panel on the model that slot last used.
+ * ## Slots, positions and logical indices
  *
- * Panel ID scheme:
- *   - panelId 0 = rightmost (primary) panel — always present, has Settings button
- *   - panelId 1 = second from right
- *   - panelId 2 = third from right (leftmost when 3 panels open)
+ * A panel's identity is its **slot** — the suffix on its storage keys (see
+ * `panel-storage.ts`). A slot is assigned when the panel opens and never changes
+ * while it is mounted, because every per-panel hook keys its state off it:
+ * changing a live panel's slot would re-run `useConversations`' restore effect
+ * and swap its conversation out from under an in-flight stream.
  *
- * Rendering order is left-to-right, so with N visible panels, the render array
- * indices map to panelIds as: renderIndex i → panelId (N-1-i).
+ * Where a panel sits on screen is therefore tracked separately, as `order` — the
+ * slots from left to right (see `panel-order.ts`). Reordering rewrites only that
+ * array, so it cannot disturb storage, remount a panel, or interrupt a stream.
  *
- * Animation strategy:
- * - Panel width transitions are ONLY enabled briefly when panel count changes
- *   (triggered by split/close/width threshold crossing). They auto-disable after
- *   the transition completes, so container resize and divider drag remain instant.
- * - Panel show/hide uses AnimatePresence with opacity + scale animation
- * - Divider drag bypasses transitions for real-time feedback
+ * The UI-facing numbering is the **logical index**, `N-1-position`: logical 0 is
+ * the rightmost (primary) panel, which owns the Settings button and cannot be
+ * closed. Because it is derived from position rather than from the slot id, the
+ * invariant "panel 0 is on the right" survives any reordering for free.
+ *
+ * Slots are deliberately allowed to be sparse. Closing the panel in slot 1 out of
+ * `{0,1,2}` leaves `{0,2}`; an earlier version instead shifted slot 2's storage
+ * down into slot 1 to keep ids contiguous, which forced that panel to remount and
+ * aborted its stream.
+ *
+ * ## Intended vs visible
+ *
+ * `order` is what the user asked for and is persisted. `visibleOrder` is what
+ * actually fits, derived from the measured width on every render rather than
+ * stored — one value cannot lag behind the other if there is only one value.
+ * Panels are dropped from the left, which is also where a split adds them.
+ *
+ * Hiding a panel because the window got too narrow is temporary and touches no
+ * storage, so the panel resumes the same conversation when the width returns.
+ * Manual close (X) removes it from `order` and releases its conversation, but
+ * keeps its model choice so re-splitting reopens on the model that slot last used.
+ *
+ * ## Why DOM order is fixed
+ *
+ * Panels are rendered in ascending *slot* order and positioned with the CSS
+ * `order` property, so React never moves a panel's DOM node. Reordering by
+ * reordering the children would make React `insertBefore` the node, and Chrome
+ * resets `scrollTop` on every scrollable descendant of a moved node — a
+ * transcript scrolled back through history would jump to the bottom on every
+ * drop. Fixed DOM order plus CSS order makes that impossible.
+ *
+ * ## Animation strategy
+ *
+ * - Width transitions are enabled only briefly when the panel count changes, then
+ *   auto-disabled, so container resize and divider drag stay instant.
+ * - Panel show/hide uses AnimatePresence.
+ * - Divider drag bypasses transitions for real-time feedback.
  */
 export function SplitView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [maxSplitPanels, setMaxSplitPanels] = useState<1 | 2 | 3>(1);
 
-  // User's intended panel count (persisted, changed only by split/close actions)
-  const [intendedPanelCount, setIntendedPanelCount] = useState(1);
-  // Actually visible panels (may be less than intended due to width constraints)
-  const [visiblePanelCount, setVisiblePanelCount] = useState(1);
-  // Whether the persisted panel count has been read back yet. Quick actions wait
-  // for this so they route over the user's real layout, not the initial guess.
-  const [isCountRestored, setIsCountRestored] = useState(false);
+  /**
+   * The panels the user has open, left to right. Persisted; changed only by
+   * split, close and reorder.
+   */
+  const [order, setOrder] = useState<number[]>([0]);
+  /**
+   * Whether the persisted layout has been read back yet. Quick actions wait for
+   * this so they route over the user's real layout, not the initial guess.
+   */
+  const [isLayoutRestored, setIsLayoutRestored] = useState(false);
 
-  // Ratio-based sizes for each panel (index = render position, left-to-right)
-  const [panelRatios, setPanelRatios] = useState<number[]>([1]);
-  // Track occupied session IDs per panelId (index = panelId)
-  const [sessionIds, setSessionIds] = useState<(string | null)[]>([null, null, null]);
-  // Generation counter: incremented on close/hide to force remount of shifted panels
-  const [generation, setGeneration] = useState(0);
-  // Dragging state
+  /**
+   * Width of each panel as a fraction of the available space, **keyed by slot**.
+   *
+   * Keyed by slot rather than by position so a panel keeps its width when the
+   * order changes: a panel that jumped to a new width the instant it was dropped
+   * is exactly the flash a reorder must not produce.
+   */
+  const [ratios, setRatios] = useState<Record<number, number>>({ 0: 1 });
+  /** The conversation each slot currently has open, so panels cannot share one. */
+  const [sessionIds, setSessionIds] = useState<Record<number, string | null>>({});
+  // Dragging state (divider). Holds the *position* of the divider being dragged.
   const [draggingDivider, setDraggingDivider] = useState<number | null>(null);
   const dragStartXRef = useRef(0);
-  const dragStartRatiosRef = useRef<number[]>([]);
+  const dragStartRatiosRef = useRef<Record<number, number>>({});
   // External drag tracking (from browser to all panels)
   const [isExternalDragActive, setIsExternalDragActive] = useState(false);
   const [isInternalDragOrigin, setIsInternalDragOrigin] = useState(false);
@@ -101,6 +133,16 @@ export function SplitView() {
   const [animateTransitions, setAnimateTransitions] = useState(false);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
+
+  /**
+   * Mirrors `order` for the action callbacks below.
+   *
+   * They are cached per slot for the panel's whole lifetime (see
+   * `getPanelRefCallback` for why identity stability matters here), so they must
+   * not close over a specific render's `order`.
+   */
+  const orderRef = useRef(order);
+  orderRef.current = order;
 
   /** Temporarily enable width transition, then auto-disable after the duration */
   const triggerWidthTransition = useCallback(() => {
@@ -126,19 +168,18 @@ export function SplitView() {
 
   // ─── Persistence ──────────────────────────────────────────────────────────
 
-  // Load initial settings and intended panel count
+  // Load initial settings and the persisted panel order
   useEffect(() => {
     (async () => {
-      const [settings, result] = await Promise.all([
+      const [settings, layout] = await Promise.all([
         storage.getUISettings(),
-        chrome.storage.local.get(INTENDED_PANELS_KEY),
+        storage.getSplitViewLayout(),
       ]);
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
-      const saved = result[INTENDED_PANELS_KEY] as number | undefined;
-      if (saved && saved >= 1 && saved <= 3) {
-        setIntendedPanelCount(saved);
-      }
-      setIsCountRestored(true);
+      const restored = normalizeOrder(layout.order, settings.maxSplitPanels ?? 1);
+      setOrder(restored);
+      setRatios(equalRatios(restored));
+      setIsLayoutRestored(true);
       // Mark initial load as done after first layout settles
       requestAnimationFrame(() => {
         initialLoadRef.current = false;
@@ -146,10 +187,10 @@ export function SplitView() {
     })();
   }, []);
 
-  // Persist intended panel count
-  const persistIntendedCount = useCallback((count: number) => {
-    setIntendedPanelCount(count);
-    void chrome.storage.local.set({ [INTENDED_PANELS_KEY]: count });
+  /** Applies a new order and persists it, skipping no-op writes. */
+  const persistOrder = useCallback((next: number[]) => {
+    setOrder((prev) => (isSameOrder(prev, next) ? prev : next));
+    void storage.setSplitViewLayout({ order: next });
   }, []);
 
   // Watch for settings changes
@@ -226,110 +267,150 @@ export function SplitView() {
   // Maximum panels allowed by current width + user setting
   const allowedPanels = computeMaxPanels(containerWidth, maxSplitPanels);
 
-  // The target visible count: intended, capped by what the width allows
-  const targetVisibleCount = Math.min(intendedPanelCount, allowedPanels);
-
-  // React to width changes: adjust visible panel count
-  useEffect(() => {
-    if (containerWidth <= 0) return; // Skip before first measurement
-
-    if (targetVisibleCount < visiblePanelCount) {
-      // Width shrunk — hide panels from the left (highest panelId). Only the
-      // session claim is dropped, never storage: hiding is temporary, so the
-      // panel must be able to resume this conversation when width returns.
-      // Dropping the claim also lets a still-visible panel open it meanwhile.
-      setSessionIds((prev) => {
-        const next = [...prev];
-        for (let id = targetVisibleCount; id < visiblePanelCount; id++) {
-          next[id] = null;
-        }
-        return next;
-      });
-      triggerWidthTransition();
-      setVisiblePanelCount(targetVisibleCount);
-      setPanelRatios(Array(targetVisibleCount).fill(1 / targetVisibleCount));
-    } else if (targetVisibleCount > visiblePanelCount) {
-      // Width grew — show panels that were temporarily hidden.
-      triggerWidthTransition();
-      setVisiblePanelCount(targetVisibleCount);
-      setPanelRatios(Array(targetVisibleCount).fill(1 / targetVisibleCount));
-    }
-  }, [targetVisibleCount, visiblePanelCount, containerWidth, triggerWidthTransition]);
-
-  // Persist visible panel count so other pages (e.g. ChatDebug) can read it
-  useEffect(() => {
-    void chrome.storage.local.set({ [VISIBLE_PANELS_KEY]: visiblePanelCount });
-  }, [visiblePanelCount]);
-
-  // Ensure panels respect minimum width
-  useEffect(() => {
-    if (containerWidth <= 0 || visiblePanelCount <= 1) return;
-    const dividerW = 8;
-    const totalDividers = visiblePanelCount - 1;
-    const availWidth = containerWidth - totalDividers * dividerW;
-
-    let needsAdjustment = false;
-    for (let i = 0; i < visiblePanelCount; i++) {
-      const ratio = panelRatios[i] ?? (1 / visiblePanelCount);
-      if (ratio * availWidth < MIN_PANEL_WIDTH) {
-        needsAdjustment = true;
-        break;
-      }
-    }
-
-    if (needsAdjustment) {
-      setPanelRatios(Array(visiblePanelCount).fill(1 / visiblePanelCount));
-    }
-  }, [containerWidth, visiblePanelCount, panelRatios]);
-
-  // ─── Split / Close actions ────────────────────────────────────────────────
-
-  // Whether the split button should be shown
-  const canSplit = visiblePanelCount < allowedPanels && intendedPanelCount < maxSplitPanels;
-
-  // Split: user explicitly requests a new panel on the left
-  const handleSplit = useCallback(() => {
-    const newIntended = intendedPanelCount + 1;
-    if (newIntended > maxSplitPanels) return;
-    void openPanelSlot(chrome.storage.local, newIntended - 1);
-    persistIntendedCount(newIntended);
-  }, [intendedPanelCount, maxSplitPanels, persistIntendedCount]);
+  /**
+   * The panels actually on screen, left to right.
+   *
+   * Derived rather than stored: an effect writing a `visibleOrder` state would
+   * always be one commit behind `order` and the measured width, and that lag is
+   * what the quick-action readiness gate below had to work around.
+   *
+   * Panels are dropped from the left, mirroring where a split adds them, so the
+   * primary panel is the last to go.
+   */
+  const visibleOrder = useMemo(
+    () => order.slice(Math.max(0, order.length - allowedPanels)),
+    [order, allowedPanels],
+  );
+  const visibleCount = visibleOrder.length;
 
   /**
-   * Manual close (X button): permanently removes a panel, shifting the slots
-   * above it down so panel ids stay contiguous.
+   * DOM order: ascending slot, independent of the visual order.
+   *
+   * React must never reorder these children. Moving a DOM node resets
+   * `scrollTop` on all its scrollable descendants, which would yank every
+   * transcript to the bottom on each drop. Position is applied with CSS `order`
+   * instead.
    */
-  const handleClosePanel = useCallback(async (closedPanelId: number) => {
-    if (intendedPanelCount <= 1) return;
+  const domSlots = useMemo(() => [...visibleOrder].sort((a, b) => a - b), [visibleOrder]);
 
-    await closePanelSlot(chrome.storage.local, closedPanelId, intendedPanelCount);
+  /** Position of each visible slot, for CSS `order` and for the UI role flags. */
+  const positionBySlot = useMemo(() => {
+    const map = new Map<number, number>();
+    visibleOrder.forEach((slot, position) => map.set(slot, position));
+    return map;
+  }, [visibleOrder]);
 
-    setSessionIds((prev) => shiftPanelSessions(prev, closedPanelId, intendedPanelCount));
+  // Reset widths whenever the number of visible panels changes, and animate the
+  // transition. Tracked against the previous count rather than derived, because
+  // an equal split is only the right answer at the moment the count changes —
+  // afterwards the user's divider drags must survive re-renders.
+  const prevVisibleCountRef = useRef(visibleCount);
+  useEffect(() => {
+    if (prevVisibleCountRef.current === visibleCount) return;
+    prevVisibleCountRef.current = visibleCount;
+    triggerWidthTransition();
+    setRatios(equalRatios(visibleOrder));
+  }, [visibleCount, visibleOrder, triggerWidthTransition]);
 
-    persistIntendedCount(intendedPanelCount - 1);
-    setGeneration((g) => g + 1);
-  }, [intendedPanelCount, persistIntendedCount]);
+  // Publish the visible layout so other pages (e.g. ChatDebug) can name a panel
+  // by the position the user sees.
+  useEffect(() => {
+    if (!isLayoutRestored) return;
+    void storage.setSplitViewVisible({ order: visibleOrder });
+  }, [visibleOrder, isLayoutRestored]);
+
+  // Ensure panels respect minimum width
+  const availableWidth = containerWidth - (visibleCount - 1) * DIVIDER_WIDTH;
+  useEffect(() => {
+    if (containerWidth <= 0 || visibleCount <= 1) return;
+    const avail = containerWidth - (visibleCount - 1) * DIVIDER_WIDTH;
+    if (avail <= 0) return;
+
+    const tooNarrow = visibleOrder.some(
+      (slot) => (ratios[slot] ?? 1 / visibleCount) * avail < MIN_PANEL_WIDTH,
+    );
+    if (tooNarrow) {
+      setRatios(equalRatios(visibleOrder));
+    }
+  }, [containerWidth, visibleCount, visibleOrder, ratios]);
+
+  // ─── Split / Close / Reorder actions ──────────────────────────────────────
+
+  // Whether the split button should be shown
+  const canSplit = visibleCount < allowedPanels && order.length < maxSplitPanels;
+
+  /**
+   * Split: opens a new panel on the left, in the lowest free slot.
+   *
+   * Reads `order` from a ref so its identity stays stable — it is handed to every
+   * panel as `onSplit`, and a changing identity would re-render all of them.
+   */
+  const handleSplit = useCallback(() => {
+    const current = orderRef.current;
+    if (current.length >= maxSplitPanels) return;
+    const added = addPanel(current);
+    if (!added) return;
+    void openPanelSlot(chrome.storage.local, added.slot);
+    setRatios((prev) => ratiosForOrder(prev, added.order));
+    persistOrder(added.order);
+  }, [maxSplitPanels, persistOrder]);
+
+  /**
+   * Manual close (X): permanently removes a panel.
+   *
+   * Only the closed slot is touched. Every sibling keeps its slot, its storage
+   * and its position, so none of them remounts and none of their streams is
+   * interrupted — the failure mode of the old contiguous-slot scheme.
+   */
+  const handleClosePanel = useCallback(async (slot: number) => {
+    const current = orderRef.current;
+    if (current.length <= 1) return;
+
+    const next = removePanel(current, slot);
+    if (isSameOrder(current, next)) return;
+
+    await releasePanelSlot(chrome.storage.local, slot);
+
+    setSessionIds((prev) => {
+      if (!(slot in prev)) return prev;
+      const { [slot]: _removed, ...rest } = prev;
+      return rest;
+    });
+    setRatios((prev) => ratiosForOrder(prev, next));
+    persistOrder(next);
+  }, [persistOrder]);
 
   // ─── Session tracking ─────────────────────────────────────────────────────
 
-  const handleSessionChange = useCallback((panelId: number, sessionId: string | null) => {
-    setSessionIds((prev) => {
-      const next = [...prev];
-      next[panelId] = sessionId;
-      return next;
-    });
+  const handleSessionChange = useCallback((slot: number, sessionId: string | null) => {
+    setSessionIds((prev) => (prev[slot] === sessionId ? prev : { ...prev, [slot]: sessionId }));
   }, []);
 
-  // Get occupied session IDs for a given panelId (all OTHER visible panels' sessions)
-  const getOccupiedSessionIds = useCallback((panelId: number): string[] => {
-    return sessionIds
-      .filter((_, i) => i !== panelId && i < visiblePanelCount)
-      .filter((id): id is string => id !== null);
-  }, [sessionIds, visiblePanelCount]);
+  /**
+   * Conversations claimed by *other visible* panels, per slot.
+   *
+   * Memoised as one map rather than computed per panel so each panel's prop keeps
+   * a stable identity between renders that do not change the claims.
+   *
+   * A hidden panel's claim is excluded by the visibility filter rather than
+   * deleted: hiding is temporary, and the entry is that panel's own conversation,
+   * so it stays correct for when the width returns.
+   */
+  const occupiedBySlot = useMemo(() => {
+    const map = new Map<number, string[]>();
+    for (const slot of visibleOrder) {
+      const occupied = visibleOrder
+        .filter((other) => other !== slot)
+        .map((other) => sessionIds[other])
+        .filter((id): id is string => typeof id === 'string');
+      map.set(slot, occupied);
+    }
+    return map;
+  }, [visibleOrder, sessionIds]);
 
   // ─── Divider dragging ─────────────────────────────────────────────────────
 
-  const handleDividerMouseDown = useCallback((dividerIndex: number, e: React.MouseEvent) => {
+  const handleDividerMouseDown = useCallback((position: number, e: React.MouseEvent) => {
     e.preventDefault();
     // Cancel any active transition timer to ensure no transition during drag
     if (transitionTimerRef.current) {
@@ -337,51 +418,44 @@ export function SplitView() {
       transitionTimerRef.current = null;
       setAnimateTransitions(false);
     }
-    setDraggingDivider(dividerIndex);
+    setDraggingDivider(position);
     dragStartXRef.current = e.clientX;
-    dragStartRatiosRef.current = [...panelRatios];
-  }, [panelRatios]);
+    dragStartRatiosRef.current = { ...ratios };
+  }, [ratios]);
 
   useEffect(() => {
     if (draggingDivider === null) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
+      const avail = containerWidth - (visibleCount - 1) * DIVIDER_WIDTH;
+      if (avail <= 0) return;
 
-      const dividerW = 8;
-      const totalDividers = visiblePanelCount - 1;
-      const availWidth = containerWidth - totalDividers * dividerW;
-      if (availWidth <= 0) return;
-
-      const deltaX = e.clientX - dragStartXRef.current;
-      const deltaRatio = deltaX / availWidth;
+      // The divider sits between two positions; resolve them to slots, since
+      // ratios are keyed by slot.
+      const leftSlot = visibleOrder[draggingDivider];
+      const rightSlot = visibleOrder[draggingDivider + 1];
+      if (leftSlot === undefined || rightSlot === undefined) return;
 
       const startRatios = dragStartRatiosRef.current;
-      const leftIdx = draggingDivider;
-      const rightIdx = draggingDivider + 1;
+      const fallback = 1 / visibleCount;
+      const startLeft = startRatios[leftSlot] ?? fallback;
+      const startRight = startRatios[rightSlot] ?? fallback;
 
-      const startLeft = startRatios[leftIdx] ?? (1 / visiblePanelCount);
-      const startRight = startRatios[rightIdx] ?? (1 / visiblePanelCount);
+      const deltaRatio = (e.clientX - dragStartXRef.current) / avail;
+      let newLeft = startLeft + deltaRatio;
+      let newRight = startRight - deltaRatio;
 
-      let newLeftRatio = startLeft + deltaRatio;
-      let newRightRatio = startRight - deltaRatio;
-
-      const minRatio = MIN_PANEL_WIDTH / availWidth;
-
-      if (newLeftRatio < minRatio) {
-        newLeftRatio = minRatio;
-        newRightRatio = startLeft + startRight - minRatio;
+      const minRatio = MIN_PANEL_WIDTH / avail;
+      if (newLeft < minRatio) {
+        newLeft = minRatio;
+        newRight = startLeft + startRight - minRatio;
       }
-      if (newRightRatio < minRatio) {
-        newRightRatio = minRatio;
-        newLeftRatio = startLeft + startRight - minRatio;
+      if (newRight < minRatio) {
+        newRight = minRatio;
+        newLeft = startLeft + startRight - minRatio;
       }
 
-      const newRatios = [...startRatios];
-      newRatios[leftIdx] = newLeftRatio;
-      newRatios[rightIdx] = newRightRatio;
-      setPanelRatios(newRatios);
+      setRatios((prev) => ({ ...prev, [leftSlot]: newLeft, [rightSlot]: newRight }));
     };
 
     const handleMouseUp = () => {
@@ -394,17 +468,76 @@ export function SplitView() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingDivider, containerWidth, visiblePanelCount]);
+  }, [draggingDivider, containerWidth, visibleCount, visibleOrder]);
 
-  // ─── Build render list ────────────────────────────────────────────────────
+  // ─── Reordering ───────────────────────────────────────────────────────────
 
-  const panelIds = useMemo(() => {
-    return Array.from({ length: visiblePanelCount }, (_, i) => visiblePanelCount - 1 - i);
-  }, [visiblePanelCount]);
+  /**
+   * Outer width of each visible panel, keyed by slot.
+   *
+   * The drag needs real pixel widths to decide which neighbour a gesture has
+   * cleared, and panels are deliberately resizable, so this cannot be derived
+   * from the count.
+   */
+  const widthBySlot = useMemo(() => {
+    const map = new Map<number, number>();
+    if (visibleCount === 1) {
+      const only = visibleOrder[0];
+      if (only !== undefined) map.set(only, containerWidth);
+      return map;
+    }
+    for (const slot of visibleOrder) {
+      const ratio = ratios[slot] ?? 1 / visibleCount;
+      // Include the divider, so the widths tile the container exactly and a drag
+      // across a panel lands where the pointer is.
+      map.set(slot, ratio * availableWidth + DIVIDER_WIDTH);
+    }
+    return map;
+  }, [visibleOrder, visibleCount, ratios, availableWidth, containerWidth]);
+
+  /**
+   * Commits a reorder.
+   *
+   * Only the order changes: slots, storage and React keys all stay put, so no
+   * panel remounts and an in-flight stream is untouched. Ratios are re-keyed
+   * rather than reset, so each panel keeps the width it was dragged with.
+   */
+  const handleReorder = useCallback((next: number[]) => {
+    const current = orderRef.current;
+    // A hidden panel is not part of the dragged order, so splice the visible
+    // arrangement back into the full one rather than replacing it — otherwise
+    // reordering while narrow would silently drop the hidden panels.
+    const hidden = current.slice(0, Math.max(0, current.length - next.length));
+    persistOrder([...hidden, ...next]);
+  }, [persistOrder]);
+
+  const { offsets, draggingSlot, isDragging: isReordering, startDrag } = usePanelDrag({
+    order: visibleOrder,
+    widthBySlot,
+    onReorder: handleReorder,
+    // Nothing to reorder with a single panel, and a drag mid-resize would work
+    // from stale widths.
+    enabled: visibleCount > 1 && draggingDivider === null,
+  });
+
+  /**
+   * Stable per-slot drag callbacks, for the same reason as the ref callbacks
+   * below: an inline closure would change identity every render and re-render
+   * every panel, which is exactly what must not happen while one is streaming.
+   */
+  const dragStartCallbacksRef = useRef<Map<number, (e: React.PointerEvent) => void>>(new Map());
+
+  const getDragStartCallback = useCallback((slot: number) => {
+    const existing = dragStartCallbacksRef.current.get(slot);
+    if (existing) return existing;
+    const callback = (event: React.PointerEvent) => startDrag(slot, event);
+    dragStartCallbacksRef.current.set(slot, callback);
+    return callback;
+  }, [startDrag]);
 
   // ─── Quick action dispatch ────────────────────────────────────────────────
 
-  // Imperative handles, indexed by panelId. Quick actions need to inspect every
+  // Imperative handles, keyed by slot. Quick actions need to inspect every
   // visible panel's live state (streaming? draft?) before choosing a target, so
   // this cannot be done with props flowing downward.
   const panelHandlesRef = useRef<Map<number, ChatPanelHandle>>(new Map());
@@ -417,85 +550,100 @@ export function SplitView() {
   const [registeredPanelCount, setRegisteredPanelCount] = useState(0);
 
   /**
-   * Stable per-panel ref callbacks.
+   * Stable per-slot callbacks for the props handed to each panel.
    *
-   * An inline `ref={(h) => set(panelId, h)}` would be a fresh function every
-   * render, so React would detach with `null` and re-attach on each one. Worse,
-   * the detach deletes by panelId, so a re-render racing with a panel unmount
-   * could drop a handle that had just been registered. Memoising by panelId
-   * keeps each callback identity stable for the panel's lifetime.
+   * An inline `ref={(h) => set(slot, h)}` would be a fresh function every render,
+   * so React would detach with `null` and re-attach on each one. Worse, the
+   * detach deletes by slot, so a re-render racing with a panel unmount could drop
+   * a handle that had just been registered. Caching by slot keeps each callback
+   * identity stable for the panel's lifetime — which also keeps the panel out of
+   * needless re-renders while a sibling streams.
    */
   const panelRefCallbacksRef = useRef<Map<number, (handle: ChatPanelHandle | null) => void>>(
     new Map(),
   );
+  const panelCloseCallbacksRef = useRef<Map<number, () => void>>(new Map());
 
-  const getPanelRefCallback = useCallback((panelId: number) => {
-    const existing = panelRefCallbacksRef.current.get(panelId);
+  const getPanelRefCallback = useCallback((slot: number) => {
+    const existing = panelRefCallbacksRef.current.get(slot);
     if (existing) return existing;
     const callback = (handle: ChatPanelHandle | null) => {
       if (handle) {
-        panelHandlesRef.current.set(panelId, handle);
+        panelHandlesRef.current.set(slot, handle);
       } else {
-        panelHandlesRef.current.delete(panelId);
+        panelHandlesRef.current.delete(slot);
       }
       // Published as state so quick-action readiness recomputes: a handle
       // attaching is what makes its panel routable.
       setRegisteredPanelCount(panelHandlesRef.current.size);
     };
-    panelRefCallbacksRef.current.set(panelId, callback);
+    panelRefCallbacksRef.current.set(slot, callback);
     return callback;
+  }, []);
+
+  const getPanelCloseCallback = useCallback((slot: number) => {
+    const existing = panelCloseCallbacksRef.current.get(slot);
+    if (existing) return existing;
+    const callback = () => { void handleClosePanel(slot); };
+    panelCloseCallbacksRef.current.set(slot, callback);
+    return callback;
+  }, [handleClosePanel]);
+
+  const openSettings = useCallback(() => {
+    chrome.runtime.openOptionsPage();
   }, []);
 
   /**
    * Whether the layout reflects the user's real configuration *and* every panel
    * it implies has registered its imperative handle.
    *
-   * All three inputs are asynchronous: the panel count comes from storage, the
-   * width from the first `ResizeObserver` callback, and the handles from the
-   * children's ref callbacks, which attach a commit after the render that
-   * schedules them. Releasing a quick action early would route it over the
-   * initial single-panel guess and ignore a configured split view.
-   *
-   * The comparison is against `targetVisibleCount` rather than
-   * `visiblePanelCount`: the latter is itself still catching up (an effect writes
-   * it), so it briefly equals the handle count while a second panel is pending —
-   * which would let the gate open one commit too early.
+   * All three inputs are asynchronous: the order comes from storage, the width
+   * from the first `ResizeObserver` callback, and the handles from the children's
+   * ref callbacks, which attach a commit after the render that schedules them.
+   * Releasing a quick action early would route it over the initial single-panel
+   * guess and ignore a configured split view.
    */
   const isLayoutSettled =
-    isCountRestored && containerWidth > 0 && registeredPanelCount >= targetVisibleCount;
+    isLayoutRestored && containerWidth > 0 && registeredPanelCount >= visibleCount;
 
   useContextMenuPending(
     useCallback((pending) => {
-      // Routing iterates the registered handles rather than `visiblePanelCount`.
-      // The handle map is the ground truth for which panels actually exist, and
-      // avoids depending on a count that lands asynchronously.
+      // Routing iterates the registered handles rather than the visible order:
+      // the handle map is the ground truth for which panels actually exist.
+      // Handles whose panel has since been hidden are skipped, since routing an
+      // action to an unmounted panel would drop it.
       const states: PanelRoutingState[] = [];
-      for (const [panelId, handle] of panelHandlesRef.current) {
+      for (const [slot, handle] of panelHandlesRef.current) {
+        const position = positionBySlot.get(slot);
         const { isStreaming, hasContent } = handle.getRoutingState();
-        states.push({ panelId, isStreaming, hasContent });
+        states.push({
+          slot,
+          // A panel that has not been placed yet still has to be routable on a
+          // cold open, when the width has not been measured. Treat it as the
+          // rightmost candidate rather than excluding it.
+          logicalIndex: position === undefined ? slot : visibleCount - 1 - position,
+          isStreaming,
+          hasContent,
+        });
       }
 
       const route = routeQuickAction(states, pending.autoSend);
       const target =
-        panelHandlesRef.current.get(route.panelId)
-        // `routeQuickAction` falls back to panel 0 when it has nothing to go on;
-        // if even that has not mounted, take any handle rather than drop the
-        // action, since dropping it is what makes the menu look broken.
+        (route.slot === undefined ? undefined : panelHandlesRef.current.get(route.slot))
+        // `routeQuickAction` has nothing to go on when no panel has registered;
+        // take any handle rather than drop the action, since dropping it is what
+        // makes the menu look broken.
         ?? panelHandlesRef.current.values().next().value;
 
       target?.applyQuickAction(pending, route.delivery);
-    }, []),
-    // Hold the action until the panel count has been restored from storage and
-    // the container has been measured. Dispatching before that would route over
-    // a one-panel layout and ignore the user's split view.
+    }, [positionBySlot, visibleCount]),
+    // Hold the action until the layout has been restored from storage and the
+    // container has been measured. Dispatching before that would route over a
+    // one-panel layout and ignore the user's split view.
     { isReady: isLayoutSettled },
   );
 
   // ─── Render ───────────────────────────────────────────────────────────────
-
-  const dividerWidth = 8;
-  const totalDividers = visiblePanelCount - 1;
-  const availableWidth = containerWidth - totalDividers * dividerWidth;
 
   return (
     <div
@@ -508,51 +656,106 @@ export function SplitView() {
       onDrop={handleSplitViewDrop}
     >
       <AnimatePresence initial={false}>
-        {panelIds.map((panelId, renderIndex) => {
-          const ratio = panelRatios[renderIndex] ?? (1 / visiblePanelCount);
-          const panelWidth = visiblePanelCount === 1
-            ? containerWidth
-            : ratio * availableWidth;
-          const isLeftmost = renderIndex === 0;
-          const isRightmost = renderIndex === visiblePanelCount - 1;
-          const panelKey = panelId === 0 ? 'panel-0' : `panel-${panelId}-g${generation}`;
+        {/*
+          Nothing renders until the layout is known.
 
-          // When animateTransitions is true (panel count changing), use smooth animation.
-          // Otherwise (resize/drag), use instant transition (duration 0).
+          The alternative — rendering a guessed single panel and correcting it —
+          mounts a `ChatPanel` for a slot that may not be in the restored layout
+          at all, so it reads a conversation from storage only to unmount and
+          discard it, and the user sees a panel appear and immediately collapse.
+          The read is fast enough that gating is imperceptible, and quick actions
+          already wait for the same signal.
+        */}
+        {isLayoutRestored && domSlots.map((slot) => {
+          const position = positionBySlot.get(slot) ?? 0;
+          const isLeftmost = position === 0;
+          const isRightmost = position === visibleCount - 1;
+          const ratio = ratios[slot] ?? 1 / visibleCount;
+
+          // The wrapper holds the panel *and* the divider to its right, so the
+          // two travel together when the order changes. Its width therefore
+          // includes the divider, which makes the wrappers sum to exactly the
+          // container width.
+          const contentWidth = visibleCount === 1 ? containerWidth : ratio * availableWidth;
+          const wrapperWidth = contentWidth + (isRightmost ? 0 : DIVIDER_WIDTH);
+
+          // When animateTransitions is true (panel count changing), use smooth
+          // animation. Otherwise (resize/drag), use an instant transition.
           const transitionDuration = animateTransitions ? 0.3 : 0;
+          const isDragging = draggingSlot === slot;
 
           return (
             <motion.div
-              key={panelKey}
+              // Keyed by slot, which is stable for the panel's whole lifetime, so
+              // React never remounts a panel — the reason a reorder cannot
+              // interrupt a stream or lose an input draft.
+              key={`panel-${slot}`}
               className="flex h-full overflow-hidden shrink-0"
+              style={{
+                // Visual position. DOM order stays ascending by slot; see the
+                // component docs for why React must not reorder these nodes.
+                order: position,
+                // Live drag offset, driven by a motion value so a pointer move
+                // never re-renders the panel tree.
+                x: offsets.get(slot),
+                // The dragged panel rides above its neighbours as they slide past.
+                zIndex: isDragging ? 10 : undefined,
+                // Lifted look while dragging. Applied inline rather than through
+                // `whileDrag` because motion animates `whileDrag` back to a
+                // `baseTarget` it cannot read from a class, which leaves a
+                // permanent shadow behind (see `options/models/ModelRow.tsx`).
+                boxShadow: isDragging
+                  ? '0 8px 24px -4px rgb(0 0 0 / 0.25)'
+                  : undefined,
+              }}
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: panelWidth, opacity: 1 }}
+              animate={{ width: wrapperWidth, opacity: 1 }}
               exit={{ width: 0, opacity: 0, transition: { width: { duration: 0.3, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.2, ease: 'easeInOut' } } }}
               transition={{
                 width: { duration: transitionDuration, ease: [0.4, 0, 0.2, 1] },
                 opacity: { duration: transitionDuration > 0 ? 0.2 : 0, ease: 'easeInOut' },
               }}
             >
-              <div className="flex-1 h-full min-w-0 overflow-hidden">
+              <div
+                className="flex-1 h-full min-w-0 overflow-hidden"
+                // The whole panel goes inert for the duration of a drag. Without
+                // this, sweeping the pointer across a transcript still fires
+                // hover states and the attachment drag-and-drop affordances, and
+                // releasing over a button would activate it — a reorder could
+                // delete a conversation.
+                //
+                // Safe to include the header: once the gesture has started it is
+                // driven entirely by listeners on `document`, so nothing depends
+                // on the header still being a pointer target.
+                style={isReordering ? { pointerEvents: 'none' } : undefined}
+              >
                 <ChatPanel
-                  ref={getPanelRefCallback(panelId)}
-                  panelIndex={panelId}
+                  ref={getPanelRefCallback(slot)}
+                  panelIndex={slot}
+                  // Role flags follow *position*, not slot, so they move with the
+                  // panel on reorder while its data stays put.
                   showSettings={isRightmost}
                   showSplitButton={isLeftmost && canSplit}
-                  showClose={panelId > 0}
+                  showClose={!isRightmost}
                   onSplit={handleSplit}
-                  onClose={() => handleClosePanel(panelId)}
-                  onOpenSettings={() => chrome.runtime.openOptionsPage()}
-                  occupiedSessionIds={getOccupiedSessionIds(panelId)}
+                  onClose={getPanelCloseCallback(slot)}
+                  onOpenSettings={openSettings}
+                  occupiedSessionIds={occupiedBySlot.get(slot) ?? []}
                   onSessionChange={handleSessionChange}
-                  isExternalDragActive={isExternalDragActive && visiblePanelCount > 1}
+                  isExternalDragActive={
+                    isExternalDragActive && visibleCount > 1 && !isReordering
+                  }
+                  onReorderPointerDown={
+                    visibleCount > 1 ? getDragStartCallback(slot) : undefined
+                  }
+                  isDragging={isDragging}
                 />
               </div>
-              {renderIndex < visiblePanelCount - 1 && (
+              {!isRightmost && (
                 <div
                   className="h-full flex items-center justify-center shrink-0 group cursor-col-resize hover:bg-muted/60 active:bg-muted transition-colors"
-                  style={{ width: `${dividerWidth}px` }}
-                  onMouseDown={(e) => handleDividerMouseDown(renderIndex, e)}
+                  style={{ width: `${DIVIDER_WIDTH}px` }}
+                  onMouseDown={(e) => handleDividerMouseDown(position, e)}
                 >
                   <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-foreground/30 group-active:bg-foreground/50 transition-colors" />
                 </div>

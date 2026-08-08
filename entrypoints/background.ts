@@ -1,7 +1,7 @@
 import { mcpRegistry, initBuiltinMcpServers, registerMcpCollectors } from '@/lib/mcp';
 import { initWebMcpManager } from '@/lib/mcp/webmcp-manager';
 import { registerContextMenus } from '@/lib/context-menu';
-import { dropLegacyConversationsKey } from '@/store/storage';
+import { dropLegacyConversationsKey, migrateLegacyPanelCount } from '@/store/storage';
 
 export default defineBackground(() => {
   // Release the abandoned chat-history key as early as possible.
@@ -16,6 +16,16 @@ export default defineBackground(() => {
   // The background runs before any extension page in every entry path.
   dropLegacyConversationsKey().catch((error: Error) =>
     console.error('[Lumo] Failed to release legacy conversation storage:', error),
+  );
+
+  // Turn a stored panel *count* into an explicit panel *order*.
+  //
+  // Runs here, before any extension page, for the same reason as above: the side
+  // panel reads the layout on mount, so the migration has to land first or the
+  // first render would fall back to a single panel and the user's split view
+  // would appear to have been forgotten.
+  migrateLegacyPanelCount().catch((error: Error) =>
+    console.error('[Lumo] Failed to migrate the split view layout:', error),
   );
 
   // Session storage defaults to TRUSTED_CONTEXTS only, which already covers the

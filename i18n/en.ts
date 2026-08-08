@@ -18,6 +18,7 @@ export const en = {
     selectModel: 'Select Model',
     settings: 'Settings',
     splitWindow: 'Split Window',
+    closePanel: 'Close Panel',
     placeholder: 'Type a message...',
     send: 'Send',
     thinking: 'Thinking...',
