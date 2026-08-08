@@ -306,7 +306,7 @@ export const zh: TranslationSchema = {
         devtoolsAdvanced: '高级调试',
         devtoolsAdvancedDesc: '真实输入模拟、可访问性树、全页截图、设备仿真',
         file: '文件管理',
-        fileDesc: '读取、写入、修补和预览存储在扩展中的文件',
+        fileDesc: '读取、写入、编辑和预览存储在扩展中的文件',
       },
       webmcpSection: {
         title: 'WebMCP',

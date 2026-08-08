@@ -310,7 +310,7 @@ export const en = {
         devtoolsAdvanced: 'DevTools Advanced',
         devtoolsAdvancedDesc: 'Real input simulation, accessibility tree, full-page screenshots, device emulation',
         file: 'File Manager',
-        fileDesc: 'Read, write, patch, and preview files stored in the extension',
+        fileDesc: 'Read, write, edit, and preview files stored in the extension',
       },
       webmcpSection: {
         title: 'WebMCP',

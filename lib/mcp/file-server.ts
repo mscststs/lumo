@@ -8,63 +8,33 @@ import type {
   McpToolExecutionContext,
   AnyTool,
 } from './types';
-import { fileStorage, inferMimeType, getPreviewCategory } from './file-storage';
+import { fileStorage, getPreviewCategory } from './file-storage';
 import { downloadAsZip } from '@/lib/zip-download';
+import { applyEdits, applyUnifiedDiff } from './file-edit';
+import { applyOutputLimit, DEFAULT_MAX_CHARS } from '@/lib/page/output-limit';
 
 /**
- * Apply a unified diff/patch to text content.
- * Supports a simplified patch format:
- *  - Lines starting with `---` and `+++` are header (ignored)
- *  - Lines starting with `@@` denote hunk headers
- *  - Lines starting with `-` are removals
- *  - Lines starting with `+` are additions
- *  - Lines starting with ` ` (space) are context
+ * Render a tool's zod schema as JSON Schema for the settings UI.
+ *
+ * Mirrors `page-interact-server.ts`: a tool list is a display concern, so a
+ * schema `z.toJSONSchema` cannot represent degrades to a bare object rather
+ * than breaking the options page.
  */
-function applyPatch(original: string, patch: string): string {
-  const patchLines = patch.split('\n');
-  const originalLines = original.split('\n');
-  const result: string[] = [...originalLines];
-
-  let offset = 0; // Track line offset due to additions/removals
-
-  for (let i = 0; i < patchLines.length; i++) {
-    const line = patchLines[i];
-    if (!line) continue;
-
-    // Parse hunk header: @@ -start,count +start,count @@
-    const hunkMatch = line.match(/^@@\s*-(\d+)(?:,(\d+))?\s*\+(\d+)(?:,(\d+))?\s*@@/);
-    if (!hunkMatch) continue;
-
-    const origStart = parseInt(hunkMatch[1]!, 10) - 1; // 0-indexed
-    let pos = origStart + offset;
-
-    // Process hunk lines
-    i++;
-    while (i < patchLines.length) {
-      const pl = patchLines[i];
-      if (pl === undefined || pl.match(/^@@/)) {
-        i--; // Let outer loop re-process this line
-        break;
-      }
-
-      if (pl.startsWith('-')) {
-        // Remove line
-        result.splice(pos, 1);
-        offset--;
-      } else if (pl.startsWith('+')) {
-        // Add line
-        result.splice(pos, 0, pl.slice(1));
-        pos++;
-        offset++;
-      } else {
-        // Context line (starts with ' ' or is empty)
-        pos++;
-      }
-      i++;
-    }
+function toJsonSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  try {
+    const json = z.toJSONSchema(schema as z.ZodType, { io: 'input' }) as Record<string, unknown>;
+    delete json.$schema;
+    return json;
+  } catch {
+    return { type: 'object', properties: {} };
   }
+}
 
-  return result.join('\n');
+/** Preview URL for a file, or undefined when its type cannot be previewed. */
+function previewUrlFor(name: string, mimeType: string): string | undefined {
+  if (getPreviewCategory(mimeType) === 'unsupported') return undefined;
+  return chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`);
 }
 
 /**
@@ -80,7 +50,7 @@ export class FileMcpServer implements IMcpServer {
     return {
       id: 'file',
       name: 'File Manager',
-      description: 'Read, write, patch, and preview files stored in the extension',
+      description: 'Read, write, edit, and preview files stored in the extension',
       transport: 'builtin',
       builtin: true,
       enabled: true,
@@ -115,93 +85,19 @@ export class FileMcpServer implements IMcpServer {
     return this.error;
   }
 
+  /**
+   * UI-facing tool list, derived from the same zod schemas the model sees.
+   *
+   * This was a hand-written JSON Schema array that had already drifted from
+   * `getAITools()` (`file_read`'s two descriptions disagreed). Deriving it
+   * removes the class of bug instead of fixing one instance.
+   */
   getTools(): McpToolDefinition[] {
-    return [
-      {
-        name: 'file_read',
-        description: 'Read a file content as text',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'File name to read' },
-          },
-          required: ['name'],
-        },
-      },
-      {
-        name: 'file_write',
-        description: 'Write/create a file with the given content',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'File name' },
-            content: { type: 'string', description: 'File content' },
-          },
-          required: ['name', 'content'],
-        },
-      },
-      {
-        name: 'file_patch',
-        description: 'Apply a unified diff patch to an existing file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'File name to patch' },
-            patch: { type: 'string', description: 'Unified diff patch content' },
-          },
-          required: ['name', 'patch'],
-        },
-      },
-      {
-        name: 'file_list',
-        description: 'List all stored files with metadata',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-        },
-      },
-      {
-        name: 'file_delete',
-        description: 'Delete a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'File name to delete' },
-          },
-          required: ['name'],
-        },
-      },
-      {
-        name: 'file_open_preview',
-        description: 'Open a file in the preview page in a new browser tab',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'File name to preview' },
-          },
-          required: ['name'],
-        },
-      },
-      {
-        name: 'file_download',
-        description: 'Download one or more files from extension storage to the user\'s local disk via browser download. Multiple files are automatically bundled into a zip archive.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            names: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of file names to download',
-            },
-            zipName: {
-              type: 'string',
-              description: 'Custom zip file name when downloading multiple files (default: "files.zip")',
-            },
-          },
-          required: ['names'],
-        },
-      },
-    ];
+    return Object.entries(this.getAITools()).map(([name, definition]) => ({
+      name,
+      description: (definition as { description?: string }).description ?? '',
+      inputSchema: toJsonSchema((definition as { inputSchema?: unknown }).inputSchema),
+    }));
   }
 
   getAITools(context?: McpToolExecutionContext): Record<string, AnyTool> {
@@ -210,41 +106,48 @@ export class FileMcpServer implements IMcpServer {
     return {
       file_read: tool({
         description:
-          'Read a file stored in the extension. Returns the file content as text. Only works for text-based files.',
+          'Read a text file stored in the extension. Always read a file before editing it, ' +
+          'and copy anchor text for file_edit from this output rather than from memory. ' +
+          'If the result reports truncated: true, call again with offset to continue.',
         inputSchema: z.object({
           name: z.string().describe('File name to read'),
+          maxChars: z
+            .number()
+            .optional()
+            .describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
+          offset: z
+            .number()
+            .optional()
+            .describe('Character offset, for paging through a long file'),
         }),
-        execute: async ({ name }) => {
+        execute: async ({ name, maxChars, offset }) => {
           const content = await fileStorage.readFileAsText(name);
           if (content === null) {
             return { error: `File "${name}" not found` };
           }
           const metadata = await fileStorage.getMetadata(name);
+          const limited = applyOutputLimit(content, { maxChars, offset });
           return {
             name,
             mimeType: metadata?.mimeType,
             size: metadata?.size,
-            content,
+            content: limited.text,
+            limit: limited.limit,
           };
         },
       }),
 
       file_write: tool({
         description:
-          'Write or create a file in the extension storage. If the file already exists, it will be overwritten. Returns the file metadata and a preview URL on success.',
+          'Write or create a file in the extension storage. This OVERWRITES the whole file, ' +
+          'so use file_edit to change part of an existing file. Returns the file metadata and ' +
+          'a preview URL on success.',
         inputSchema: z.object({
           name: z.string().describe('File name (e.g. "notes.md", "data.json", "script.py")'),
           content: z.string().describe('File content to write'),
         }),
         execute: async ({ name, content: fileContent }) => {
           const metadata = await fileStorage.writeFile(name, fileContent, { conversationId });
-
-          // Generate preview URL for previewable files
-          const category = getPreviewCategory(metadata.mimeType);
-          const previewUrl =
-            category !== 'unsupported'
-              ? chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`)
-              : undefined;
 
           return {
             success: true,
@@ -253,46 +156,107 @@ export class FileMcpServer implements IMcpServer {
             size: metadata.size,
             createdAt: metadata.createdAt,
             updatedAt: metadata.updatedAt,
-            previewUrl,
+            previewUrl: previewUrlFor(metadata.name, metadata.mimeType),
+          };
+        },
+      }),
+
+      file_edit: tool({
+        description:
+          'Edit an existing text file by replacing exact text. This is the preferred way to ' +
+          'modify a file: it needs no diff syntax and no line numbers. Each edit replaces ' +
+          'oldText with newText. oldText must appear EXACTLY ONCE in the file — include ' +
+          'enough surrounding lines to make it unique — and must be copied verbatim from ' +
+          'file_read, including indentation. Pass several edits to apply them in order; if ' +
+          'any one fails, none are written and the file is left untouched.',
+        inputSchema: z.object({
+          name: z.string().describe('File name to edit'),
+          edits: z
+            .array(
+              z.object({
+                oldText: z
+                  .string()
+                  .describe('Exact text to find, copied verbatim from the file. Must be unique.'),
+                newText: z.string().describe('Replacement text. Use "" to delete the matched text.'),
+              }),
+            )
+            .min(1)
+            .describe('Replacements to apply in order'),
+        }),
+        execute: async ({ name, edits }) => {
+          const original = await fileStorage.readFileAsText(name);
+          if (original === null) {
+            return { error: `File "${name}" not found. Use file_write to create it.` };
+          }
+
+          const result = applyEdits(original, edits);
+          if (!result.ok) {
+            return { error: result.error };
+          }
+
+          const metadata = await fileStorage.writeFile(name, result.text, { conversationId });
+          const fuzzy = result.applied.filter((a) => a.strategy !== 'exact');
+
+          return {
+            success: true,
+            name: metadata.name,
+            size: metadata.size,
+            updatedAt: metadata.updatedAt,
+            editsApplied: result.applied.length,
+            // Surface an inexact match so the model can verify rather than assume.
+            ...(fuzzy.length > 0
+              ? {
+                  note:
+                    `${fuzzy.length} edit(s) matched only after normalizing whitespace/indentation. ` +
+                    'Read the file back to confirm the result is correct.',
+                }
+              : {}),
+            previewUrl: previewUrlFor(metadata.name, metadata.mimeType),
           };
         },
       }),
 
       file_patch: tool({
         description:
-          'Apply a unified diff patch to an existing file. The patch should follow the standard unified diff format with @@ hunk headers, - for removals, and + for additions.',
+          'Apply a unified diff to an existing text file. Prefer file_edit unless you already ' +
+          'have a diff. Hunk line numbers are IGNORED — each hunk is located by its context ' +
+          'and removal lines, so use "@@ ... @@" as the header. Context lines must be prefixed ' +
+          'with a space, removals with "-", additions with "+", and every hunk needs at least ' +
+          'one context or removal line copied verbatim from the file. A hunk that does not ' +
+          'match the file is an error and nothing is written.',
         inputSchema: z.object({
           name: z.string().describe('File name to patch'),
-          patch: z.string().describe('Unified diff patch content'),
+          patch: z.string().describe('Unified diff content'),
         }),
         execute: async ({ name, patch }) => {
           const original = await fileStorage.readFileAsText(name);
           if (original === null) {
-            return { error: `File "${name}" not found` };
+            return { error: `File "${name}" not found. Use file_write to create it.` };
           }
 
-          try {
-            const patched = applyPatch(original, patch);
-            const metadata = await fileStorage.writeFile(name, patched, { conversationId });
-
-            const category = getPreviewCategory(metadata.mimeType);
-            const previewUrl =
-              category !== 'unsupported'
-                ? chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`)
-                : undefined;
-
-            return {
-              success: true,
-              name: metadata.name,
-              size: metadata.size,
-              updatedAt: metadata.updatedAt,
-              previewUrl,
-            };
-          } catch (err) {
-            return {
-              error: `Failed to apply patch: ${err instanceof Error ? err.message : String(err)}`,
-            };
+          const result = applyUnifiedDiff(original, patch);
+          if (!result.ok) {
+            return { error: `Failed to apply patch: ${result.error}` };
           }
+
+          const metadata = await fileStorage.writeFile(name, result.text, { conversationId });
+          const fuzzy = result.strategies.filter((s) => s !== 'exact');
+
+          return {
+            success: true,
+            name: metadata.name,
+            size: metadata.size,
+            updatedAt: metadata.updatedAt,
+            hunksApplied: result.hunks,
+            ...(fuzzy.length > 0
+              ? {
+                  note:
+                    `${fuzzy.length} hunk(s) matched only after normalizing whitespace/indentation. ` +
+                    'Read the file back to confirm the result is correct.',
+                }
+              : {}),
+            previewUrl: previewUrlFor(metadata.name, metadata.mimeType),
+          };
         },
       }),
 
