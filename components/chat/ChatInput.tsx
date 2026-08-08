@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
+import { createTextAttachment } from '@/lib/text-attachment';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
@@ -50,18 +52,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
   const [isInternalDragOver, setIsInternalDragOver] = useState(false);
   const [sendKey, setSendKey] = useState<SendKey>('enter');
+  const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
       setSendKey(settings.sendKey ?? 'enter');
+      setPasteThreshold(settings.pasteThreshold);
     });
   }, []);
 
-  // React live to send-key changes made in the options page.
+  // React live to input-behaviour changes made in the options page.
   useStorageWatch<UISettings>('uiSettings', (newVal) => {
-    if (newVal) setSendKey(newVal.sendKey ?? 'enter');
+    if (!newVal) return;
+    setSendKey(newVal.sendKey ?? 'enter');
+    setPasteThreshold(newVal.pasteThreshold);
   });
 
   // Auto-grow the textarea to fit content, up to MAX_INPUT_LINES rows,
@@ -115,23 +121,47 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     },
   }), [input, images, textAttachments]);
  
+  /**
+   * Paste handling has two independent jobs.
+   *
+   * An image on the clipboard is read into an image attachment when the model
+   * can see images. Text is separate: past `pasteThreshold` characters it
+   * becomes a text attachment chip instead of landing in the textarea, so a
+   * pasted document does not bury the question the user is still writing. The
+   * content still reaches the model — it travels as its own text part.
+   *
+   * The two never both fire for one event: an image paste carries no meaningful
+   * `text/plain` payload, and once an image is consumed the default is already
+   * prevented.
+   */
   const handlePaste = (e: React.ClipboardEvent) => {
-    if (!isVisionModel) return;
-    const items = e.clipboardData.items;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            const base64 = ev.target?.result as string;
-            setImages((prev) => [...prev, base64]);
-          };
-          reader.readAsDataURL(file);
+    let handledImage = false;
+    if (isVisionModel) {
+      for (const item of e.clipboardData.items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          handledImage = true;
+          const file = item.getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const base64 = ev.target?.result as string;
+              setImages((prev) => [...prev, base64]);
+            };
+            reader.readAsDataURL(file);
+          }
         }
       }
     }
+    if (handledImage) return;
+
+    const text = e.clipboardData.getData('text/plain');
+    if (!shouldAttachPaste(text, pasteThreshold)) return;
+    e.preventDefault();
+    setTextAttachments((prev) => [
+      ...prev,
+      createTextAttachment(text, 'text/plain', { label: t('sidebar.pastedAttachment') }),
+    ]);
   };
  
   const removeImage = (index: number) => {

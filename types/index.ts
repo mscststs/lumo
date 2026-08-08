@@ -73,6 +73,12 @@ export interface UISettings {
   maxSplitPanels: 1 | 2 | 3;
   /** Which key combination sends a chat message. Default is Enter. */
   sendKey: SendKey;
+  /**
+   * Character count at which a paste into the composer becomes a text
+   * attachment instead of inline text. `0` disables it, `1` attaches every
+   * paste. See `lib/paste-threshold.ts`.
+   */
+  pasteThreshold: number;
 }
 
 /**

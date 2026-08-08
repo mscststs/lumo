@@ -11,8 +11,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
+import { DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { storage } from '@/store/storage';
+import { PasteThresholdField } from './components/PasteThresholdField';
+import { SettingRow } from './components/SettingRow';
+import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
 import type { SendKey, Theme, UISettings } from '@/types';
 
@@ -62,12 +66,14 @@ export function UISettingsPage() {
   const [language, setLanguage] = useState<UISettings['language']>('en');
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
+  const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
       setLanguage(settings.language);
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
       setSendKey(settings.sendKey ?? 'enter');
+      setPasteThreshold(settings.pasteThreshold);
     });
   }, []);
 
@@ -95,6 +101,12 @@ export function UISettingsPage() {
     setSendKey(key);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, sendKey: key });
+  };
+
+  const handlePasteThresholdChange = async (threshold: number) => {
+    setPasteThreshold(threshold);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, pasteThreshold: threshold });
   };
 
   const handleExport = async () => {
@@ -128,6 +140,7 @@ export function UISettingsPage() {
         setLanguage(settings.language);
         setMaxSplitPanels(settings.maxSplitPanels ?? 1);
         setSendKey(settings.sendKey ?? 'enter');
+        setPasteThreshold(settings.pasteThreshold);
         await i18n.changeLanguage(settings.language);
         await setTheme(settings.theme);
         alert(t('options.ui.importSuccess'));
@@ -145,76 +158,81 @@ export function UISettingsPage() {
         description={t('options.ui.description')}
       />
 
-      <div className="space-y-6">
-        {/* Language */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">{t('options.ui.language')}</Label>
-          <Select value={language} onValueChange={handleLanguageChange}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="zh">中文</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-8">
+        {/* Extension-wide: applies everywhere Lumo renders. */}
+        <SettingsGroup title={t('options.ui.groupGeneral')}>
+          <SettingRow label={t('options.ui.language')}>
+            <Select value={language} onValueChange={handleLanguageChange}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.language')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="zh">中文</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
 
-        {/* Theme */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">{t('options.ui.theme')}</Label>
-          <Select value={theme} onValueChange={handleThemeChange}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {THEME_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {t(opt.labelKey)}
+          <SettingRow label={t('options.ui.theme')}>
+            <Select value={theme} onValueChange={handleThemeChange}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.theme')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEME_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </SettingsGroup>
+
+        {/* Side panel and composer behaviour. */}
+        <SettingsGroup title={t('options.ui.groupSidebar')}>
+          <SettingRow
+            label={t('options.ui.maxSplitPanels')}
+            description={t('options.ui.maxSplitPanelsDesc')}
+          >
+            <Select value={String(maxSplitPanels)} onValueChange={handleMaxSplitPanelsChange}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.maxSplitPanels')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1</SelectItem>
+                <SelectItem value="2">2</SelectItem>
+                <SelectItem value="3">3</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.sendKey')} description={t('options.ui.sendKeyDesc')}>
+            <Select value={sendKey} onValueChange={handleSendKeyChange}>
+              <SelectTrigger className="w-52" aria-label={t('options.ui.sendKey')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="enter">
+                  <SendKeyBadge value="enter" />
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+                <SelectItem value="meta-enter">
+                  <SendKeyBadge value="meta-enter" />
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
 
-        {/* Max Split Panels */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-0.5">
-            <Label className="text-sm">{t('options.ui.maxSplitPanels')}</Label>
-            <span className="text-xs text-muted-foreground">{t('options.ui.maxSplitPanelsDesc')}</span>
-          </div>
-          <Select value={String(maxSplitPanels)} onValueChange={handleMaxSplitPanelsChange}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">1</SelectItem>
-              <SelectItem value="2">2</SelectItem>
-              <SelectItem value="3">3</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Send Key */}
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-0.5">
-            <Label className="text-sm">{t('options.ui.sendKey')}</Label>
-            <span className="text-xs text-muted-foreground">{t('options.ui.sendKeyDesc')}</span>
-          </div>
-          <Select value={sendKey} onValueChange={handleSendKeyChange}>
-            <SelectTrigger className="w-52" aria-label={t('options.ui.sendKey')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="enter">
-                <SendKeyBadge value="enter" />
-              </SelectItem>
-              <SelectItem value="meta-enter">
-                <SendKeyBadge value="meta-enter" />
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <SettingRow
+            label={t('options.ui.pasteThreshold')}
+            description={t('options.ui.pasteThresholdDesc')}
+          >
+            <PasteThresholdField
+              value={pasteThreshold}
+              onChange={handlePasteThresholdChange}
+            />
+          </SettingRow>
+        </SettingsGroup>
 
         {/* Import/Export */}
         <div className="border-t border-border pt-6">

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { panelConversationKey } from '@/lib/panel-storage';
+import { primarySlot } from '@/lib/panel-order';
 import { getConversation } from '@/lib/conversation-store';
 import { safeStringify } from '@/lib/tool-output';
 import { storage } from '@/store/storage';
@@ -154,9 +155,34 @@ export function ChatDebugPage() {
    * Read as an order rather than a count because panels can be reordered: a
    * count would only say how many there are, and this view has to name each one
    * by the position the user actually sees it in.
+   *
+   * Empty until the published layout has been read, which is what gates the
+   * conversation lookup below — see `selectedPanel`.
    */
-  const [visibleOrder, setVisibleOrder] = useState<number[]>([0]);
-  const [selectedPanel, setSelectedPanel] = useState(0);
+  const [visibleOrder, setVisibleOrder] = useState<number[]>([]);
+  /** The panel the user picked from the switcher, or `null` for "the primary one". */
+  const [pickedSlot, setPickedSlot] = useState<number | null>(null);
+
+  /**
+   * The slot actually being inspected: the user's pick while it is still on
+   * screen, otherwise the primary (rightmost) panel.
+   *
+   * Derived from the layout rather than stored, because the two must never
+   * disagree. As stored state seeded with `0` it silently did: slots became
+   * sparse when reordering landed, so dragging a panel rightwards and closing
+   * the one now on the left can leave a single panel in slot 1 or 2 with no slot
+   * 0 at all. This view then read `currentConversationId` — a key that no longer
+   * exists — and reported "no active conversation" for a sidebar that plainly
+   * had one, with the switcher hidden (one panel) so there was no way to correct
+   * it by hand.
+   *
+   * `undefined` until the layout is known, so the first lookup cannot fire
+   * against a guessed slot and race the read that would have corrected it.
+   */
+  const selectedPanel =
+    pickedSlot !== null && visibleOrder.includes(pickedSlot)
+      ? pickedSlot
+      : primarySlot(visibleOrder);
 
   // Load the visible layout on mount
   useEffect(() => {
@@ -165,16 +191,15 @@ export function ChatDebugPage() {
     });
   }, []);
 
-  // Watch for layout changes (a split, close, reorder, or width-driven collapse)
+  // Watch for layout changes (a split, close, reorder, or width-driven collapse).
+  // A pick that just went off screen needs no repair here: `selectedPanel` falls
+  // back to the primary panel on its own.
   useStorageWatch<PanelLayout>(
     'splitViewVisible',
     useCallback((newValue) => {
       const order = newValue?.order;
       if (!order || order.length === 0) return;
       setVisibleOrder(order);
-      // The selected panel may have just been closed or hidden. Fall back to the
-      // primary panel, which is the rightmost entry and always exists.
-      setSelectedPanel((prev) => (order.includes(prev) ? prev : order[order.length - 1]!));
     }, []),
   );
 
@@ -194,6 +219,9 @@ export function ChatDebugPage() {
 
   // Load conversation when selected panel changes
   useEffect(() => {
+    // The layout has not arrived yet; stay on the loading state rather than
+    // querying a slot that may not exist.
+    if (selectedPanel === undefined) return;
     let cancelled = false;
     setLoading(true);
     void (async () => {
@@ -217,6 +245,7 @@ export function ChatDebugPage() {
   useStorageWatch<number>(
     'conversationsRevision',
     useCallback(() => {
+      if (selectedPanel === undefined) return;
       void loadPanelConversation(selectedPanel)
         .then(setConversation)
         .catch(() => { /* transient read failure; the next bump retries */ });
@@ -225,6 +254,7 @@ export function ChatDebugPage() {
 
   // Watch for the selected panel's currentConversationId changes
   useEffect(() => {
+    if (selectedPanel === undefined) return;
     const convKey = panelConversationKey(selectedPanel);
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },
@@ -302,7 +332,7 @@ export function ChatDebugPage() {
                 variant={selectedPanel === slot ? 'default' : 'outline'}
                 size="sm"
                 className="h-7 text-xs px-3"
-                onClick={() => setSelectedPanel(slot)}
+                onClick={() => setPickedSlot(slot)}
               >
                 {getPanelSideLabel(slot)}
               </Button>

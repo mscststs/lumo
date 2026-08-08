@@ -35,6 +35,7 @@ import type { McpSettings } from '@/lib/mcp/types';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
 import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
+import { normalizePasteThreshold, DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import {
   DEFAULT_PANEL_LAYOUT,
   normalizeOrder,
@@ -124,6 +125,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   theme: DEFAULT_THEME,
   maxSplitPanels: 1,
   sendKey: 'enter',
+  pasteThreshold: DEFAULT_PASTE_THRESHOLD,
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -159,6 +161,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       theme: normalizeTheme(raw.theme),
       maxSplitPanels: raw.maxSplitPanels ?? 1,
       sendKey: raw.sendKey ?? 'enter',
+      // A config written before this setting existed, or one carrying a value a
+      // hand-edited export made non-numeric, must land on the default rather
+      // than on `0` — which would read as "never attach a paste".
+      pasteThreshold: normalizePasteThreshold(raw.pasteThreshold),
     }),
   },
   systemPrompt: {

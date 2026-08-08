@@ -11,6 +11,7 @@ import { useModelSelection } from '@/store/useModelSelection';
 import { useChatStream } from '@/store/useChatStream';
 import { classifyDroppedContent } from '@/lib/drop-content';
 import { buildPageContextAttachment } from '@/lib/page-context';
+import { createTextAttachment } from '@/lib/text-attachment';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
 import type { TextAttachment, Conversation } from '@/types';
 import type { ContextMenuPendingData } from '@/lib/context-menu';
@@ -209,12 +210,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       ];
 
       if (pending.text) {
-        attachments.push({
-          id: uuidv4(),
-          mediaType: 'text/plain',
-          content: pending.text,
-          preview: pending.text.slice(0, 50),
-        });
+        attachments.push(createTextAttachment(pending.text, 'text/plain'));
       }
 
       return attachments;
@@ -381,14 +377,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   }, []);
 
   const addTextAttachmentFromDrop = (content: string, mediaType: 'text/plain' | 'text/html') => {
-    const preview = content.replace(/<[^>]*>/g, '').trim().slice(0, 50);
-    const attachment: TextAttachment = {
-      id: uuidv4(),
-      mediaType,
-      content,
-      preview: preview || content.slice(0, 50),
-    };
-    chatInputRef.current?.addTextAttachment(attachment);
+    chatInputRef.current?.addTextAttachment(createTextAttachment(content, mediaType));
   };
 
   const handlePanelDrop = useCallback((e: React.DragEvent) => {
