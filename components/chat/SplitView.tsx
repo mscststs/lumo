@@ -293,6 +293,17 @@ export function SplitView() {
    */
   const domSlots = useMemo(() => [...visibleOrder].sort((a, b) => a - b), [visibleOrder]);
 
+  /**
+   * Mirrors `visibleOrder` for `handleClosePanel`.
+   *
+   * Read through a ref rather than closed over, for the same reason as
+   * `orderRef`: the close callbacks are cached per slot for the panel's whole
+   * lifetime (see `getPanelCloseCallback`), so a callback that captured one
+   * render's `visibleOrder` would close over a layout the user has since changed.
+   */
+  const visibleOrderRef = useRef(visibleOrder);
+  visibleOrderRef.current = visibleOrder;
+
   /** Position of each visible slot, for CSS `order` and for the UI role flags. */
   const positionBySlot = useMemo(() => {
     const map = new Map<number, number>();
@@ -358,23 +369,47 @@ export function SplitView() {
   /**
    * Manual close (X): permanently removes a panel.
    *
-   * Only the closed slot is touched. Every sibling keeps its slot, its storage
-   * and its position, so none of them remounts and none of their streams is
-   * interrupted — the failure mode of the old contiguous-slot scheme.
+   * Committed against `visibleOrder`, not `order`, so what the user sees is the
+   * whole layout. Closing relative to `order` instead would free a slot that a
+   * width-collapsed panel immediately refills: with `[2,1,0]` collapsed to two
+   * panels, closing the left one left `[2,0]` — still two panels, the left one
+   * merely swapped its contents, so the close looked like it had failed.
+   *
+   * Collapsing on its own remains free and reversible; only an explicit layout
+   * action commits it. Every panel that was hidden is therefore discarded here
+   * too, releasing its conversation claim so another panel may take it.
+   *
+   * Siblings that survive keep their slot, their storage and their position, so
+   * none of them remounts and none of their streams is interrupted — the failure
+   * mode of the old contiguous-slot scheme.
    */
   const handleClosePanel = useCallback(async (slot: number) => {
     const current = orderRef.current;
-    if (current.length <= 1) return;
+    const visible = visibleOrderRef.current;
+    // Only a panel the user can see can be closed. Without this, a stray call for
+    // a collapsed slot would be a no-op on `visible` yet still discard the
+    // hidden panels below.
+    if (!visible.includes(slot)) return;
 
-    const next = removePanel(current, slot);
+    const next = removePanel(visible, slot);
+    // The last visible panel has no close button, but guard anyway: rendering
+    // zero panels is unrecoverable.
+    if (next.length === 0) return;
     if (isSameOrder(current, next)) return;
 
-    await releasePanelSlot(chrome.storage.local, slot);
+    const discarded = current.filter((id) => !next.includes(id));
+    await Promise.all(discarded.map((id) => releasePanelSlot(chrome.storage.local, id)));
 
     setSessionIds((prev) => {
-      if (!(slot in prev)) return prev;
-      const { [slot]: _removed, ...rest } = prev;
-      return rest;
+      const rest = { ...prev };
+      let changed = false;
+      for (const id of discarded) {
+        if (id in rest) {
+          delete rest[id];
+          changed = true;
+        }
+      }
+      return changed ? rest : prev;
     });
     setRatios((prev) => ratiosForOrder(prev, next));
     persistOrder(next);

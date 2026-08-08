@@ -350,6 +350,49 @@ describe('width-driven collapse', () => {
     expect(domSlotOrder(container)).toEqual([1]);
     expect(lastProps.get(1)).toMatchObject({ showSettings: true, showClose: false });
   });
+
+  it('closes against the visible layout, discarding the collapsed panels', async () => {
+    // The regression: closing used to be committed against the intended order, so
+    // `[2,1,0]` collapsed to two panels went to `[2,0]` when the left one was
+    // closed — still two panels, the left one merely swapping slot 1 for the
+    // previously hidden slot 2, which read as the close having failed.
+    storedOrder = [2, 1, 0];
+    stubContainerWidth(800); // two panels: slot 1 left, slot 0 right; slot 2 hidden
+    const { container } = await renderSplitView();
+    expect(domSlotOrder(container)).toEqual([0, 1]);
+
+    const close = lastProps.get(1)?.onClose as () => void;
+    await act(async () => { close(); });
+    await settle();
+    await waitForUnmount(1);
+
+    // What the user sees is the whole layout, so one panel is left.
+    expect(setLayout).toHaveBeenCalledWith({ order: [0] });
+    expect(domSlotOrder(container)).toEqual([0]);
+    // The collapsed panel is committed away too, so its conversation is freed for
+    // another panel rather than staying claimed by a panel that no longer exists.
+    expect(releasePanelSlot).toHaveBeenCalledTimes(2);
+    expect(releasePanelSlot.mock.calls.map((c) => c[1]).sort()).toEqual([1, 2]);
+    // The survivor is untouched: same slot, no remount.
+    expect(slotHistory.get(0)).toEqual([0]);
+  });
+
+  it('refuses to close the only visible panel while others are collapsed', async () => {
+    // Slot 0 is the sole visible panel, so it has no close button. A stray call
+    // must not silently discard the collapsed panels and leave nothing rendered.
+    storedOrder = [2, 1, 0];
+    stubContainerWidth(400); // one panel only
+    await renderSplitView();
+    expect(lastProps.get(0)).toMatchObject({ showClose: false });
+
+    const close = lastProps.get(0)?.onClose as () => void;
+    await act(async () => { close(); });
+    await settle();
+
+    expect(unmounts).toEqual([]);
+    expect(releasePanelSlot).not.toHaveBeenCalled();
+    expect(setLayout).not.toHaveBeenCalled();
+  });
 });
 
 describe('session claims', () => {
