@@ -34,6 +34,7 @@ import {
   ExternalMcpServer,
   WEBMCP_SESSION_KEY,
 } from '@/lib/mcp';
+import { serverDisplayName, serverDisplayDescription } from '@/lib/mcp/server-labels';
 import { storage } from '@/store/storage';
 import { SettingsHeader } from './components/SettingsHeader';
 
@@ -764,7 +765,9 @@ function McpServerCard({
 
         <ServerIcon transport={state.info.transport} />
 
-        <span className="font-medium text-sm flex-1 truncate">{state.info.name}</span>
+        <span className="font-medium text-sm flex-1 truncate">
+          {serverDisplayName(t, state.info)}
+        </span>
 
         <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
           {t('options.mcp.builtin')}
@@ -956,7 +959,7 @@ function ServerExpandedContent({
     <div className="p-3 pt-0 space-y-2 border-t border-border">
       {/* Server Info */}
       <div className="text-xs text-muted-foreground mt-2">
-        {state.info.description}
+        {serverDisplayDescription(t, state.info)}
       </div>
 
       {/* URL for external servers */}
