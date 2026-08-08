@@ -2,7 +2,7 @@
   "name": "lumo",
   "description": "AI-powered browser sidebar assistant",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "wxt",
