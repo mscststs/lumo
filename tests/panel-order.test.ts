@@ -16,6 +16,8 @@ import {
   ratiosForOrder,
   removePanel,
   slotAtPosition,
+  visualSequence,
+  ranksForSequence,
 } from '@/lib/panel-order';
 
 describe('default order', () => {
@@ -269,5 +271,72 @@ describe('equalRatios', () => {
     const thirds = equalRatios([2, 1, 0]);
     expect(thirds[0]).toBeCloseTo(1 / 3);
     expect(Object.keys(thirds).sort()).toEqual(['0', '1', '2']);
+  });
+});
+
+describe('visual sequence', () => {
+  /** Where flexbox actually paints things: by `order`, ties broken by DOM order. */
+  function paint(sequence: readonly number[], onScreen: readonly number[]): number[] {
+    const ranks = ranksForSequence(sequence);
+    // DOM order is fixed to ascending slot, which is what makes a tie dangerous.
+    return [...onScreen]
+      .sort((a, b) => a - b)
+      .map((slot) => ({ slot, rank: ranks.get(slot) ?? slot }))
+      .sort((a, b) => a.rank - b.rank || a.slot - b.slot)
+      .map((entry) => entry.slot);
+  }
+
+  it('numbers a fresh layout left to right', () => {
+    const sequence = visualSequence([2, 1, 0], []);
+    expect(paint(sequence, [2, 1, 0])).toEqual([2, 1, 0]);
+  });
+
+  it('keeps a collapsing panel painted where it was', () => {
+    // The regression. Slot 2 is leftmost and collapsing; it stays rendered while
+    // its exit animation runs, holding the rank it last painted with. Renumbering
+    // the survivors densely used to give slot 1 that same rank, and the fixed
+    // ascending-slot DOM order then painted slot 1 first — so the *middle* panel
+    // appeared to shrink away while the leftmost swapped its contents.
+    const before = visualSequence([2, 1, 0], []);
+    const after = visualSequence([1, 0], before);
+
+    // Mid-exit: slot 2 is still on screen and still leftmost.
+    expect(paint(after, [2, 1, 0])).toEqual([2, 1, 0]);
+    // And the survivors have not moved under it.
+    expect(paint(after, [1, 0])).toEqual([1, 0]);
+  });
+
+  it('keeps a closing middle panel painted in the middle', () => {
+    const before = visualSequence([2, 1, 0], []);
+    const after = visualSequence([2, 0], before);
+
+    expect(paint(after, [2, 1, 0])).toEqual([2, 1, 0]);
+    expect(paint(after, [2, 0])).toEqual([2, 0]);
+  });
+
+  it('restores the original arrangement when width returns', () => {
+    const wide = visualSequence([2, 1, 0], []);
+    const narrow = visualSequence([1, 0], wide);
+    const rewidened = visualSequence([2, 1, 0], narrow);
+    expect(paint(rewidened, [2, 1, 0])).toEqual([2, 1, 0]);
+  });
+
+  it('renumbers on a real reorder', () => {
+    const before = visualSequence([2, 1, 0], []);
+    const after = visualSequence([1, 2, 0], before);
+    expect(paint(after, [1, 2, 0])).toEqual([1, 2, 0]);
+  });
+
+  it('places a newly split panel on the left', () => {
+    const single = visualSequence([0], []);
+    const split = visualSequence([1, 0], single);
+    expect(paint(split, [1, 0])).toEqual([1, 0]);
+  });
+
+  it('is idempotent, so a re-render cannot shift a panel', () => {
+    // Called on every render, so an unstable result would move panels for free.
+    const first = visualSequence([2, 1, 0], []);
+    const second = visualSequence([2, 1, 0], first);
+    expect(second).toEqual(first);
   });
 });

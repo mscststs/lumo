@@ -105,6 +105,31 @@ function stubContainerWidth(width: number) {
   globalThis.ResizeObserver = WidthObserver as unknown as typeof ResizeObserver;
 }
 
+/**
+ * A resizable container stub, for the tests that need the width to change *after*
+ * mount — a collapse only misbehaves while the outgoing panel is still animating,
+ * which cannot be observed on a container that was always narrow.
+ */
+function stubResizableContainer(initialWidth: number) {
+  let emit: ((width: number) => void) | null = null;
+  class WidthObserver {
+    constructor(private cb: ResizeObserverCallback) {}
+    observe(target: Element) {
+      emit = (width: number) => {
+        this.cb(
+          [{ target, contentRect: { width } } as unknown as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      };
+      emit(initialWidth);
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = WidthObserver as unknown as typeof ResizeObserver;
+  return { resize: (width: number) => emit?.(width) };
+}
+
 beforeEach(() => {
   mounts.length = 0;
   unmounts.length = 0;
@@ -179,6 +204,26 @@ function visualOrder(container: HTMLElement): Record<number, number> {
     out[slot] = Number(wrapper?.style.order ?? -1);
   }
   return out;
+}
+
+/**
+ * The slots in the left-to-right sequence the browser would actually paint them.
+ *
+ * Asserting on raw `order` values is not enough: they are only meaningful
+ * relative to each other, and when two wrappers share a value flexbox falls back
+ * to DOM order — which is pinned to ascending slot here, so a tie silently paints
+ * panels by slot id rather than by position. That tie *was* the bug, and a test
+ * reading only `visualOrder` cannot see it.
+ */
+function paintOrder(container: HTMLElement): number[] {
+  return [...container.querySelectorAll('[data-slot]')]
+    .map((el, domIndex) => {
+      const slot = Number(el.getAttribute('data-slot'));
+      const wrapper = el.parentElement?.parentElement as HTMLElement | null;
+      return { slot, order: Number(wrapper?.style.order ?? 0), domIndex };
+    })
+    .sort((a, b) => a.order - b.order || a.domIndex - b.domIndex)
+    .map((entry) => entry.slot);
 }
 
 describe('SplitView layout invariants', () => {
@@ -392,6 +437,88 @@ describe('width-driven collapse', () => {
     expect(unmounts).toEqual([]);
     expect(releasePanelSlot).not.toHaveBeenCalled();
     expect(setLayout).not.toHaveBeenCalled();
+  });
+});
+
+describe('a panel leaving animates out of the position it occupied', () => {
+  /*
+   * A departing panel keeps rendering until its exit animation ends, but
+   * `AnimatePresence` never re-renders the element it holds, so it paints with the
+   * CSS `order` it last had. Numbering `order` densely over the *remaining* panels
+   * therefore handed a survivor the departing panel's value, and since DOM order
+   * is pinned to ascending slot, flexbox broke the tie by slot id — the two
+   * swapped places for the length of the animation.
+   *
+   * These assert the frame while the exit is in flight, which is the only time the
+   * bug is visible; every assertion here passes trivially once it has finished.
+   */
+
+  it('collapses the leftmost panel from the left edge, not the middle', async () => {
+    // The reported symptom: collapsing [2,1,0] to two panels looked like the
+    // middle panel shrinking away while the leftmost changed its contents.
+    storedOrder = [2, 1, 0];
+    const container = stubResizableContainer(1400);
+    const { container: dom } = await renderSplitView();
+    expect(paintOrder(dom)).toEqual([2, 1, 0]);
+
+    // Sampled synchronously: this is the frame the exit animation starts on.
+    act(() => { container.resize(800); });
+
+    // Slot 2 is on its way out and must still be painted leftmost, where it is
+    // visibly shrinking. Slot 1 must not have jumped ahead of it.
+    expect(paintOrder(dom)).toEqual([2, 1, 0]);
+
+    await settle(600);
+    await waitForUnmount(2);
+    // Once it is gone the survivors close up, still in the same relative order.
+    expect(paintOrder(dom)).toEqual([1, 0]);
+  });
+
+  it('leaves the surviving panels\' ranks untouched when a middle panel closes', async () => {
+    // The close path's exit is too short-lived in jsdom to sample mid-flight, so
+    // assert the property that makes it correct instead: closing must not renumber
+    // the survivors. If it did, one of them would take the rank the departing
+    // panel is still painting with, which is what produced the swap.
+    storedOrder = [2, 1, 0];
+    const { container } = await renderSplitView();
+    const before = visualOrder(container);
+
+    const close = lastProps.get(1)?.onClose as () => void;
+    await act(async () => { close(); });
+    await settle();
+    await waitForUnmount(1);
+
+    const after = visualOrder(container);
+    expect(after[2]).toBe(before[2]);
+    expect(after[0]).toBe(before[0]);
+    // And they still paint in the same relative order.
+    expect(paintOrder(container)).toEqual([2, 0]);
+  });
+
+  it('restores the original arrangement when the width comes back', async () => {
+    // Collapsing is reversible, so the panel must return to the edge it left
+    // from rather than wherever a renumber would have put it.
+    storedOrder = [2, 1, 0];
+    const container = stubResizableContainer(1400);
+    const { container: dom } = await renderSplitView();
+
+    await act(async () => { container.resize(800); });
+    await settle(600);
+    expect(paintOrder(dom)).toEqual([1, 0]);
+
+    await act(async () => { container.resize(1400); });
+    await settle(600);
+    expect(paintOrder(dom)).toEqual([2, 1, 0]);
+  });
+
+  it('gives every visible panel a distinct paint rank', async () => {
+    // The invariant behind all of the above: a shared `order` value is what lets
+    // DOM order decide, and DOM order carries no positional meaning here.
+    storedOrder = [1, 0, 2];
+    const { container } = await renderSplitView();
+
+    const ranks = Object.values(visualOrder(container));
+    expect(new Set(ranks).size).toBe(ranks.length);
   });
 });
 

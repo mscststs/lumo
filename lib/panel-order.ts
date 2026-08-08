@@ -249,6 +249,58 @@ export function equalRatios(order: readonly number[]): Record<number, number> {
 }
 
 /**
+ * The slot sequence the CSS `order` property is numbered from.
+ *
+ * Exists because a panel leaving the layout animates *after* it has left
+ * `visibleOrder`. `AnimatePresence` keeps the exiting element rendered but never
+ * re-renders it, so it holds whichever `order` value it last painted with, while
+ * its surviving siblings renumber. Numbering positions densely over the visible
+ * panels therefore made a survivor inherit the exiting panel's value, and since
+ * DOM order is fixed to ascending slot (a deliberate choice — see `SplitView`),
+ * flexbox broke the tie by slot id: the two swapped places for the length of the
+ * animation. Collapsing `[2,1,0]` to two panels looked like the *middle* panel
+ * shrinking away while the leftmost one changed its contents.
+ *
+ * The fix is to renumber only when the panels genuinely move. Slots keep their
+ * rank while others come and go, so an exiting panel's frozen value still points
+ * at the position it occupied. Removed slots are deliberately left in place as
+ * gaps: CSS `order` has no need to be dense, and a gap is what reserves the
+ * departing panel's position. The sequence cannot grow without bound because it
+ * only ever holds slots `0..MAX_SLOT_ID`.
+ *
+ * @param visible The panels on screen, left to right.
+ * @param previous The sequence from the last render.
+ */
+export function visualSequence(
+  visible: readonly number[],
+  previous: readonly number[],
+): number[] {
+  // Renumbering is only safe when nothing can be mid-exit, so reuse the previous
+  // sequence whenever it still describes the visible panels' arrangement.
+  const retained = previous.filter((slot) => visible.includes(slot));
+  if (isSameOrder(retained, visible)) return [...previous];
+
+  // The arrangement really changed (a reorder, or a newly opened panel), so
+  // renumber. Slots that are absent go to the left, where a collapse hides them
+  // and a split inserts, keeping a collapsed panel's rank ahead of the visible
+  // ones for when the width returns.
+  const absent = previous.filter((slot) => !visible.includes(slot));
+  return [...absent, ...visible];
+}
+
+/**
+ * CSS `order` value for each slot, from a sequence built by `visualSequence`.
+ *
+ * Slots absent from the sequence fall back to their id, which only matters
+ * before the first sequence has been built.
+ */
+export function ranksForSequence(sequence: readonly number[]): Map<number, number> {
+  const ranks = new Map<number, number>();
+  sequence.forEach((slot, rank) => ranks.set(slot, rank));
+  return ranks;
+}
+
+/**
  * Which position a panel dragged by `offsetX` should land on.
  *
  * Panels have unequal widths, so "how many slots has it moved" cannot be derived

@@ -10,8 +10,10 @@ import {
   equalRatios,
   isSameOrder,
   normalizeOrder,
+  ranksForSequence,
   ratiosForOrder,
   removePanel,
+  visualSequence,
 } from '@/lib/panel-order';
 import { routeQuickAction, type PanelRoutingState } from '@/lib/quick-action-routing';
 import { usePanelDrag } from '@/components/chat/usePanelDrag';
@@ -304,12 +306,40 @@ export function SplitView() {
   const visibleOrderRef = useRef(visibleOrder);
   visibleOrderRef.current = visibleOrder;
 
-  /** Position of each visible slot, for CSS `order` and for the UI role flags. */
+  /** Position of each visible slot, for the UI role flags and quick-action routing. */
   const positionBySlot = useMemo(() => {
     const map = new Map<number, number>();
     visibleOrder.forEach((slot, position) => map.set(slot, position));
     return map;
   }, [visibleOrder]);
+
+  /**
+   * The sequence CSS `order` is numbered from, carried across renders.
+   *
+   * Deliberately *not* `visibleOrder`: a panel leaving the layout keeps animating
+   * after it has left that array, and `AnimatePresence` never re-renders the
+   * element it is holding, so it paints with the rank it last had. Numbering
+   * densely over the visible panels made a survivor inherit that same rank, and
+   * because DOM order is pinned to ascending slot, flexbox broke the tie by slot
+   * id and the two swapped places for the length of the animation.
+   *
+   * Mutated during render rather than in an effect because the value has to be
+   * correct in the very commit that starts an exit; an effect would apply it one
+   * commit late, which is the frame that shows the wrong panel. Safe to do
+   * because `visualSequence` is idempotent — re-running it on the same visible
+   * order returns the same sequence, so a double render cannot shift a panel.
+   */
+  const visualSequenceRef = useRef<number[]>([]);
+  visualSequenceRef.current = visualSequence(visibleOrder, visualSequenceRef.current);
+
+  /**
+   * CSS `order` value per slot. Ranks are sparse; only their relative order
+   * matters.
+   *
+   * Not memoised: the sequence is a fresh array on every render, so a `useMemo`
+   * keyed on it would recompute regardless, and there are at most three entries.
+   */
+  const rankBySlot = ranksForSequence(visualSequenceRef.current);
 
   // Reset widths whenever the number of visible panels changes, and animate the
   // transition. Tracked against the previous count rather than derived, because
@@ -706,6 +736,8 @@ export function SplitView() {
           const isLeftmost = position === 0;
           const isRightmost = position === visibleCount - 1;
           const ratio = ratios[slot] ?? 1 / visibleCount;
+          // Paint rank, which unlike `position` is stable across a sibling's exit.
+          const rank = rankBySlot.get(slot) ?? slot;
 
           // The wrapper holds the panel *and* the divider to its right, so the
           // two travel together when the order changes. Its width therefore
@@ -729,7 +761,9 @@ export function SplitView() {
               style={{
                 // Visual position. DOM order stays ascending by slot; see the
                 // component docs for why React must not reorder these nodes.
-                order: position,
+                // Ranked rather than indexed so a panel mid-exit keeps the place
+                // it is animating out of.
+                order: rank,
                 // Live drag offset, driven by a motion value so a pointer move
                 // never re-renders the panel tree.
                 x: offsets.get(slot),
