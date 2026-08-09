@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
 import { setFileRefDragData } from '@/lib/file-drag';
+import { hasOsFiles, importTextFiles } from '@/lib/file-import';
 import { useSidePanelPresence } from '@/lib/side-panel-presence';
 import { useEvent } from '@/lib/event-bus';
 import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
@@ -143,6 +144,7 @@ export function FileManager() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [downloadingFolder, setDownloadingFolder] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   /**
    * Dragging a row into the side panel only works while a panel is open, so the
@@ -255,6 +257,48 @@ export function FileManager() {
     window.open(url, '_blank');
   };
 
+  /**
+   * Dropping files from the OS is the "uploaded manually" half of what this view
+   * claims to manage — until now the only way in was an agent's `file_write`, and
+   * a file dragged onto the page just navigated the tab to it.
+   *
+   * The surface is deliberately the whole pane rather than the card: the card is
+   * capped at `max-w-4xl` and is short when there are few files, so most of what
+   * looks like this view would otherwise still be live browser drop area, and
+   * missing the card by a few pixels would replace the settings page with the
+   * dropped file. The highlight stays on the card, which is where the file lands.
+   *
+   * The `hasOsFiles` guard matters: this view is itself a drag *source* (every row
+   * is draggable), so without it, dragging a row across the table would light the
+   * pane up as a drop target for a payload it would then refuse.
+   *
+   * No `conversationId` is passed — there is no conversation here, so these rows
+   * read as "Manual / Unknown", which is what the source column already says for
+   * a file with no chat behind it. Nothing else is needed to refresh the list:
+   * `writeFile` announces itself and the `files:changed` handler above reloads.
+   */
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!hasOsFiles(e.dataTransfer)) return;
+    // Both events are cancelled: the spec accepts either, but only cancelling
+    // `dragover` leaves Firefox refusing the drop.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only the pane's own boundary; crossing into a row is not a leave.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!hasOsFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setIsDragOver(false);
+    void importTextFiles(e.dataTransfer.files);
+  };
+
   const getConversationTitle = (conversationId?: string): string | null => {
     if (!conversationId) return null;
     const conv = conversations.find((c) => c.id === conversationId);
@@ -264,84 +308,96 @@ export function FileManager() {
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return (
-    <div className="max-w-4xl">
-      <SettingsHeader
-        title={t('options.files.title')}
-        description={t('options.files.description')}
-      />
+    <div
+      className="min-h-full"
+      onDragEnter={handleDragOver}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div
+        className={`max-w-4xl rounded-lg ${
+          isDragOver ? 'outline-2 outline-dashed outline-offset-4 outline-chat-user/60' : ''
+        }`}
+      >
+        <SettingsHeader
+          title={t('options.files.title')}
+          description={t('options.files.description')}
+        />
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="border border-border rounded-lg p-3 bg-card">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <File className="h-4 w-4" />
-            <span>{t('options.files.totalFiles', { count: files.length })}</span>
+        {/* Summary Stats */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="border border-border rounded-lg p-3 bg-card">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <File className="h-4 w-4" />
+              <span>{t('options.files.totalFiles', { count: files.length })}</span>
+            </div>
+          </div>
+          <div className="border border-border rounded-lg p-3 bg-card">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <HardDrive className="h-4 w-4" />
+              <span>{t('options.files.totalSize', { size: formatSize(totalSize) })}</span>
+            </div>
           </div>
         </div>
-        <div className="border border-border rounded-lg p-3 bg-card">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <HardDrive className="h-4 w-4" />
-            <span>{t('options.files.totalSize', { size: formatSize(totalSize) })}</span>
+
+        {/* File List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            <span>{t('common.loading')}</span>
           </div>
-        </div>
+        ) : files.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <File className="h-10 w-10 mb-3 opacity-50" />
+            <p className="text-sm">{t('options.files.noFiles')}</p>
+          </div>
+        ) : (
+          <div className="border border-border rounded-lg overflow-hidden">
+            {/* Table Header */}
+            <div className="grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 bg-muted/50 text-xs font-medium text-muted-foreground border-b border-border">
+              <span>{t('options.files.name')}</span>
+              <span>{t('options.files.size')}</span>
+              <span>{t('options.files.source')}</span>
+              <span>{t('options.files.createdAt')}</span>
+              <span className="text-right">{t('options.files.actions')}</span>
+            </div>
+
+            {/* Entries: Folder Groups & Standalone Files */}
+            <div className="divide-y divide-border">
+              {entries.map((entry) =>
+                entry.type === 'folder' ? (
+                  <FolderGroupRow
+                    key={entry.prefix}
+                    group={entry}
+                    isDeleting={deletingFolder === entry.prefix}
+                    isDownloading={downloadingFolder === entry.prefix}
+                    deletingFile={deleting}
+                    onDownloadFolder={() => handleDownloadFolder(entry.prefix, entry.files)}
+                    onDeleteFolder={() => handleDeleteFolder(entry.prefix, entry.files)}
+                    onPreview={handlePreview}
+                    onDownload={handleDownload}
+                    onDelete={handleDelete}
+                    getConversationTitle={getConversationTitle}
+                    canDragToSidePanel={canDragToSidePanel}
+                  />
+                ) : (
+                  <FileRow
+                    key={entry.file.name}
+                    file={entry.file}
+                    conversationTitle={getConversationTitle(entry.file.conversationId)}
+                    isDeleting={deleting === entry.file.name}
+                    onPreview={() => handlePreview(entry.file.name)}
+                    onDownload={() => handleDownload(entry.file.name)}
+                    onDelete={() => handleDelete(entry.file.name)}
+                    canDragToSidePanel={canDragToSidePanel}
+                  />
+                ),
+              )}
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* File List */}
-      {loading ? (
-        <div className="flex items-center justify-center py-8 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2" />
-          <span>{t('common.loading')}</span>
-        </div>
-      ) : files.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-          <File className="h-10 w-10 mb-3 opacity-50" />
-          <p className="text-sm">{t('options.files.noFiles')}</p>
-        </div>
-      ) : (
-        <div className="border border-border rounded-lg overflow-hidden">
-          {/* Table Header */}
-          <div className="grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 bg-muted/50 text-xs font-medium text-muted-foreground border-b border-border">
-            <span>{t('options.files.name')}</span>
-            <span>{t('options.files.size')}</span>
-            <span>{t('options.files.source')}</span>
-            <span>{t('options.files.createdAt')}</span>
-            <span className="text-right">{t('options.files.actions')}</span>
-          </div>
-
-          {/* Entries: Folder Groups & Standalone Files */}
-          <div className="divide-y divide-border">
-            {entries.map((entry) =>
-              entry.type === 'folder' ? (
-                <FolderGroupRow
-                  key={entry.prefix}
-                  group={entry}
-                  isDeleting={deletingFolder === entry.prefix}
-                  isDownloading={downloadingFolder === entry.prefix}
-                  deletingFile={deleting}
-                  onDownloadFolder={() => handleDownloadFolder(entry.prefix, entry.files)}
-                  onDeleteFolder={() => handleDeleteFolder(entry.prefix, entry.files)}
-                  onPreview={handlePreview}
-                  onDownload={handleDownload}
-                  onDelete={handleDelete}
-                  getConversationTitle={getConversationTitle}
-                  canDragToSidePanel={canDragToSidePanel}
-                />
-              ) : (
-                <FileRow
-                  key={entry.file.name}
-                  file={entry.file}
-                  conversationTitle={getConversationTitle(entry.file.conversationId)}
-                  isDeleting={deleting === entry.file.name}
-                  onPreview={() => handlePreview(entry.file.name)}
-                  onDownload={() => handleDownload(entry.file.name)}
-                  onDelete={() => handleDelete(entry.file.name)}
-                  canDragToSidePanel={canDragToSidePanel}
-                />
-              ),
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

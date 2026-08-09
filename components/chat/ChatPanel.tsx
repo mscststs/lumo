@@ -12,6 +12,7 @@ import { useChatStream } from '@/store/useChatStream';
 import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 import { classifyDroppedContent } from '@/lib/drop-content';
 import { fileRefContent } from '@/lib/file-drag';
+import { classifyDroppedFile, importTextFiles } from '@/lib/file-import';
 import { buildPageContextAttachment } from '@/lib/page-context';
 import { createTextAttachment } from '@/lib/text-attachment';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
@@ -397,6 +398,52 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     chatInputRef.current?.addTextAttachment(createTextAttachment(content, mediaType));
   };
 
+  const addImagesFromFiles = (files: File[]) => {
+    void Promise.all(
+      files.map(
+        (file) =>
+          new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target?.result as string);
+            reader.readAsDataURL(file);
+          }),
+      ),
+    ).then((urls) => {
+      chatInputRef.current?.addImages(urls);
+    });
+  };
+
+  /**
+   * A drop of files from outside the browser (a file manager, the desktop).
+   *
+   * Text files are stored and referenced: the file lands in the same storage the
+   * agent's own `file_write` uses, tagged with this panel's conversation so it
+   * joins the conversation file list, and the input gets the reference chip. With
+   * no chat open the tag is simply absent — the file is still stored, it just
+   * reads as "Manual / Unknown", which is the honest answer and better than
+   * fabricating a conversation for a dropped file.
+   *
+   * Images stay inline and are never stored: a vision model can read them
+   * directly from the message, and storage is for things `file_read` can return.
+   * Anything else is refused silently — see `lib/file-import.ts`.
+   */
+  const handleOsFileDrop = useCallback((files: FileList) => {
+    const dropped = Array.from(files);
+
+    if (isVisionModel()) {
+      const images = dropped.filter((file) => classifyDroppedFile(file) === 'image');
+      if (images.length > 0) {
+        addImagesFromFiles(images);
+      }
+    }
+
+    void importTextFiles(dropped, { conversationId: currentConversation?.id }).then((names) => {
+      for (const name of names) {
+        addFileReference(name);
+      }
+    });
+  }, [isVisionModel, currentConversation?.id, addFileReference]);
+
   const handlePanelDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current = 0;
@@ -420,31 +467,16 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       return;
     }
 
-    // Check for image files first
-    const files = dataTransfer.files;
-    let hasImageFile = false;
-    if (visionEnabled) {
-      const imageDataUrls: Promise<string>[] = [];
-      for (const file of files) {
-        if (file.type.startsWith('image/')) {
-          hasImageFile = true;
-          imageDataUrls.push(
-            new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = (ev) => resolve(ev.target?.result as string);
-              reader.readAsDataURL(file);
-            }),
-          );
-        }
-      }
-      if (imageDataUrls.length > 0) {
-        void Promise.all(imageDataUrls).then((urls) => {
-          chatInputRef.current?.addImages(urls);
-        });
-      }
+    /**
+     * Files from the OS. Returned from unconditionally, even when every file was
+     * refused: such a drop carries no `text/html` and no `text/plain`, so falling
+     * through to the classification below could only produce an empty or
+     * nonsensical attachment.
+     */
+    if (dataTransfer.files.length > 0) {
+      handleOsFileDrop(dataTransfer.files);
+      return;
     }
-
-    if (hasImageFile) return;
 
     // Classify the dropped HTML/text into pure text, pure images, or mixed content.
     const htmlData = dataTransfer.getData('text/html');
@@ -486,7 +518,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         return;
       }
     }
-  }, [isVisionModel, isInternalDrag, resolveImageSrc, addFileReference]);
+  }, [isVisionModel, isInternalDrag, resolveImageSrc, addFileReference, handleOsFileDrop]);
 
   // ─── Internal drops (transcript chip → input) ─────────────────────────────
 
