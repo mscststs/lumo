@@ -15,6 +15,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { ChatMessagePart, ProviderConfig, ModelConfig } from '@/types';
+import type { StopReason } from '@/lib/ai';
 
 const provider: ProviderConfig = {
   id: 'p1', name: 'P', type: 'openai-chat',
@@ -26,7 +27,7 @@ const model: ModelConfig = provider.models[0]!;
 /** Hands the test control over the in-flight stream. */
 interface StreamControl {
   emit: (parts: ChatMessagePart[]) => void;
-  finish: (parts: ChatMessagePart[]) => void;
+  finish: (parts: ChatMessagePart[], stoppedReason?: StopReason) => void;
   signal: AbortSignal;
 }
 let active: StreamControl | null = null;
@@ -38,19 +39,22 @@ vi.mock('@/lib/ai', () => ({
   chatStream: async (opts: {
     signal?: AbortSignal;
     onUpdate: (p: ChatMessagePart[]) => void;
-    onFinish: (p: ChatMessagePart[]) => void;
+    onFinish: (p: ChatMessagePart[], stoppedReason: StopReason) => void;
   }) => {
     let settle: () => void;
     const done = new Promise<void>((r) => { settle = r; });
     active = {
       signal: opts.signal!,
       emit: (parts) => opts.onUpdate(parts),
-      finish: (parts) => { opts.onFinish(parts); settle(); },
+      finish: (parts, stoppedReason = 'finished') => {
+        opts.onFinish(parts, stoppedReason);
+        settle();
+      },
     };
     // Mirrors the real abort path in `lib/ai.ts`, which routes whatever was
     // streamed into `onFinish` instead of `onError`.
     opts.signal?.addEventListener('abort', () => {
-      if (active) active.finish(lastEmitted);
+      if (active) active.finish(lastEmitted, 'aborted');
     });
     await done;
   },
@@ -60,6 +64,8 @@ vi.mock('@/lib/system-prompt', () => ({ resolveSystemPrompt: () => undefined }))
 vi.mock('@/store/storage', () => ({
   storage: {
     getSystemPrompt: async () => ({ enabled: false, prompt: '' }),
+    // Read per turn to pick up the tool step cap; the default is "no cap".
+    getUISettings: async () => ({ maxSteps: 0 }),
     bumpConversationsRevision: async () => {},
   },
 }));
@@ -193,7 +199,43 @@ describe('interrupted reply persistence', () => {
 
     const conv = await storedConversation();
     expect(conv.messages[1]!.interrupted).toBeUndefined();
+    expect(conv.messages[1]!.stopReason).toBeUndefined();
     expect((conv.messages[1]!.parts![0] as { text: string }).text).toBe('complete answer');
+  });
+
+  it('marks a reply the tool step cap cut short, and says the cap did it', async () => {
+    // The regression: running out of steps arrives through the *success* path
+    // with the abort signal untouched, so the turn used to be saved as a complete
+    // answer. It looked finished, nothing was flagged, and the only way to get
+    // the rest was for the user to type "continue".
+    const hook = renderHook(() => useChatStream());
+    await startStreamingReply(hook.result, 'ran out');
+
+    await act(async () => {
+      active!.finish(text('ran out mid-task', 'done'), 'step-limit');
+    });
+    await settleWrites();
+
+    const conv = await storedConversation();
+    expect(conv.messages[1]!.interrupted).toBe(true);
+    // Distinguished from an abort, so the notice can point at the setting rather
+    // than at a failure that never happened.
+    expect(conv.messages[1]!.stopReason).toBe('step-limit');
+    expect((conv.messages[1]!.parts![0] as { text: string }).text).toBe('ran out mid-task');
+  });
+
+  it('does not blame the step cap when the user stopped the reply', async () => {
+    const hook = renderHook(() => useChatStream());
+    await startStreamingReply(hook.result, 'stopped');
+
+    await act(async () => {
+      hook.result.current.handleStop();
+    });
+    await settleWrites();
+
+    const conv = await storedConversation();
+    expect(conv.messages[1]!.interrupted).toBe(true);
+    expect(conv.messages[1]!.stopReason).toBeUndefined();
   });
 
   it('replaces the checkpoint rather than appending a second reply', async () => {

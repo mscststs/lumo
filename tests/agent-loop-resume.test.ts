@@ -13,6 +13,7 @@ import {
   resumeFingerprint,
   type AgentLoopCheckpoint,
 } from '@/lib/ai';
+import { STEPS_NEVER } from '@/lib/max-steps';
 import type { ProviderConfig, ModelConfig } from '@/types';
 
 /** Wraps provider stream parts into the shape `doStream` must return. */
@@ -123,6 +124,19 @@ function scriptedModel(steps: Array<LanguageModelV4StreamPart[] | 'error'>) {
   return { model, prompts, callCount: () => call };
 }
 
+/**
+ * A model that never stops calling tools, so only the step cap can end the loop.
+ * Each call gets its own tool call id, which makes the resulting part list a
+ * record of exactly how many steps ran.
+ */
+function loopingModel() {
+  let call = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => stream(toolStep(`call_${call++}`, 'again')),
+  });
+  return { model, callCount: () => call };
+}
+
 function textOf(parts: ChatMessagePart[]): string {
   return parts
     .filter((p): p is Extract<ChatMessagePart, { type: 'text' }> => p.type === 'text')
@@ -148,7 +162,7 @@ describe('runAgentLoop checkpoints', () => {
     const { model } = scriptedModel([textStep('done')]);
     const checkpoints: AgentLoopCheckpoint[] = [];
 
-    const parts = await runAgentLoop({
+    const { parts } = await runAgentLoop({
       model,
       messages: [{ role: 'user', content: 'hi' }],
       onStepComplete: (c) => checkpoints.push(c),
@@ -167,7 +181,7 @@ describe('runAgentLoop checkpoints', () => {
     ]);
     const checkpoints: AgentLoopCheckpoint[] = [];
 
-    const parts = await runAgentLoop({
+    const { parts } = await runAgentLoop({
       model,
       tools: { echo: echoTool },
       messages: [{ role: 'user', content: 'go' }],
@@ -211,6 +225,106 @@ describe('runAgentLoop checkpoints', () => {
   });
 });
 
+describe('runAgentLoop step cap', () => {
+  it('reports a natural finish as finished, not as a cap hit', async () => {
+    const { model } = scriptedModel([textStep('done')]);
+
+    const { stoppedReason } = await runAgentLoop({
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+
+    expect(stoppedReason).toBe('finished');
+  });
+
+  it('runs uncapped by default rather than reading the sentinel as zero steps', async () => {
+    // 25 tool steps is past every cap this project has ever shipped, including
+    // the hardcoded 20 this setting replaced.
+    const steps = Array.from({ length: 25 }, (_, i) => toolStep(`call_${i}`, 'x'));
+    const { model, callCount } = scriptedModel([...steps, textStep('final')]);
+
+    const { parts, stoppedReason } = await runAgentLoop({
+      model,
+      tools: { echo: echoTool },
+      messages: [{ role: 'user', content: 'go' }],
+      maxSteps: STEPS_NEVER,
+    });
+
+    expect(callCount()).toBe(26);
+    expect(stoppedReason).toBe('finished');
+    expect(textOf(parts)).toBe('final');
+  });
+
+  it('stops at the cap and says the cap is why', async () => {
+    // The loop honours the number it is given; clamping to `MIN_MAX_STEPS` is the
+    // settings boundary's job, which is why 3 is usable here.
+    const { model, callCount } = loopingModel();
+
+    const { parts, stoppedReason } = await runAgentLoop({
+      model,
+      tools: { echo: echoTool },
+      messages: [{ role: 'user', content: 'go' }],
+      maxSteps: 3,
+    });
+
+    expect(callCount()).toBe(3);
+    // The regression this guards: a cap hit used to leave the loop through the
+    // same `return` as a natural finish, so a turn abandoned mid-task was
+    // reported — saved, rendered, persisted — as a complete answer.
+    expect(stoppedReason).toBe('step-limit');
+    expect(toolCallIds(parts)).toEqual(['call_0', 'call_1', 'call_2']);
+  });
+
+  it('leaves a resumable checkpoint when the cap cuts the run short', async () => {
+    const { model } = loopingModel();
+    const checkpoints: AgentLoopCheckpoint[] = [];
+
+    const { stoppedReason } = await runAgentLoop({
+      model,
+      tools: { echo: echoTool },
+      messages: [{ role: 'user', content: 'go' }],
+      maxSteps: 3,
+      onStepComplete: (c) => checkpoints.push(c),
+    });
+
+    expect(stoppedReason).toBe('step-limit');
+    // Every step continued the loop, including the one the cap cut off after, so
+    // the last checkpoint is the prompt the next step would have sent. Without it
+    // there is nothing for "continue" to resume from but the raw history.
+    expect(checkpoints).toHaveLength(3);
+    expect(toolCallIds(at(checkpoints, 2).parts)).toEqual(['call_0', 'call_1', 'call_2']);
+
+    // And it is genuinely resumable: picking it up runs no completed step again.
+    const resumed = scriptedModel([textStep('continued')]);
+    const { parts } = await runAgentLoop({
+      model: resumed.model,
+      tools: { echo: echoTool },
+      messages: at(checkpoints, 2).modelMessages,
+      initialParts: at(checkpoints, 2).parts,
+    });
+
+    expect(resumed.callCount()).toBe(1);
+    expect(toolCallIds(parts)).toEqual(['call_0', 'call_1', 'call_2']);
+    expect(textOf(parts)).toBe('continued');
+  });
+
+  it('a stream error outranks the cap as the reported reason', async () => {
+    const { model } = scriptedModel([toolStep('call_1', 'a'), 'error']);
+
+    const { stoppedReason } = await runAgentLoop({
+      model,
+      tools: { echo: echoTool },
+      messages: [{ role: 'user', content: 'go' }],
+      maxSteps: 2,
+      onError: () => {},
+    });
+
+    // The second step failed rather than being cut off, and a turn that failed
+    // must not be blamed on the user's step setting.
+    expect(stoppedReason).toBe('error');
+  });
+});
+
 describe('runAgentLoop resume', () => {
   it('resumes from a checkpoint without replaying completed tool calls', async () => {
     // First run: one tool step succeeds, the following step fails.
@@ -218,7 +332,7 @@ describe('runAgentLoop resume', () => {
     const checkpoints: AgentLoopCheckpoint[] = [];
     const errors: unknown[] = [];
 
-    const partialParts = await runAgentLoop({
+    const { parts: partialParts } = await runAgentLoop({
       model: first.model,
       tools: { echo: echoTool },
       messages: [{ role: 'user', content: 'go' }],
@@ -234,7 +348,7 @@ describe('runAgentLoop resume', () => {
     const resumed = scriptedModel([textStep('continued')]);
     const checkpoint = at(checkpoints, 0);
 
-    const finalParts = await runAgentLoop({
+    const { parts: finalParts } = await runAgentLoop({
       model: resumed.model,
       tools: { echo: echoTool },
       messages: checkpoint.modelMessages,

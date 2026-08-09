@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { chatStream, resumeFingerprint } from '@/lib/ai';
-import type { ResumeState } from '@/lib/ai';
+import type { ResumeState, StopReason } from '@/lib/ai';
 import { storage } from '@/store/storage';
 import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
@@ -302,6 +302,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
       const uiMessages = toUIMessages(convWithUserMessage.messages);
 
+      // Read per turn rather than once per hook, so a cap the user changes in the
+      // options page applies to the next message instead of the next reload.
+      const { maxSteps } = await storage.getUISettings();
+
       const fingerprint = resumeFingerprint({
         conversationId: convWithUserMessage.id,
         provider,
@@ -337,11 +341,13 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
        * when the turn has produced nothing worth storing.
        *
        * `interrupted` marks a reply that stopped short of its natural end, so the
-       * UI can distinguish a truncated answer from a complete one.
+       * UI can distinguish a truncated answer from a complete one. `stopReason`
+       * narrows that to a cause the user configured rather than one they took, so
+       * a reply cut by the step cap can say which cap cut it.
        */
       const withAssistantTurn = (
         parts: ChatMessagePart[],
-        { interrupted }: { interrupted: boolean },
+        { interrupted, stopReason }: { interrupted: boolean; stopReason?: 'step-limit' },
       ): Conversation | null => {
         if (!hasRenderableParts(parts)) return null;
         return {
@@ -356,6 +362,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
               role: 'assistant',
               parts,
               ...(interrupted ? { interrupted: true } : {}),
+              ...(stopReason ? { stopReason } : {}),
             } satisfies ChatMessage,
           ],
           updatedAt: Date.now(),
@@ -380,18 +387,33 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       // Seeded so the first chunk of a fresh turn is not checkpointed instantly.
       lastCheckpointAtRef.current = Date.now();
 
-      const persist = async (parts: ChatMessagePart[]) => {
+      const persist = async (parts: ChatMessagePart[], stoppedReason: StopReason) => {
         const stale = isStale();
-        // A settled turn is complete unless the user or a teardown cut it short,
-        // which is exactly when the signal was aborted.
+        // Running out of steps leaves tool calls pending, so it is every bit as
+        // truncated as an abort — it just arrives through the success path. Left
+        // unflagged, the reply was saved and rendered as if the model had
+        // answered, and the only way to get the rest was to type "continue".
+        const hitStepLimit = stoppedReason === 'step-limit';
         const updatedConv = withAssistantTurn(parts, {
-          interrupted: controller.signal.aborted,
+          // A settled turn is complete unless the user or a teardown cut it
+          // short — which is exactly when the signal was aborted — or the step
+          // cap did.
+          interrupted: controller.signal.aborted || hitStepLimit,
+          ...(hitStepLimit ? { stopReason: 'step-limit' as const } : {}),
         });
 
         if (!stale) {
           activeRequestIdRef.current = null;
           abortControllerRef.current = null;
-          resumeStateRef.current = null;
+          // Kept when the cap cut the turn short, because work genuinely remains:
+          // the last completed step already emitted a checkpoint, and that is what
+          // a resume would pick up instead of replaying the whole conversation.
+          // Nothing reaches `handleRetry` without an error on screen today, so
+          // this is inert until a "continue" affordance exists — but the snapshot
+          // has to survive `persist` for one to be possible at all, and a stale
+          // one cannot be misused: `resumeFingerprint` includes the message count,
+          // which this very save increments.
+          if (!hitStepLimit) resumeStateRef.current = null;
           streamingTurnRef.current = null;
           checkpointRef.current = null;
           livePartsRef.current = [];
@@ -436,6 +458,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         system,
         signal: controller.signal,
         conversationId: convWithUserMessage.id,
+        maxSteps,
         resume: resumeFrom,
         onStepComplete: (checkpoint) => {
           if (isStale()) return;

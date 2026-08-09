@@ -63,7 +63,7 @@ describe('runAgentLoop error surfacing', () => {
   });
 
   it('keeps whatever was streamed before the failure', async () => {
-    const parts = await runAgentLoop({
+    const { parts } = await runAgentLoop({
       model: modelEmitting([
         { type: 'text-start', id: '0' },
         { type: 'text-delta', id: '0', delta: 'partial answer' },

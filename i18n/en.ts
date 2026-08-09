@@ -31,6 +31,7 @@ export const en = {
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
     interrupted: 'Reply interrupted',
+    stepLimit: 'Tool step limit reached',
     contextMenu: {
       root: 'Lumo',
       ask: 'Ask about this page',
@@ -225,6 +226,12 @@ export const en = {
       pasteThresholdAlways: 'Always',
       pasteThresholdChars: '{{chars}} chars or more',
       pasteThresholdCustom: 'Custom',
+      maxSteps: 'Tool Step Limit',
+      maxStepsDesc:
+        'How many tool calls one reply may chain before it stops. "Never" lets the model keep going until it is done; use Stop to cut a reply short.',
+      maxStepsNever: 'Never pause',
+      maxStepsCount: '{{steps}} steps',
+      maxStepsCustom: 'Custom',
       importExport: 'Import / Export',
       importConfig: 'Import Configuration',
       exportConfig: 'Export Configuration',

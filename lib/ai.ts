@@ -16,12 +16,7 @@ import type { ProviderConfig, ModelConfig, ChatMessagePart } from '@/types';
 import { normalizeProviderType } from '@/lib/provider-type';
 import { toError } from '@/lib/provider-error';
 import { mcpRegistry } from '@/lib/mcp';
-
-/**
- * Cap on tool-loop iterations. Matches the AI SDK's default agent step limit.
- * Keeps the manual loop below bounded even if the model keeps calling tools.
- */
-const MAX_STEPS = 20;
+import { DEFAULT_MAX_STEPS, stepAllowed } from '@/lib/max-steps';
 
 /** Placeholder used when image payloads are stripped from the model prompt. */
 const IMAGE_OMITTED = '[image data omitted for model context]';
@@ -256,6 +251,26 @@ export function resumeFingerprint({
   ].join('\u0000');
 }
 
+/**
+ * Why an assistant turn stopped producing steps.
+ *
+ * The distinction exists because only one of these is the model deciding it is
+ * done. The others leave work unfinished, and a caller that cannot tell them
+ * apart has to treat a truncated turn as a complete one — which is exactly the
+ * failure this type was added to remove: the loop used to fall out of its step
+ * cap through the same `return` as a natural finish, so a turn cut off mid-task
+ * was saved, rendered and reported as if the model had answered.
+ */
+export type StopReason =
+  /** The model answered without calling tools — its own natural end. */
+  | 'finished'
+  /** The configured step cap ran out while tool calls were still pending. */
+  | 'step-limit'
+  /** A provider or stream error ended the run. */
+  | 'error'
+  /** The user hit stop, or the panel was torn down mid-stream. */
+  | 'aborted';
+
 export interface ChatStreamOptions {
   provider: ProviderConfig;
   model: ModelConfig;
@@ -273,13 +288,19 @@ export interface ChatStreamOptions {
    * model produced them.
    */
   onUpdate: (parts: ChatMessagePart[]) => void;
-  onFinish: (parts: ChatMessagePart[]) => void;
+  onFinish: (parts: ChatMessagePart[], stoppedReason: StopReason) => void;
   onError: (error: Error) => void;
   signal?: AbortSignal;
   /** Whether to include MCP tools in this request */
   enableTools?: boolean;
   /** Conversation ID for the current stream (passed to tools for file association) */
   conversationId?: string;
+  /**
+   * Cap on tool-loop steps for this turn. `0` (the default) means no cap. Read
+   * from the user's UI settings per turn, so changing it takes effect on the
+   * next message rather than on the next reload. See `lib/max-steps.ts`.
+   */
+  maxSteps?: number;
   /**
    * Resume an interrupted run from its last completed step instead of replaying
    * the whole conversation. Ignored when the fingerprint does not match.
@@ -300,6 +321,7 @@ export async function chatStream({
   signal,
   enableTools = true,
   conversationId,
+  maxSteps = DEFAULT_MAX_STEPS,
   resume,
   onStepComplete,
 }: ChatStreamOptions) {
@@ -311,10 +333,10 @@ export async function chatStream({
   // exactly one of onFinish/onError runs (otherwise the message is saved twice).
   let settled = false;
 
-  const finishOnce = (parts: ChatMessagePart[]) => {
+  const finishOnce = (parts: ChatMessagePart[], stoppedReason: StopReason) => {
     if (settled) return;
     settled = true;
-    onFinish(parts);
+    onFinish(parts, stoppedReason);
   };
 
   const failOnce = (error: unknown) => {
@@ -345,13 +367,14 @@ export async function chatStream({
           }),
         );
 
-    const parts = await runAgentLoop({
+    const { parts, stoppedReason } = await runAgentLoop({
       model: aiModel,
       providerOptions,
       tools,
       system: trimmedSystem,
       messages: modelMessages,
       initialParts: resume?.parts,
+      maxSteps,
       signal,
       onUpdate: (updatedParts) => {
         latestParts = updatedParts;
@@ -362,11 +385,11 @@ export async function chatStream({
     });
     latestParts = parts;
 
-    finishOnce(latestParts);
+    finishOnce(latestParts, stoppedReason);
   } catch (error) {
     if (isAbort(error)) {
       // Keep whatever was streamed before the user hit stop.
-      finishOnce(latestParts);
+      finishOnce(latestParts, 'aborted');
       return;
     }
     failOnce(error);
@@ -382,6 +405,8 @@ export interface RunAgentLoopOptions {
   signal?: AbortSignal;
   /** Parts already streamed by earlier steps, when resuming a failed run. */
   initialParts?: ChatMessagePart[];
+  /** Cap on iterations. `0` (the default) means no cap. See `lib/max-steps.ts`. */
+  maxSteps?: number;
   /** Called on every stream update with the full, ordered part list. */
   onUpdate?: (parts: ChatMessagePart[]) => void;
   /** Called when a model stream reports an error. */
@@ -393,6 +418,13 @@ export interface RunAgentLoopOptions {
    * replaying it reproduces the loop state without re-running the step.
    */
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
+}
+
+/** Outcome of a `runAgentLoop` run: what it produced, and why it stopped. */
+export interface AgentLoopResult {
+  parts: ChatMessagePart[];
+  /** Never `'aborted'` — an abort unwinds as a thrown error, not a return. */
+  stoppedReason: Exclude<StopReason, 'aborted'>;
 }
 
 /** Snapshot of the agent loop between two steps. */
@@ -412,6 +444,10 @@ export interface AgentLoopCheckpoint {
  * 2. re-inject them as a synthetic user message — the only way Chat-Completions
  *    models can "see" tool-produced images. The same uniform path also works
  *    for Anthropic and OpenAI Responses.
+ *
+ * Owning continuation also means owning the step cap, which is why the outcome
+ * is returned rather than just the parts: hitting the cap leaves tool calls
+ * pending, and the caller has to be able to say so.
  */
 export async function runAgentLoop({
   model,
@@ -421,10 +457,11 @@ export async function runAgentLoop({
   messages,
   signal,
   initialParts,
+  maxSteps = DEFAULT_MAX_STEPS,
   onUpdate,
   onError,
   onStepComplete,
-}: RunAgentLoopOptions): Promise<ChatMessagePart[]> {
+}: RunAgentLoopOptions): Promise<AgentLoopResult> {
   const hasTools = Object.keys(tools).length > 0;
   const trimmedSystem = system?.trim();
   let modelMessages = sanitizeToolResultImages(messages);
@@ -432,7 +469,7 @@ export async function runAgentLoop({
   // instead of restarting the part list, so the UI never loses earlier steps.
   let latestParts: ChatMessagePart[] = initialParts ? [...initialParts] : [];
 
-  for (let step = 0; step < MAX_STEPS; step++) {
+  for (let step = 0; stepAllowed(step, maxSteps); step++) {
     // `readUIMessageStream` reports stream errors via `onError` and then closes
     // normally, so flag it and stop instead of spending another model request.
     let errored = false;
@@ -474,7 +511,7 @@ export async function runAgentLoop({
       onUpdate?.(latestParts);
     }
 
-    if (errored) break;
+    if (errored) return { parts: latestParts, stoppedReason: 'error' };
 
     const responseMeta = await result.response;
     const stepMessages = responseMeta.messages;
@@ -496,7 +533,7 @@ export async function runAgentLoop({
         Array.isArray(message.content) &&
         message.content.some((part) => part.type === 'tool-call'),
     );
-    if (!hasPendingToolCalls) break;
+    if (!hasPendingToolCalls) return { parts: latestParts, stoppedReason: 'finished' };
 
     // Checkpoint *after* image injection, so the snapshot is byte-for-byte the
     // prompt the next iteration is about to send. Emitted only when the loop
@@ -507,7 +544,10 @@ export async function runAgentLoop({
     });
   }
 
-  return latestParts;
+  // Falling out of the loop means the cap ran out with tool calls still pending.
+  // Every other way to leave it returns from inside, so this cannot be reached
+  // by a turn the model actually finished.
+  return { parts: latestParts, stoppedReason: 'step-limit' };
 }
 
 function isAbort(error: unknown): boolean {

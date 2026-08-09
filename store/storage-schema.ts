@@ -36,6 +36,7 @@ import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
 import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
 import { normalizePasteThreshold, DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
+import { normalizeMaxSteps, DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import {
   DEFAULT_PANEL_LAYOUT,
   normalizeOrder,
@@ -126,6 +127,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   maxSplitPanels: 1,
   sendKey: 'enter',
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
+  maxSteps: DEFAULT_MAX_STEPS,
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -165,6 +167,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // hand-edited export made non-numeric, must land on the default rather
       // than on `0` — which would read as "never attach a paste".
       pasteThreshold: normalizePasteThreshold(raw.pasteThreshold),
+      // Same reasoning, opposite default: a config that predates this setting
+      // must land on "no cap" rather than on `0`-as-a-count, which would allow
+      // zero steps and make every turn produce nothing.
+      maxSteps: normalizeMaxSteps(raw.maxSteps),
     }),
   },
   systemPrompt: {

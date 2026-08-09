@@ -33,6 +33,7 @@ export const zh: TranslationSchema = {
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
     interrupted: '回复已中断',
+    stepLimit: '已达到工具步数上限',
     contextMenu: {
       root: 'Lumo',
       ask: '询问此页面',
@@ -221,6 +222,12 @@ export const zh: TranslationSchema = {
       pasteThresholdAlways: '始终',
       pasteThresholdChars: '不少于 {{chars}} 字符',
       pasteThresholdCustom: '自定义',
+      maxSteps: '工具步数上限',
+      maxStepsDesc:
+        '单次回复最多可以连续调用多少次工具。选择「永不暂停」则由模型自己决定何时结束；需要打断时点停止按钮。',
+      maxStepsNever: '永不暂停',
+      maxStepsCount: '{{steps}} 步',
+      maxStepsCustom: '自定义',
       importExport: '导入 / 导出',
       importConfig: '导入配置',
       exportConfig: '导出配置',

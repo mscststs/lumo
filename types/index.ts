@@ -79,6 +79,11 @@ export interface UISettings {
    * paste. See `lib/paste-threshold.ts`.
    */
   pasteThreshold: number;
+  /**
+   * Maximum number of tool-loop steps one assistant turn may run. `0` means no
+   * cap (the default); a cap is at least 10. See `lib/max-steps.ts`.
+   */
+  maxSteps: number;
 }
 
 /**
@@ -155,6 +160,17 @@ export interface ChatMessage {
    * the user cannot tell whether the model actually finished its thought.
    */
   interrupted?: boolean;
+  /**
+   * Why an `interrupted` turn stopped, when it was not the user's doing.
+   *
+   * Absent means the ordinary case the flag was introduced for: the user hit
+   * stop, or the panel was torn down. `'step-limit'` is the one cause the user
+   * did not choose per-turn but *did* configure, so it gets its own notice —
+   * telling them the reply was cut by their own step cap is actionable, whereas
+   * the generic "interrupted" label would send them looking for a failure that
+   * never happened. See `lib/max-steps.ts`.
+   */
+  stopReason?: 'step-limit';
   timestamp: number;
 }
 

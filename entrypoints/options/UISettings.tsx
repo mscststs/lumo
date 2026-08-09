@@ -12,9 +12,11 @@ import {
 } from '@/components/ui/select';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
+import { DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { storage } from '@/store/storage';
 import { PasteThresholdField } from './components/PasteThresholdField';
+import { MaxStepsField } from './components/MaxStepsField';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
@@ -67,6 +69,7 @@ export function UISettingsPage() {
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
+  const [maxSteps, setMaxSteps] = useState(DEFAULT_MAX_STEPS);
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -74,6 +77,7 @@ export function UISettingsPage() {
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
       setSendKey(settings.sendKey ?? 'enter');
       setPasteThreshold(settings.pasteThreshold);
+      setMaxSteps(settings.maxSteps);
     });
   }, []);
 
@@ -109,6 +113,12 @@ export function UISettingsPage() {
     await storage.setUISettings({ ...settings, pasteThreshold: threshold });
   };
 
+  const handleMaxStepsChange = async (steps: number) => {
+    setMaxSteps(steps);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, maxSteps: steps });
+  };
+
   const handleExport = async () => {
     try {
       const config = await storage.exportConfig();
@@ -141,6 +151,7 @@ export function UISettingsPage() {
         setMaxSplitPanels(settings.maxSplitPanels ?? 1);
         setSendKey(settings.sendKey ?? 'enter');
         setPasteThreshold(settings.pasteThreshold);
+        setMaxSteps(settings.maxSteps);
         await i18n.changeLanguage(settings.language);
         await setTheme(settings.theme);
         alert(t('options.ui.importSuccess'));
@@ -231,6 +242,10 @@ export function UISettingsPage() {
               value={pasteThreshold}
               onChange={handlePasteThresholdChange}
             />
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.maxSteps')} description={t('options.ui.maxStepsDesc')}>
+            <MaxStepsField value={maxSteps} onChange={handleMaxStepsChange} />
           </SettingRow>
         </SettingsGroup>
 

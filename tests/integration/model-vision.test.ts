@@ -96,7 +96,7 @@ describeModel('model vision through the image pipeline (real model from lumo con
     const parts: Array<{ type: string; text?: string }> = [];
     let streamError: string | null = null;
 
-    const finalParts = await runAgentLoop({
+    const { parts: finalParts } = await runAgentLoop({
       model: aiModel,
       providerOptions,
       tools: { capture_screen: captureScreen },

@@ -51,7 +51,9 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Only meaningful once the turn has settled: while streaming, a reply
             being unfinished is the expected state, not something to flag. */}
-        {!isStreaming && message.interrupted && <InterruptedNotice />}
+        {!isStreaming && message.interrupted && (
+          <InterruptedNotice stopReason={message.stopReason} />
+        )}
 
         {!isStreaming && (
           <MessageActions>
@@ -71,24 +73,31 @@ export const MessageBubble = memo(function MessageBubble({
 
 /**
  * Marks a reply that stopped before the model was done — the user hit stop, the
- * panel was closed mid-stream, or the request failed partway.
+ * panel was closed mid-stream, the request failed partway, or the configured
+ * tool step limit ran out.
  *
  * Without it a truncated answer is indistinguishable from a complete one, which
  * is worse than not persisting it at all: the user would trust a cut-off answer.
  * `min-w-0` + `break-words` because the side panel is user-resizable down to a
  * narrow column, where an unwrapped label would force the bubble to overflow.
  *
+ * The step-limit wording is separate because it is the one cause the user can do
+ * something about: the generic label would send them hunting for a failure that
+ * never happened, when the fix is a setting.
+ *
  * The assistant `Message` is a gapless column — only the user variant sets one —
  * so every direct child owns its own separation from the reply above it, the way
  * `MessageActions` does with `pt-1`. Without `pt-1.5` this label sat flush
  * against the last line of prose and read as part of the answer.
  */
-function InterruptedNotice() {
+function InterruptedNotice({ stopReason }: { stopReason?: 'step-limit' }) {
   const { t } = useTranslation();
   return (
     <div className="flex min-w-0 items-center gap-1.5 pt-1.5 text-xs text-muted-foreground">
       <CircleSlash className="h-3 w-3 shrink-0" />
-      <span className="min-w-0 break-words">{t('sidebar.interrupted')}</span>
+      <span className="min-w-0 break-words">
+        {t(stopReason === 'step-limit' ? 'sidebar.stepLimit' : 'sidebar.interrupted')}
+      </span>
     </div>
   );
 }
