@@ -89,6 +89,7 @@ export const zh: TranslationSchema = {
       empty: '暂无对话，你的聊天记录会显示在这里。',
       noResults: '没有匹配的对话。',
       clearAll: '删除所有对话',
+      untitled: '新对话',
     },
     tool: {
       pending: '准备中',

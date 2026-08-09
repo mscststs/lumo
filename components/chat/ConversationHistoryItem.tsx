@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Trash2, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { conversationTitle } from '@/lib/conversation-title';
 import { useRelativeTime } from '@/lib/use-relative-time';
 import type { ConversationMeta } from '@/lib/conversation-store';
 
@@ -43,7 +44,9 @@ export function ConversationHistoryItem({
       >
         {/* pr leaves room for the hover actions so long titles never sit under them */}
         <div className="flex items-baseline justify-between gap-2 pr-7">
-          <span className="text-xs font-medium truncate min-w-0">{conversation.title}</span>
+          <span className="text-xs font-medium truncate min-w-0">
+            {conversationTitle(conversation.title, t)}
+          </span>
           <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
             {formatRelative(conversation.updatedAt)}
           </span>

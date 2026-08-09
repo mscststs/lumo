@@ -89,6 +89,10 @@ export const en = {
       empty: 'No conversations yet. Your chats will show up here.',
       noResults: 'No conversations match your search.',
       clearAll: 'Delete all conversations',
+      // Shown for a chat opened with only an image or an attachment, so there
+      // was no text to take a title from. Kept separate from `sidebar.newChat`
+      // (the button) because one is a label and the other an action.
+      untitled: 'New Chat',
     },
     tool: {
       pending: 'Pending',

@@ -20,6 +20,7 @@ import { normalizeMessage, toolPartName } from '@/lib/message-parts';
 import { panelConversationKey } from '@/lib/panel-storage';
 import { primarySlot } from '@/lib/panel-order';
 import { getConversation } from '@/lib/conversation-store';
+import { conversationTitle } from '@/lib/conversation-title';
 import { safeStringify } from '@/lib/tool-output';
 import { storage } from '@/store/storage';
 import type { PanelLayout } from '@/lib/panel-order';
@@ -378,7 +379,7 @@ export function ChatDebugPage() {
           <div className="rounded-lg border border-border bg-card p-3 space-y-1">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
-              <span className="truncate">{conversation.title}</span>
+              <span className="truncate">{conversationTitle(conversation.title, t)}</span>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>{conversation.providerId} / {conversation.modelId}</span>

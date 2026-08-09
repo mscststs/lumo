@@ -8,10 +8,9 @@ import {
 } from '@/components/ai-elements/conversation';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatError } from '@/components/chat/ChatError';
+import { MAX_RETRIES } from '@/lib/retry-policy';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
 import type { ChatMessage, Conversation } from '@/types';
-
-const MAX_RETRIES = 3;
 
 interface ChatMessageListProps {
   currentConversation: Conversation | null;

@@ -11,7 +11,21 @@ import { createTextAttachment } from '@/lib/text-attachment';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
- 
+
+/**
+ * How tall the composer may grow before it scrolls instead, in lines.
+ *
+ * The pixel cap it produces is applied as an inline `maxHeight` rather than a
+ * Tailwind `max-h-[…]` class. The auto-grow effect below already has to compute
+ * the bound in JS to size the element, and a class would state the same number a
+ * second time somewhere that effect cannot read — so raising the line count
+ * would visibly do nothing until someone noticed the stale class.
+ */
+const MAX_INPUT_LINES = 5;
+/** `text-sm` line-height (1.25rem) in px. */
+const LINE_HEIGHT = 20;
+const MAX_INPUT_HEIGHT = MAX_INPUT_LINES * LINE_HEIGHT;
+
 export interface ChatInputHandle {
   focus: () => void;
   addImages: (dataUrls: string[]) => void;
@@ -70,12 +84,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setPasteThreshold(newVal.pasteThreshold);
   });
 
-  // Auto-grow the textarea to fit content, up to MAX_INPUT_LINES rows,
-  // after which a scrollbar appears instead of expanding further.
-  const MAX_INPUT_LINES = 5;
-  const LINE_HEIGHT = 20; // 1.25rem (text-sm line-height)
-  const MAX_INPUT_HEIGHT = MAX_INPUT_LINES * LINE_HEIGHT;
-
+  // Auto-grow the textarea to fit content, up to MAX_INPUT_LINES rows, after
+  // which a scrollbar appears instead of expanding further.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -410,7 +420,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={t('sidebar.placeholder')}
-            className="min-h-[36px] max-h-[100px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none placeholder:text-muted-foreground/60 scrollbar-lumo"
+            className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none placeholder:text-muted-foreground/60 scrollbar-lumo"
+            style={{ maxHeight: MAX_INPUT_HEIGHT }}
             rows={1}
           />
         </div>

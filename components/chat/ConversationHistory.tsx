@@ -5,6 +5,7 @@ import { X, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
+import { conversationTitle } from '@/lib/conversation-title';
 import type { ConversationMeta } from '@/lib/conversation-store';
 
 interface ConversationHistoryProps {
@@ -35,12 +36,15 @@ export function ConversationHistory({
     // Titles and the stored preview only. Searching full message bodies would
     // mean loading every conversation from the database on each keystroke; the
     // list is intentionally backed by summaries alone.
+    //
+    // Matched against the title as *displayed*, so an untitled conversation is
+    // still findable by the placeholder the user can actually see.
     return conversations.filter(
       (conversation) =>
-        conversation.title.toLowerCase().includes(needle) ||
+        conversationTitle(conversation.title, t).toLowerCase().includes(needle) ||
         conversation.preview.toLowerCase().includes(needle),
     );
-  }, [conversations, query]);
+  }, [conversations, query, t]);
 
   return (
     <motion.div

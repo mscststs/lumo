@@ -5,6 +5,8 @@ import type { ResumeState, StopReason } from '@/lib/ai';
 import { storage } from '@/store/storage';
 import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
+import { deriveConversationTitle } from '@/lib/conversation-title';
+import { MAX_RETRIES, retryDelay } from '@/lib/retry-policy';
 import { resolveSystemPrompt } from '@/lib/system-prompt';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
 import { toError } from '@/lib/provider-error';
@@ -12,10 +14,6 @@ import type { ConversationMeta } from '@/lib/conversation-store';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
 import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment } from '@/types';
 
-/** Max auto-retry attempts for recoverable errors */
-const MAX_RETRIES = 3;
-/** Base delay in ms for exponential backoff (doubles each attempt) */
-const RETRY_BASE_DELAY = 1500;
 /**
  * Minimum gap between mid-stream checkpoints of the in-flight assistant turn.
  *
@@ -513,7 +511,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
             }
 
             const resumeForRetry = resumeStateRef.current;
-            const delay = RETRY_BASE_DELAY * Math.pow(2, attempt);
+            const delay = retryDelay(attempt);
             retryTimeoutRef.current = setTimeout(() => {
               retryTimeoutRef.current = null;
               void executeStream(
@@ -605,7 +603,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       if (!conv) {
         conv = {
           id: uuidv4(),
-          title: text.slice(0, 50) || 'New Chat',
+          title: deriveConversationTitle(text),
           messages: [],
           modelId: selectedModelId,
           providerId: selectedProviderId,

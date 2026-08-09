@@ -238,14 +238,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       // may still be able to reason about it, and the user sees what happened.
       return {
         images: [],
-        textAttachments: [
-          {
-            id: uuidv4(),
-            mediaType: 'text/plain',
-            content: imageUrl,
-            preview: imageUrl.slice(0, 50),
-          },
-        ],
+        textAttachments: [createTextAttachment(imageUrl, 'text/plain')],
       };
     },
     [isVisionModel, resolveImageSrc],
