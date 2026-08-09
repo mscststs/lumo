@@ -160,47 +160,76 @@ export function ChatDebugPage() {
    * conversation lookup below — see `selectedPanel`.
    */
   const [visibleOrder, setVisibleOrder] = useState<number[]>([]);
-  /** The panel the user picked from the switcher, or `null` for "the primary one". */
-  const [pickedSlot, setPickedSlot] = useState<number | null>(null);
+  /**
+   * The panel this view has attached itself to, or `null` before the first
+   * layout read.
+   *
+   * Tracked by *slot* — the panel's identity — and deliberately not re-derived
+   * from the layout on every change. Position and slot are independent: a drag
+   * reorder rewrites the order and moves no storage, so a selection that always
+   * pointed at the rightmost slot swapped the view onto a different panel's chat
+   * the moment the user reordered. What that looked like was the page flashing
+   * through its loading state and coming back on someone else's conversation —
+   * or on the empty state, if the panel dragged rightmost had no chat yet.
+   *
+   * Seeded from the published layout rather than guessed, and re-seeded when the
+   * tracked panel leaves it, which is what keeps it off a slot that no longer
+   * exists — see `applyLayout`.
+   */
+  const [trackedSlot, setTrackedSlot] = useState<number | null>(null);
 
   /**
-   * The slot actually being inspected: the user's pick while it is still on
-   * screen, otherwise the primary (rightmost) panel.
+   * The slot actually being inspected: the tracked panel while it is still on
+   * screen, otherwise the primary (rightmost) one.
    *
-   * Derived from the layout rather than stored, because the two must never
-   * disagree. As stored state seeded with `0` it silently did: slots became
-   * sparse when reordering landed, so dragging a panel rightwards and closing
-   * the one now on the left can leave a single panel in slot 1 or 2 with no slot
-   * 0 at all. This view then read `currentConversationId` — a key that no longer
-   * exists — and reported "no active conversation" for a sidebar that plainly
-   * had one, with the switcher hidden (one panel) so there was no way to correct
-   * it by hand.
+   * The fallback is what stops the selection and the layout from disagreeing.
+   * Seeded with `0` and left to itself, it silently did: slots became sparse when
+   * reordering landed, so dragging a panel rightwards and closing the one now on
+   * the left can leave a single panel in slot 1 or 2 with no slot 0 at all. This
+   * view then read `currentConversationId` — a key that no longer exists — and
+   * reported "no active conversation" for a sidebar that plainly had one, with
+   * the switcher hidden (one panel) so there was no way to correct it by hand.
    *
    * `undefined` until the layout is known, so the first lookup cannot fire
    * against a guessed slot and race the read that would have corrected it.
    */
   const selectedPanel =
-    pickedSlot !== null && visibleOrder.includes(pickedSlot)
-      ? pickedSlot
+    trackedSlot !== null && visibleOrder.includes(trackedSlot)
+      ? trackedSlot
       : primarySlot(visibleOrder);
+
+  /**
+   * Adopts a published layout.
+   *
+   * The tracked panel is kept whenever it is still on screen, so a reorder is a
+   * no-op here: `selectedPanel` does not change, the conversation is not
+   * re-read, and the view does not flash. Only a panel that has actually gone —
+   * closed, or hidden by a narrowing side panel — hands the view to the primary
+   * panel, and it is re-seeded rather than left dangling so a slot reused by a
+   * later split cannot pull the view back onto an unrelated chat.
+   */
+  const applyLayout = useCallback((order: number[]) => {
+    setVisibleOrder(order);
+    setTrackedSlot((prev) =>
+      prev !== null && order.includes(prev) ? prev : primarySlot(order) ?? null,
+    );
+  }, []);
 
   // Load the visible layout on mount
   useEffect(() => {
     void storage.getSplitViewVisible().then((layout) => {
-      setVisibleOrder(layout.order);
+      applyLayout(layout.order);
     });
-  }, []);
+  }, [applyLayout]);
 
   // Watch for layout changes (a split, close, reorder, or width-driven collapse).
-  // A pick that just went off screen needs no repair here: `selectedPanel` falls
-  // back to the primary panel on its own.
   useStorageWatch<PanelLayout>(
     'splitViewVisible',
     useCallback((newValue) => {
       const order = newValue?.order;
       if (!order || order.length === 0) return;
-      setVisibleOrder(order);
-    }, []),
+      applyLayout(order);
+    }, [applyLayout]),
   );
 
   /**
@@ -332,7 +361,7 @@ export function ChatDebugPage() {
                 variant={selectedPanel === slot ? 'default' : 'outline'}
                 size="sm"
                 className="h-7 text-xs px-3"
-                onClick={() => setPickedSlot(slot)}
+                onClick={() => setTrackedSlot(slot)}
               >
                 {getPanelSideLabel(slot)}
               </Button>
