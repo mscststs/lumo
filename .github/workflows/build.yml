@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -21,7 +21,7 @@ jobs:
 
       - run: npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: lumo-chrome-mv3
           path: .output/chrome-mv3/
