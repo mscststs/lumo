@@ -1,0 +1,51 @@
+/**
+ * Which build of Lumo is running, and where it came from.
+ *
+ * The Web Store version deliberately lags the repository — every release has to
+ * pass Google's review — and the GitHub Actions artifact installs as a *separate*
+ * extension, so a user can easily be running both at once. Nothing in the UI used
+ * to say which one a given window belonged to, which made version-specific bug
+ * reports guesswork.
+ *
+ * The channel is derived from the extension id: an id is assigned by the Web
+ * Store at publish time and cannot be forged by a local build, so the published
+ * id is the one reliable discriminator available at runtime. Everything else —
+ * the Actions artifact, `load unpacked`, `wxt dev` — gets a key generated from
+ * the unpacked directory, so it is "github" by elimination.
+ */
+
+/** Extension id of the published Web Store listing. */
+export const CHROME_STORE_ID = 'cgfnadidpooocnkalljpdmelmaponefa';
+
+export const CHROME_STORE_URL = `https://chromewebstore.google.com/detail/lumo/${CHROME_STORE_ID}`;
+export const GITHUB_REPO_URL = 'https://github.com/mscststs/lumo';
+
+/** Where this build came from. See the note above on how it is decided. */
+export type ReleaseChannel = 'store' | 'github';
+
+/**
+ * `chrome.runtime`, or `undefined` outside an extension context.
+ *
+ * The About page is rendered in component tests too, and a missing global must
+ * degrade to "unknown" rather than throw during render.
+ */
+function runtime(): typeof chrome.runtime | undefined {
+  return typeof chrome !== 'undefined' ? chrome.runtime : undefined;
+}
+
+export function getExtensionId(): string {
+  return runtime()?.id ?? '';
+}
+
+/** Manifest version, i.e. the `version` field of `package.json` at build time. */
+export function getExtensionVersion(): string {
+  try {
+    return runtime()?.getManifest?.()?.version ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function getReleaseChannel(): ReleaseChannel {
+  return getExtensionId() === CHROME_STORE_ID ? 'store' : 'github';
+}

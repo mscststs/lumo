@@ -127,6 +127,7 @@ export const zh: TranslationSchema = {
       mcp: 'MCP 服务',
       files: '文件',
       chatDebug: '会话调试',
+      about: '关于',
     },
     models: {
       title: '模型配置',
@@ -376,6 +377,37 @@ export const zh: TranslationSchema = {
       source: '源码',
       switchMode: '切换视图模式',
       copy: '复制源码',
+    },
+    about: {
+      title: '关于',
+      refresh: '重新统计',
+      extensionId: '扩展 ID',
+      storeBadge: 'Chrome 应用商店版',
+      channelDesc: {
+        store:
+          '安装自 Chrome 应用商店，会自动更新，但版本落后于仓库代码——每次发布都要先通过 Google 审核。',
+        github: '来自 GitHub Actions 产物或源码构建，不会自动更新。',
+      },
+      groupLinks: '相关链接',
+      links: {
+        store: 'Chrome 应用商店',
+        repo: 'GitHub 仓库',
+      },
+      storage: {
+        title: '存储占用',
+        conversations: '会话历史',
+        conversationsCount: '{{count}} 个会话',
+        files: '存储的文件',
+        filesCount: '{{count}} 个文件',
+        origin: '浏览器统计的本扩展总占用',
+        originUsage: '{{usage}} / {{quota}}',
+        clearChat: '清空历史',
+        clearChatConfirm:
+          '删除所有会话及其截图？此操作不可撤销。提供商、API Key 与偏好设置会保留。',
+        clearFiles: '清空文件',
+        clearFilesConfirm:
+          '删除全部 {{count}} 个文件？此操作不可撤销，历史会话中引用的文件将无法再打开。',
+      },
     },
   },
 };

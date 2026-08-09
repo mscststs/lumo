@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
-import { pruneStaleModelSelections } from '@/lib/panel-storage';
+import { localPanelStorage, pruneStaleModelSelections } from '@/lib/panel-storage';
 import { normalizeProvider } from '@/lib/provider-type';
 import type { ModelConfig, ProviderConfig } from '@/types';
 import { isSameOrder, reconcileOrder } from './reorder';
@@ -21,13 +21,6 @@ import { isSameOrder, reconcileOrder } from './reorder';
  * 3. **Optimistic writes.** State updates before the `chrome.storage` round
  *    trip so toggles and reorders feel instant; the watch reconciles.
  */
-
-/** `chrome.storage.local`, narrowed to what pruning needs. */
-const panelStorageArea = {
-  get: (keys: string | string[]) => chrome.storage.local.get(keys),
-  set: (items: Record<string, unknown>) => chrome.storage.local.set(items),
-  remove: (keys: string | string[]) => chrome.storage.local.remove(keys),
-};
 
 export interface UseProvidersReturn {
   providers: ProviderConfig[];
@@ -87,7 +80,7 @@ export function useProviders(): UseProvidersReturn {
       const next = update(current);
       setProviders(next);
       await storage.setProviders(next);
-      if (prune) await pruneStaleModelSelections(panelStorageArea, next);
+      if (prune) await pruneStaleModelSelections(localPanelStorage, next);
     },
     [],
   );

@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Palette, Plug, MessageSquareCode, Bug, FolderOpen } from 'lucide-react';
+import {
+  Cpu,
+  Palette,
+  Plug,
+  MessageSquareCode,
+  Bug,
+  FolderOpen,
+  Info,
+} from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
@@ -8,8 +16,17 @@ import { McpSettings } from './McpSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
 import { ChatDebugPage } from './ChatDebug';
 import { FileManager } from './FileManager';
+import { AboutPage } from './About';
 
-const NAV_ITEMS = ['models', 'systemPrompt', 'mcp', 'files', 'ui', 'chatDebug'] as const;
+const NAV_ITEMS = [
+  'models',
+  'systemPrompt',
+  'mcp',
+  'files',
+  'ui',
+  'chatDebug',
+  'about',
+] as const;
 type NavItem = (typeof NAV_ITEMS)[number];
 
 function isValidNav(hash: string): hash is NavItem {
@@ -89,6 +106,12 @@ export default function App() {
             icon={<Bug className="h-4 w-4" />}
             label={t('options.nav.chatDebug')}
           />
+          <NavButton
+            active={activeNav === 'about'}
+            onClick={() => navigate('about')}
+            icon={<Info className="h-4 w-4" />}
+            label={t('options.nav.about')}
+          />
         </div>
       </nav>
 
@@ -100,6 +123,7 @@ export default function App() {
         {activeNav === 'files' && <FileManager />}
         {activeNav === 'ui' && <UISettingsPage />}
         {activeNav === 'chatDebug' && <ChatDebugPage />}
+        {activeNav === 'about' && <AboutPage />}
       </main>
     </div>
   );

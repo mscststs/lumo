@@ -23,18 +23,8 @@ import { useSidePanelPresence } from '@/lib/side-panel-presence';
 import { useEvent } from '@/lib/event-bus';
 import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
 import { downloadAsZip } from '@/lib/zip-download';
+import { formatBytes } from '@/lib/utils';
 import { SettingsHeader } from './components/SettingsHeader';
-
-/**
- * Format file size to human-readable string.
- */
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 /**
  * Format timestamp to locale date string.
@@ -336,7 +326,7 @@ export function FileManager() {
           <div className="border border-border rounded-lg p-3 bg-card">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <HardDrive className="h-4 w-4" />
-              <span>{t('options.files.totalSize', { size: formatSize(totalSize) })}</span>
+              <span>{t('options.files.totalSize', { size: formatBytes(totalSize) })}</span>
             </div>
           </div>
         </div>
@@ -456,7 +446,7 @@ function FolderGroupRow({
         </div>
 
         {/* Size */}
-        <span className="text-xs text-muted-foreground">{formatSize(group.totalSize)}</span>
+        <span className="text-xs text-muted-foreground">{formatBytes(group.totalSize)}</span>
 
         {/* Source - empty for folder row */}
         <span />
@@ -572,7 +562,7 @@ function FileRow({
       </div>
 
       {/* Size */}
-      <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span>
+      <span className="text-xs text-muted-foreground">{formatBytes(file.size)}</span>
 
       {/* Source */}
       <div className="flex items-center gap-1 min-w-0">

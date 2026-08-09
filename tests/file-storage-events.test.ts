@@ -47,6 +47,11 @@ vi.stubGlobal('indexedDB', {
           get: (name: string) =>
             fakeRequest(files.has(name) ? { name, content: new Blob(['x']) } : undefined),
           count: (name: string) => fakeRequest(files.has(name) ? 1 : 0),
+          getAllKeys: () => fakeRequest([...files.keys()]),
+          clear: () => {
+            files.clear();
+            return fakeRequest(undefined);
+          },
         }),
       }),
     };
@@ -107,6 +112,24 @@ describe('fileStorage change notifications', () => {
     events = [];
     await fileStorage.readFileAsText('notes.md');
     await fileStorage.exists('notes.md');
+    expect(events).toEqual([]);
+  });
+
+  it('names every file a bulk clear removed', async () => {
+    await fileStorage.writeFile('a.md', 'x');
+    await fileStorage.writeFile('b.md', 'y');
+    events = [];
+
+    const removed = await fileStorage.clearFiles();
+
+    expect(removed).toBe(2);
+    // One event listing everything, not one per file: a single-file view still
+    // has to find its own name in the list to know it is now stale.
+    expect(events).toEqual([{ names: ['a.md', 'b.md'], reason: 'delete' }]);
+  });
+
+  it('says nothing when a clear removed nothing', async () => {
+    expect(await fileStorage.clearFiles()).toBe(0);
     expect(events).toEqual([]);
   });
 });

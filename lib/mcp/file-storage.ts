@@ -301,6 +301,37 @@ class FileStorage {
   }
 
   /**
+   * Delete every stored file.
+   *
+   * The names are collected *before* the store is cleared because the change
+   * event's contract is to list what was affected — subscribers showing a single
+   * file (the preview tab) filter on that list, and an empty one would leave
+   * them displaying a file that no longer exists.
+   *
+   * @returns How many files were deleted.
+   */
+  async clearFiles(): Promise<number> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const keysRequest = store.getAllKeys();
+      keysRequest.onsuccess = () => {
+        const names = (keysRequest.result as IDBValidKey[]).map(String);
+        const clearRequest = store.clear();
+        clearRequest.onsuccess = () => {
+          if (names.length > 0) {
+            emitEvent('files:changed', { names, reason: 'delete' });
+          }
+          resolve(names.length);
+        };
+        clearRequest.onerror = () => reject(clearRequest.error);
+      };
+      keysRequest.onerror = () => reject(keysRequest.error);
+    });
+  }
+
+  /**
    * Check if a file exists.
    */
   async exists(name: string): Promise<boolean> {

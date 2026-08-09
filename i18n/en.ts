@@ -130,6 +130,7 @@ export const en = {
       mcp: 'MCP Services',
       files: 'Files',
       chatDebug: 'Chat Debug',
+      about: 'About',
     },
     models: {
       title: 'Model Configuration',
@@ -384,6 +385,38 @@ export const en = {
       source: 'Source',
       switchMode: 'Switch view mode',
       copy: 'Copy source',
+    },
+    about: {
+      title: 'About',
+      refresh: 'Recalculate',
+      extensionId: 'Extension ID',
+      storeBadge: 'Chrome Web Store',
+      channelDesc: {
+        store:
+          'Installed from the Chrome Web Store. It updates itself, but it trails the repository — every release has to pass Google’s review first.',
+        github:
+          'Loaded from a GitHub Actions artifact or built from source. It does not update itself.',
+      },
+      groupLinks: 'Links',
+      links: {
+        store: 'Chrome Web Store',
+        repo: 'GitHub repository',
+      },
+      storage: {
+        title: 'Storage',
+        conversations: 'Chat history',
+        conversationsCount: '{{count}} conversations',
+        files: 'Stored files',
+        filesCount: '{{count}} files',
+        origin: 'Total for this extension, as the browser counts it',
+        originUsage: '{{usage}} of {{quota}}',
+        clearChat: 'Clear history',
+        clearChatConfirm:
+          'Delete every conversation and its screenshots? This cannot be undone. Providers, API keys and preferences are kept.',
+        clearFiles: 'Clear files',
+        clearFilesConfirm:
+          'Delete all {{count}} stored files? This cannot be undone, and files referenced by past conversations will no longer open.',
+      },
     },
   },
 };

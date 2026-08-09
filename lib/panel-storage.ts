@@ -38,6 +38,19 @@ export function panelModelKey(slot: number): string {
 }
 
 /**
+ * `chrome.storage.local`, narrowed to the surface these helpers use.
+ *
+ * The helpers take the area as a parameter so tests can pass a fake; this is the
+ * one real implementation, shared so each caller does not re-wrap the three
+ * methods itself.
+ */
+export const localPanelStorage: PanelStorageArea = {
+  get: (keys) => chrome.storage.local.get(keys),
+  set: (items) => chrome.storage.local.set(items),
+  remove: (keys) => chrome.storage.local.remove(keys),
+};
+
+/**
  * Opens a panel in `slot` on a blank conversation.
  *
  * The slot's model choice is deliberately left untouched, so re-opening a panel
@@ -63,6 +76,35 @@ export async function releasePanelSlot(
   slot: number,
 ): Promise<void> {
   await storageArea.remove(panelConversationKey(slot));
+}
+
+/**
+ * Points every occupied slot at a blank conversation.
+ *
+ * Called after the conversation database is wiped from the options page: the
+ * pointers left behind would otherwise name conversations that no longer exist,
+ * and the next panel to restore one would come up on a conversation the user
+ * just deleted.
+ *
+ * Only keys that are *already present* are rewritten. Presence is what marks a
+ * slot as taken (see `openPanelSlot` / `releasePanelSlot`), so writing `null`
+ * into an absent key would claim slots for panels that are not open.
+ *
+ * @returns The keys that were reset, for logging/tests.
+ */
+export async function resetPanelConversations(
+  storageArea: PanelStorageArea,
+): Promise<string[]> {
+  const keys = Array.from({ length: MAX_SLOT_ID + 1 }, (_, slot) =>
+    panelConversationKey(slot),
+  );
+  const stored = await storageArea.get(keys);
+  const occupied = keys.filter((key) => key in stored);
+
+  if (occupied.length > 0) {
+    await storageArea.set(Object.fromEntries(occupied.map((key) => [key, null])));
+  }
+  return occupied;
 }
 
 /**

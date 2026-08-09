@@ -5,6 +5,7 @@ import {
   panelModelKey,
   pruneStaleModelSelections,
   releasePanelSlot,
+  resetPanelConversations,
   type PanelStorageArea,
 } from '@/lib/panel-storage';
 
@@ -195,5 +196,49 @@ describe('pruneStaleModelSelections', () => {
 
     expect(storage.store['selectedModel']).toBeUndefined();
     expect(storage.store['selectedModel_1']).toBeUndefined();
+  });
+});
+
+describe('resetPanelConversations', () => {
+  it('points every open panel at a blank conversation', async () => {
+    // What the about page's "clear history" does: the conversations are gone, so
+    // no panel may keep pointing at one.
+    const storage = createStorage({
+      currentConversationId: 'conv-0',
+      currentConversationId_1: 'conv-1',
+      selectedModel: GPT4O,
+    });
+
+    const reset = await resetPanelConversations(storage.area);
+
+    expect(reset).toEqual(['currentConversationId', 'currentConversationId_1']);
+    expect(storage.store['currentConversationId']).toBeNull();
+    expect(storage.store['currentConversationId_1']).toBeNull();
+    // Model choices are not conversation state.
+    expect(storage.store['selectedModel']).toEqual(GPT4O);
+  });
+
+  it('does not create keys for slots that hold nothing', async () => {
+    // The key's presence is what marks a slot as taken, so writing null into an
+    // absent one would claim a slot for a panel that is not open.
+    const storage = createStorage({ currentConversationId: 'conv-0' });
+
+    await resetPanelConversations(storage.area);
+
+    expect(Object.keys(storage.store)).toEqual(['currentConversationId']);
+  });
+
+  it('is a no-op on a profile with no panels open', async () => {
+    const storage = createStorage({ selectedModel: GPT4O });
+
+    expect(await resetPanelConversations(storage.area)).toEqual([]);
+    expect(storage.store['selectedModel']).toEqual(GPT4O);
+  });
+
+  it('leaves a slot that is already blank blank', async () => {
+    const storage = createStorage({ currentConversationId: null });
+
+    expect(await resetPanelConversations(storage.area)).toEqual(['currentConversationId']);
+    expect(storage.store['currentConversationId']).toBeNull();
   });
 });
