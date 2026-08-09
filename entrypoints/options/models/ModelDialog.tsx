@@ -10,8 +10,21 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldToggleRow } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import type { ModelConfig } from '@/types';
+import type { ModelConfig, ProviderType } from '@/types';
+import {
+  isWireEffort,
+  normalizeReasoningEffort,
+  reasoningEffortsFor,
+} from '@/lib/reasoning-effort';
+import { cn } from '@/lib/utils';
 import {
   hasErrors,
   normalizeModelDraft,
@@ -27,6 +40,12 @@ interface ModelDialogProps {
   isExisting: boolean;
   /** Name of the owning provider, shown so the user knows where it lands. */
   providerName: string;
+  /**
+   * Wire protocol of the owning provider. Decides which reasoning levels are on
+   * offer — each provider publishes its own enum, so the list is not the app's to
+   * choose. See `lib/reasoning-effort.ts`.
+   */
+  providerType: ProviderType;
   /** Models already on this provider, for the duplicate-id check. */
   siblings: ModelConfig[];
   onSave: (model: ModelConfig) => Promise<void>;
@@ -37,6 +56,7 @@ export function ModelDialog({
   draft,
   isExisting,
   providerName,
+  providerType,
   siblings,
   onSave,
   onClose,
@@ -137,6 +157,60 @@ export function ModelDialog({
                 placeholder={t('options.models.modelNamePlaceholder')}
               />
             )}
+          </Field>
+
+          <Field
+            label={t('options.models.reasoningEffort')}
+            hint={t('options.models.reasoningEffortHint')}
+          >
+            {({ id, 'aria-describedby': describedBy }) => {
+              const selected = normalizeReasoningEffort(value.reasoningEffort);
+              const offered = reasoningEffortsFor(providerType);
+              // A stored level this provider does not offer is still the user's
+              // setting — it becomes valid again if the provider type is switched
+              // back — so it is listed rather than dropped. Omitting it would also
+              // leave Radix with a value it cannot match and a blank trigger.
+              const levels = offered.includes(selected) ? offered : [...offered, selected];
+              return (
+                <Select
+                  // A stored `undefined` means the default, but Radix reads an
+                  // undefined value as "uncontrolled" and would show a blank
+                  // trigger, so the default is materialised for display only.
+                  value={selected}
+                  onValueChange={(effort) =>
+                    patch({ reasoningEffort: normalizeReasoningEffort(effort) })
+                  }
+                >
+                  {/* Monospace only while a wire value is selected: the default
+                      row is prose, and rendering prose in the code face would
+                      make it read as something the API accepts. */}
+                  <SelectTrigger
+                    id={id}
+                    aria-describedby={describedBy}
+                    className={cn(isWireEffort(selected) && 'font-mono text-xs')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levels.map((effort) =>
+                      isWireEffort(effort) ? (
+                        // Shown verbatim: these are the provider's own values, so
+                        // a translated label would only obscure what is sent.
+                        <SelectItem key={effort} value={effort} className="font-mono text-xs">
+                          {effort}
+                        </SelectItem>
+                      ) : (
+                        // The one level that is *not* a wire value — it means
+                        // "omit the field" — so it is the one that needs words.
+                        <SelectItem key={effort} value={effort}>
+                          {t('options.models.reasoningEffortDefault')}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+              );
+            }}
           </Field>
 
           <FieldToggleRow

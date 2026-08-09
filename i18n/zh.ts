@@ -166,6 +166,10 @@ export const zh: TranslationSchema = {
       isVision: '视觉模型',
       isVisionDesc: '该模型支持图片输入',
       visionBadge: '视觉',
+      reasoningEffort: '思考强度',
+      reasoningEffortDefault: '跟随提供商默认（不发送）',
+      reasoningEffortHint:
+        '该模型作答前投入多少思考。档位取自该提供商自身的枚举并按原样显示，因此切换提供商类型会改变可选项。第一项完全不发送此参数——非推理模型请保持此项；若请求开始报错也请调回，部分网关会直接拒绝该参数。',
       modelCount_one: '{{count}} 个模型',
       modelCount_other: '{{count}} 个模型',
       noModels: '暂无模型',

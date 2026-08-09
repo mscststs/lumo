@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GripVertical, Image, Pencil, Trash2 } from 'lucide-react';
+import { Brain, GripVertical, Image, Pencil, Trash2 } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { resolveReasoningEffort } from '@/lib/reasoning-effort';
 import type { ModelConfig } from '@/types';
 import { ConfirmDeleteBar } from './ConfirmDeleteBar';
 
@@ -45,6 +46,9 @@ export function ModelRow({
   const [confirming, setConfirming] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragControls = useDragControls();
+  // Only a level that actually changes the request is worth a badge: the default
+  // is what most rows carry, and labelling every one of them would say nothing.
+  const effort = resolveReasoningEffort(model.reasoningEffort);
 
   return (
     <Reorder.Item
@@ -123,6 +127,12 @@ export function ModelRow({
             <Badge variant="accent" title={t('options.models.isVisionDesc')}>
               <Image className="h-2.5 w-2.5" aria-hidden />
               {t('options.models.visionBadge')}
+            </Badge>
+          )}
+          {effort && (
+            <Badge title={t('options.models.reasoningEffort')} className="font-mono">
+              <Brain className="h-2.5 w-2.5" aria-hidden />
+              {effort}
             </Badge>
           )}
         </button>

@@ -12,8 +12,14 @@ import {
   type ToolSet,
   type UIMessage,
 } from 'ai';
-import type { ProviderConfig, ModelConfig, ChatMessagePart } from '@/types';
+import type { ProviderConfig, ProviderType, ModelConfig, ChatMessagePart } from '@/types';
 import { normalizeProviderType } from '@/lib/provider-type';
+import {
+  isUnifiedEffort,
+  resolveReasoningEffort,
+  type ReasoningEffort,
+  type UnifiedReasoningEffort,
+} from '@/lib/reasoning-effort';
 import { toError } from '@/lib/provider-error';
 import { mcpRegistry } from '@/lib/mcp';
 import { DEFAULT_MAX_STEPS, stepAllowed } from '@/lib/max-steps';
@@ -173,6 +179,40 @@ export interface ResolvedModel {
   model: LanguageModel;
   /** `ProviderMetadata` is the request-side provider options bag in ai v7. */
   providerOptions?: ProviderMetadata;
+  /**
+   * The unified reasoning level for this request, or `undefined` to leave the
+   * setting off entirely.
+   *
+   * Only levels the unified setting can spell reach this field. Passing them here
+   * rather than as provider options is what buys the per-model corrections we
+   * would otherwise have to reproduce: the SDK's Anthropic adapter turns `high`
+   * into `output_config.effort` on models built for it and into a derived
+   * `thinking.budget_tokens` on models that are not, using a capability table we
+   * have no access to. A level with no unified spelling — see
+   * `PROVIDER_ONLY_EFFORTS` — is written into `providerOptions` by the branch for
+   * its own provider instead.
+   */
+  reasoning?: UnifiedReasoningEffort;
+}
+
+/**
+ * Provider options carrying a level the unified setting cannot express.
+ *
+ * Split per provider because the field is genuinely different in each protocol,
+ * which is also why this cannot live in shared code: OpenAI takes an effort
+ * string, Anthropic takes an `output_config.effort` *plus* a thinking block. The
+ * levels that land here only exist on models new enough to implement the
+ * effort-style API, so mirroring what the SDK sends for `xhigh` on those same
+ * models — adaptive thinking, summarised — is what keeps the reasoning stream
+ * visible instead of silently dropping it one notch above `xhigh`.
+ */
+function providerOnlyReasoning(
+  type: ProviderType,
+  effort: Exclude<ReasoningEffort, UnifiedReasoningEffort>,
+): ProviderMetadata {
+  return type === 'anthropic'
+    ? { anthropic: { effort, thinking: { type: 'adaptive', display: 'summarized' } } }
+    : { openai: { reasoningEffort: effort } };
 }
 
 export function createProvider(
@@ -180,13 +220,23 @@ export function createProvider(
   model: ModelConfig,
 ): ResolvedModel {
   const type = normalizeProviderType(provider.type);
+  const effort = resolveReasoningEffort(model.reasoningEffort);
+  // Either the level rides the unified setting, or it is this provider's own
+  // spelling of one the unified setting has no word for. Never both.
+  const reasoning = effort && isUnifiedEffort(effort) ? { reasoning: effort } : {};
+  const reasoningOptions =
+    effort && !isUnifiedEffort(effort) ? providerOnlyReasoning(type, effort) : undefined;
 
   if (type === 'anthropic') {
     const anthropic = createAnthropic({
       apiKey: provider.apiKey,
       ...(provider.baseUrl ? { baseURL: provider.baseUrl } : {}),
     });
-    return { model: anthropic(model.modelId) };
+    return {
+      model: anthropic(model.modelId),
+      ...reasoning,
+      ...(reasoningOptions ? { providerOptions: reasoningOptions } : {}),
+    };
   }
 
   const openai = createOpenAI({
@@ -198,6 +248,7 @@ export function createProvider(
     // `openai(id)` is the Responses model in @ai-sdk/openai v4.
     return {
       model: openai.responses(model.modelId),
+      ...reasoning,
       providerOptions: {
         openai: {
           // Stateless: never emit `item_reference` for replayed history.
@@ -205,6 +256,9 @@ export function createProvider(
           // Needed to keep reasoning readable once it is inlined instead of
           // referenced; ignored by non-reasoning models.
           reasoningSummary: 'auto',
+          // Merged into the same bag rather than replacing it: dropping
+          // `store: false` here would send replayed history as `item_reference`.
+          ...reasoningOptions?.openai,
         },
       },
     };
@@ -212,7 +266,11 @@ export function createProvider(
 
   // `openai-chat` → /chat/completions, the portable shape every
   // "OpenAI compatible" gateway implements.
-  return { model: openai.chat(model.modelId) };
+  return {
+    model: openai.chat(model.modelId),
+    ...reasoning,
+    ...(reasoningOptions ? { providerOptions: reasoningOptions } : {}),
+  };
 }
 
 /**
@@ -247,6 +305,11 @@ export function resumeFingerprint({
     normalizeProviderType(provider.type),
     provider.baseUrl ?? '',
     model.modelId,
+    // Part of the identity for the same reason `modelId` is: the effort changes
+    // the request a checkpoint would be replayed into, and on Anthropic it even
+    // decides whether thinking blocks are present at all — so a snapshot taken
+    // under one level must not be resumed under another.
+    resolveReasoningEffort(model.reasoningEffort) ?? '',
     messageCount,
   ].join('\u0000');
 }
@@ -346,7 +409,7 @@ export async function chatStream({
   };
 
   try {
-    const { model: aiModel, providerOptions } = createProvider(provider, model);
+    const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model);
 
     // Gather tools from all connected MCP servers (with stream-specific context)
     const tools: ToolSet = enableTools
@@ -370,6 +433,7 @@ export async function chatStream({
     const { parts, stoppedReason } = await runAgentLoop({
       model: aiModel,
       providerOptions,
+      reasoning,
       tools,
       system: trimmedSystem,
       messages: modelMessages,
@@ -399,6 +463,13 @@ export async function chatStream({
 export interface RunAgentLoopOptions {
   model: LanguageModel;
   providerOptions?: ProviderMetadata;
+  /**
+   * Unified reasoning level for every step of this run. Omitted from the request
+   * when absent, which is what a model left on the provider default resolves to,
+   * and also what a level only its own provider can spell resolves to — that one
+   * travels in `providerOptions` instead.
+   */
+  reasoning?: UnifiedReasoningEffort;
   tools?: ToolSet;
   system?: string;
   messages: ModelMessage[];
@@ -452,6 +523,7 @@ export interface AgentLoopCheckpoint {
 export async function runAgentLoop({
   model,
   providerOptions,
+  reasoning,
   tools = {},
   system,
   messages,
@@ -484,6 +556,10 @@ export async function runAgentLoop({
       abortSignal: signal,
       ...(trimmedSystem ? { system: trimmedSystem } : {}),
       ...(providerOptions ? { providerOptions } : {}),
+      // Spread, so a default-configured model leaves the key off the call object
+      // entirely. The SDK ignores an explicit `undefined` too, but keeping it
+      // absent is what makes "provider default" verifiable from the request.
+      ...(reasoning ? { reasoning } : {}),
       // A single step per iteration — this loop drives continuation so it can
       // strip/inject images between steps.
       ...(hasTools ? { tools, stopWhen: isStepCount(1) } : {}),

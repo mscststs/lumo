@@ -169,6 +169,10 @@ export const en = {
       isVision: 'Vision Model',
       isVisionDesc: 'This model supports image input',
       visionBadge: 'Vision',
+      reasoningEffort: 'Reasoning Effort',
+      reasoningEffortDefault: 'Provider default (send nothing)',
+      reasoningEffortHint:
+        'How hard this model thinks before it answers. The levels come from this provider’s own enum and are shown verbatim, so switching the provider type changes what is on offer. The first one sends nothing at all — keep it for models that do not reason, and switch back to it if requests start failing, since some gateways reject the option outright.',
       modelCount_one: '{{count}} model',
       modelCount_other: '{{count}} models',
       noModels: 'No models yet',

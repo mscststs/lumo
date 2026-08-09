@@ -1,4 +1,5 @@
 import type { UIMessagePart, UIDataTypes, UITools } from 'ai';
+import type { ReasoningEffort } from '@/lib/reasoning-effort';
 
 /**
  * Which wire protocol to talk to the provider with.
@@ -26,6 +27,17 @@ export interface ModelConfig {
   modelId: string;
   displayName: string;
   isVision: boolean;
+  /**
+   * How hard this model should think before answering.
+   *
+   * Per-model rather than per-provider because the available levels are a
+   * property of the model, not of the endpoint: one API key serves both a
+   * reasoning model and one that rejects the setting outright. Absent means
+   * `'provider-default'` — the field is omitted from the request — so configs
+   * written before this existed keep their exact behaviour. See
+   * `lib/reasoning-effort.ts`.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ProviderConfig {

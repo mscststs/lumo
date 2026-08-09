@@ -4,6 +4,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import type { ModelConfig, ProviderConfig } from '@/types';
+import { normalizeProviderType } from '@/lib/provider-type';
 import { SettingsHeader } from './components/SettingsHeader';
 import { EmptyProviders } from './models/EmptyProviders';
 import { ModelDialog } from './models/ModelDialog';
@@ -122,6 +123,11 @@ export function ModelSettings() {
           draftProvider?.models.some((m) => m.id === modelDraft?.model.id),
         )}
         providerName={draftProvider?.name ?? ''}
+        // Falls back to the most portable transport while no draft is open: the
+        // dialog is unmounted then, so this only picks the list it would render.
+        providerType={
+          draftProvider ? normalizeProviderType(draftProvider.type) : 'openai-chat'
+        }
         siblings={draftProvider?.models ?? []}
         onSave={async (model) => {
           if (modelDraft) await upsertModel(modelDraft.providerId, model);
