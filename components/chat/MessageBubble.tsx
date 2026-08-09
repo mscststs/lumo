@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
-import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { LUMO_ATTACHMENT_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { parseFileRefContent, setFileRefDragData } from '@/lib/file-drag';
 import {
   Message,
   MessageContent,
@@ -226,11 +227,7 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
     e.dataTransfer.setData(LUMO_ATTACHMENT_MIME, JSON.stringify(attachment));
 
     if (attachment.kind === 'file-ref') {
-      // Extract file name from content format `[file: name]`
-      const match = /^\[file:\s*(.+)\]$/.exec(attachment.content);
-      const fileName = match?.[1] ?? attachment.preview;
-      e.dataTransfer.setData(LUMO_FILE_REF_MIME, fileName);
-      e.dataTransfer.setData('text/plain', attachment.content);
+      setFileRefDragData(e.dataTransfer, parseFileRefContent(attachment.content) ?? attachment.preview);
     } else {
       if (isHtml) {
         e.dataTransfer.setData('text/html', attachment.content);

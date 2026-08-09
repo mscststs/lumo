@@ -5,7 +5,7 @@ import { ChevronUp, Download, Eye, FileText, Image, FileCode, File, CornerDownLe
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
 import { useEvent } from '@/lib/event-bus';
-import { LUMO_FILE_REF_MIME } from '@/lib/constants';
+import { setFileRefDragData } from '@/lib/file-drag';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -188,11 +188,9 @@ function FileItem({
   const displayName = file.name.includes('/') ? file.name.split('/').pop()! : file.name;
 
   const handleDragStart = (e: React.DragEvent) => {
-    // Set custom MIME type so App.tsx can distinguish internal file drags
-    e.dataTransfer.setData(LUMO_FILE_REF_MIME, file.name);
-    // Also set plain text as fallback data
-    e.dataTransfer.setData('text/plain', `[file: ${file.name}]`);
-    e.dataTransfer.effectAllowed = 'copy';
+    // Custom MIME type plus a plain-text fallback, so App.tsx can tell an
+    // internal file drag from a page drag.
+    setFileRefDragData(e.dataTransfer, file.name);
   };
 
   return (

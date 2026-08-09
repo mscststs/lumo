@@ -358,6 +358,7 @@ export const en = {
       deleteFolder: 'Delete folder',
       deleteFolderConfirm:
         'Are you sure you want to delete folder "{{folder}}" and all {{count}} files in it?',
+      dragHint: 'Drag into the side panel to attach this file',
     },
     preview: {
       title: 'File Preview',

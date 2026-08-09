@@ -353,6 +353,7 @@ export const zh: TranslationSchema = {
       downloadFolder: '下载文件夹内所有文件',
       deleteFolder: '删除文件夹',
       deleteFolderConfirm: '确定要删除文件夹 "{{folder}}" 及其中的 {{count}} 个文件吗？',
+      dragHint: '拖入侧边栏可将该文件引用为附件',
     },
     preview: {
       title: '文件预览',

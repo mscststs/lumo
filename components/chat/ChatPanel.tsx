@@ -9,7 +9,9 @@ import { ConversationFiles } from '@/components/chat/ConversationFiles';
 import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { useModelSelection } from '@/store/useModelSelection';
 import { useChatStream } from '@/store/useChatStream';
+import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 import { classifyDroppedContent } from '@/lib/drop-content';
+import { fileRefContent } from '@/lib/file-drag';
 import { buildPageContextAttachment } from '@/lib/page-context';
 import { createTextAttachment } from '@/lib/text-attachment';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
@@ -352,6 +354,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     [occupiedSessionIds, currentConversation?.id, handleSelectConversation],
   );
 
+  // ─── File reference (from ConversationFiles panel, or an options-page drag) ─
+
+  const addFileReference = useCallback((fileName: string) => {
+    const attachment: TextAttachment = {
+      id: uuidv4(),
+      kind: 'file-ref',
+      mediaType: 'text/plain',
+      content: fileRefContent(fileName),
+      preview: fileName,
+      label: t('sidebar.files.file'),
+    };
+    chatInputRef.current?.addTextAttachment(attachment);
+    chatInputRef.current?.focus();
+  }, [t]);
+
   // ─── Drag-and-drop (per panel) ────────────────────────────────────────────
 
   const handlePanelDragEnter = useCallback((e: React.DragEvent) => {
@@ -389,6 +406,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
     const dataTransfer = e.dataTransfer;
     const visionEnabled = isVisionModel();
+
+    /**
+     * A file row dragged out of the options page (`options.html#files`) lands
+     * here rather than in `ChatInput`: the drag started in another document, so
+     * this panel never saw a `dragstart` and `isInternalDrag` is false. The
+     * custom MIME type survives the cross-document drag, so honour it before
+     * the text/HTML classification below turns `[file: name]` into plain text.
+     */
+    const droppedFileName = dataTransfer.getData(LUMO_FILE_REF_MIME);
+    if (droppedFileName) {
+      addFileReference(droppedFileName);
+      return;
+    }
 
     // Check for image files first
     const files = dataTransfer.files;
@@ -456,22 +486,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         return;
       }
     }
-  }, [isVisionModel, isInternalDrag, resolveImageSrc]);
+  }, [isVisionModel, isInternalDrag, resolveImageSrc, addFileReference]);
 
-  // ─── File reference (from ConversationFiles panel) ────────────────────────
-
-  const addFileReference = useCallback((fileName: string) => {
-    const attachment: TextAttachment = {
-      id: uuidv4(),
-      kind: 'file-ref',
-      mediaType: 'text/plain',
-      content: `[file: ${fileName}]`,
-      preview: fileName,
-      label: t('sidebar.files.file'),
-    };
-    chatInputRef.current?.addTextAttachment(attachment);
-    chatInputRef.current?.focus();
-  }, [t]);
+  // ─── Internal drops (transcript chip → input) ─────────────────────────────
 
   const addInternalTextDrop = useCallback((text: string) => {
     addTextAttachmentFromDrop(text, 'text/plain');

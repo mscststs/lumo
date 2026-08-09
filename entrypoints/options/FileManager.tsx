@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
+import { setFileRefDragData } from '@/lib/file-drag';
+import { useSidePanelPresence } from '@/lib/side-panel-presence';
 import { useEvent } from '@/lib/event-bus';
 import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
 import { downloadAsZip } from '@/lib/zip-download';
@@ -141,6 +143,13 @@ export function FileManager() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [downloadingFolder, setDownloadingFolder] = useState<string | null>(null);
+
+  /**
+   * Dragging a row into the side panel only works while a panel is open, so the
+   * rows stop advertising a gesture that would end nowhere. Presence that cannot
+   * be detected leaves them draggable — a failed probe must not cost the feature.
+   */
+  const canDragToSidePanel = useSidePanelPresence() !== false;
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -315,6 +324,7 @@ export function FileManager() {
                   onDownload={handleDownload}
                   onDelete={handleDelete}
                   getConversationTitle={getConversationTitle}
+                  canDragToSidePanel={canDragToSidePanel}
                 />
               ) : (
                 <FileRow
@@ -325,6 +335,7 @@ export function FileManager() {
                   onPreview={() => handlePreview(entry.file.name)}
                   onDownload={() => handleDownload(entry.file.name)}
                   onDelete={() => handleDelete(entry.file.name)}
+                  canDragToSidePanel={canDragToSidePanel}
                 />
               ),
             )}
@@ -346,6 +357,7 @@ function FolderGroupRow({
   onDownload,
   onDelete,
   getConversationTitle,
+  canDragToSidePanel,
 }: {
   group: FolderGroup;
   isDeleting: boolean;
@@ -357,6 +369,7 @@ function FolderGroupRow({
   onDownload: (name: string) => void;
   onDelete: (name: string) => void;
   getConversationTitle: (conversationId?: string) => string | null;
+  canDragToSidePanel: boolean;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -439,6 +452,7 @@ function FolderGroupRow({
               onDelete={() => onDelete(file.name)}
               indent
               folderPrefix={group.prefix}
+              canDragToSidePanel={canDragToSidePanel}
             />
           ))}
         </div>
@@ -456,6 +470,7 @@ function FileRow({
   onDelete,
   indent = false,
   folderPrefix,
+  canDragToSidePanel,
 }: {
   file: FileMetadata;
   conversationTitle: string | null;
@@ -465,6 +480,7 @@ function FileRow({
   onDelete: () => void;
   indent?: boolean;
   folderPrefix?: string;
+  canDragToSidePanel: boolean;
 }) {
   const { t } = useTranslation();
   const previewable = getPreviewCategory(file.mimeType) !== 'unsupported';
@@ -474,8 +490,23 @@ function FileRow({
     ? file.name.slice(folderPrefix.length)
     : file.name;
 
+  /**
+   * The row itself is the drag handle — dragging it into an open side panel adds
+   * the file as a reference chip. A dedicated grip icon was deliberately not
+   * added: the row already carries its action buttons, and the side panel's own
+   * file list is picked up the same way, so the gesture is the one users know.
+   */
+  const handleDragStart = (e: React.DragEvent) => {
+    setFileRefDragData(e.dataTransfer, file.name);
+  };
+
   return (
-    <div className={`grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 items-center hover:bg-accent/30 transition-colors ${indent ? 'pl-10' : ''}`}>
+    <div
+      className={`grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 items-center hover:bg-accent/30 transition-colors ${canDragToSidePanel ? 'active:cursor-grabbing' : ''} ${indent ? 'pl-10' : ''}`}
+      draggable={canDragToSidePanel}
+      onDragStart={handleDragStart}
+      title={canDragToSidePanel ? t('options.files.dragHint') : undefined}
+    >
       {/* Name */}
       <div className="flex items-center gap-2 min-w-0">
         <FileIcon mimeType={file.mimeType} />
