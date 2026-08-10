@@ -253,9 +253,10 @@ export function createProvider(
         openai: {
           // Stateless: never emit `item_reference` for replayed history.
           store: false,
-          // Needed to keep reasoning readable once it is inlined instead of
-          // referenced; ignored by non-reasoning models.
-          reasoningSummary: 'auto',
+          // `reasoningSummary` is deliberately not set: @ai-sdk/openai derives
+          // it from the resolved reasoning effort, and injecting it triggers a
+          // warning ("reasoningSummary is not supported for non-reasoning
+          // models") on models that do not reason.
           // Merged into the same bag rather than replacing it: dropping
           // `store: false` here would send replayed history as `item_reference`.
           ...reasoningOptions?.openai,

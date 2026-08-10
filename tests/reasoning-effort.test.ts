@@ -192,9 +192,10 @@ describe('createProvider', () => {
     );
     expect(resolved.providerOptions?.openai).toMatchObject({
       store: false,
-      reasoningSummary: 'auto',
       reasoningEffort: 'max',
     });
+    // `reasoningSummary` is left to the SDK to derive from the effort.
+    expect(resolved.providerOptions?.openai).not.toHaveProperty('reasoningSummary');
   });
 });
 
