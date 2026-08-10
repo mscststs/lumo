@@ -206,38 +206,71 @@ export class PageInteractMcpServer implements IMcpServer {
   }
 
   /**
+   * Run a CDP operation under a one-shot debugger attachment.
+   *
+   * `page_evaluate` (and its CSP fallback) needs CDP's `Runtime.evaluate` for a
+   * single execution, but `chrome.debugger.attach` is a persistent, per-extension
+   * session that surfaces a "debugging" infobar on the tab. Leaving it behind
+   * after a one-shot call is a user-visible state leak, so we attach only when
+   * *we* are the first to attach and always release in `finally` — yet only the
+   * attachment we made, never a session owned by another context (DevTools
+   * Advanced, or an explicit `debug_attach`).
+   */
+  private async runWithDebugger<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
+    let attachedHere = false;
+    if (!(await attachedTabs.has(tabId))) {
+      try {
+        await chrome.debugger.attach({ tabId }, '1.3');
+        attachedHere = true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Another context attached first; that session is not ours to release.
+        if (!message.includes('Another debugger') && !message.includes('already attached')) {
+          throw error;
+        }
+      }
+      await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
+    }
+    try {
+      return await fn();
+    } finally {
+      if (attachedHere) {
+        try {
+          await chrome.debugger.detach({ tabId });
+        } catch {
+          // The tab may have closed mid-flight; nothing left to release.
+        }
+        await attachedTabs.remove(tabId);
+      }
+    }
+  }
+
+  /**
    * Execute JavaScript via CDP Runtime.evaluate. Used as fallback when
    * chrome.scripting is blocked by CSP, or when page_evaluate is called
    * with useCDP=true.
    */
   private async evaluateViaCDP(tabId: number, expression: string): Promise<{ success: boolean; result?: unknown; error?: string }> {
-    // Ensure debugger is attached
-    if (!(await attachedTabs.has(tabId))) {
-      try {
-        await chrome.debugger.attach({ tabId }, '1.3');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes('Another debugger') && !message.includes('already attached')) {
-          return { success: false, error: `Failed to attach debugger: ${message}` };
-        }
+    try {
+      const result = await this.runWithDebugger(tabId, () =>
+        chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+          // `Runtime.evaluate` runs a script, not a function body; see
+          // `wrapCodeForCdp` for why the raw code cannot be passed through.
+          expression: wrapCodeForCdp(expression),
+          returnByValue: true,
+          awaitPromise: true,
+          generatePreview: true,
+        }),
+      ) as { result: { type: string; value?: unknown; description?: string; subtype?: string }; exceptionDetails?: { text: string; exception?: { description?: string } } };
+
+      if (result.exceptionDetails) {
+        return { success: false, error: result.exceptionDetails.exception?.description || result.exceptionDetails.text };
       }
-      await attachedTabs.add(tabId);
-      await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
+      return { success: true, result: result.result.value ?? result.result.description ?? null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: `CDP evaluation failed: ${message}` };
     }
-
-    const result = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
-      // `Runtime.evaluate` runs a script, not a function body; see
-      // `wrapCodeForCdp` for why the raw code cannot be passed through.
-      expression: wrapCodeForCdp(expression),
-      returnByValue: true,
-      awaitPromise: true,
-      generatePreview: true,
-    }) as { result: { type: string; value?: unknown; description?: string; subtype?: string }; exceptionDetails?: { text: string; exception?: { description?: string } } };
-
-    if (result.exceptionDetails) {
-      return { success: false, error: result.exceptionDetails.exception?.description || result.exceptionDetails.text };
-    }
-    return { success: true, result: result.result.value ?? result.result.description ?? null };
   }
 
   /**
