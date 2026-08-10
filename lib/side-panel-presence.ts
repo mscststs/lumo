@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { onEvent } from '@/lib/event-bus';
 
 /** `true` open, `false` closed, `null` unknown — see "Unknown is not closed". */
 export type SidePanelPresence = boolean | null;
@@ -49,11 +50,17 @@ export async function querySidePanelPresence(): Promise<SidePanelPresence> {
 /**
  * Tracks side panel presence.
  *
- * Re-read when this tab is focused or becomes visible, which is precisely when
- * the answer can have changed without this page being told: opening or closing a
- * side panel moves focus away from the tab, so coming back to it is the event
- * worth listening to. A timer was the alternative and is not worth it — nothing
- * here is time-critical, and the app deliberately keeps no polling loops.
+ * Two complementary sources keep it as close to real time as the browser allows:
+ *
+ * - The side panel itself announces `sidepanel:opened` / `sidepanel:closed` as it
+ *   mounts and is unloaded, so a change is recognised the moment it happens
+ *   rather than on the next focus event. This is what makes open/close
+ *   recognisable while the reading page is not focused.
+ * - The authoritative answer still comes from `getContexts`, which counts every
+ *   window. The events are only *triggers* to re-read it, never the value
+ *   itself: a boolean flip would be wrong when two windows have panels open and
+ *   one closes, and a fire-and-forget event can be missed (a panel opened before
+ *   this page mounted, or a close whose `pagehide` broadcast was swallowed).
  */
 export function useSidePanelPresence(): SidePanelPresence {
   const [isOpen, setIsOpen] = useState<SidePanelPresence>(null);
@@ -65,12 +72,19 @@ export function useSidePanelPresence(): SidePanelPresence {
   useEffect(() => {
     refresh();
 
+    // Events re-probe rather than set the state directly, so the value always
+    // reflects what `getContexts` reports across every window.
+    const offOpened = onEvent('sidepanel:opened', refresh);
+    const offClosed = onEvent('sidepanel:closed', refresh);
+
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh();
     };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
+      offOpened();
+      offClosed();
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };

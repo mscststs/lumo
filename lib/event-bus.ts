@@ -64,6 +64,25 @@ export interface LumoEventMap {
    * otherwise have to remember to announce itself.
    */
   'files:changed': { names: string[]; reason: 'write' | 'delete' };
+
+  /**
+   * The side panel's document mounted — i.e. the panel is now open.
+   *
+   * Emitted by the side panel itself on mount. Consumers subscribe to learn the
+   * panel's liveness the moment it changes instead of waiting for the next focus
+   * event, which is what the old `getContexts`-on-focus probe did and why it
+   * could not see a panel open while the reading page was not focused.
+   */
+  'sidepanel:opened': object;
+
+  /**
+   * The side panel's document is being unloaded — i.e. the panel is closing.
+   *
+   * Emitted during `pagehide`, so it can still fail: the context is already
+   * being torn down and `sendMessage` may reject. Subscribers keep the
+   * focus/visibility fallback for exactly that case.
+   */
+  'sidepanel:closed': object;
 }
 
 export type LumoEventType = keyof LumoEventMap;
