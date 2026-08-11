@@ -29,3 +29,15 @@ export const LUMO_IMAGE_DRAG_MIME = 'application/x-lumo-image';
  * box is re-added as a page rather than dissolving into generic text.
  */
 export const LUMO_ATTACHMENT_MIME = 'application/x-lumo-attachment';
+
+/**
+ * Marker set on a drag that starts from an attachment chip in an input box
+ * (`ChatInput`).
+ *
+ * Drop targets use it to decide the drop semantics: a chip drag relocates the
+ * attachment (dropEffect `'move'`, so the source chip is removed on dragend),
+ * whereas a transcript card or file-list row drag is a copy (the source stays).
+ * Each source honours this by setting `effectAllowed` to match, so the two
+ * never disagree with the browser's compatibility check.
+ */
+export const LUMO_INPUT_CHIP_MIME = 'application/x-lumo-input-chip';

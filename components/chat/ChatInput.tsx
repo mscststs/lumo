@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { attachmentLabel } from '@/lib/attachment-display';
-import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
+import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME, LUMO_INPUT_CHIP_MIME } from '@/lib/constants';
 import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
 import { createTextAttachment } from '@/lib/text-attachment';
+import { setFileRefDragData, parseFileRefContent } from '@/lib/file-drag';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
@@ -266,9 +267,44 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     };
     inp.click();
   };
- 
+
   const hasAttachments = images.length > 0 || textAttachments.length > 0;
- 
+
+  // ─── Drag sources (attachment chips → another panel's input) ─────────────
+  // A chip picked up here can land in any visible panel's input box (or the
+  // same one), mirroring the payloads `MessageBubble` writes so the receiving
+  // `handleInputDrop` re-attaches it exactly as it was.
+  const handleImageDragStart = useCallback((e: React.DragEvent, img: string) => {
+    e.dataTransfer.setData(LUMO_IMAGE_DRAG_MIME, img);
+    e.dataTransfer.setData(LUMO_INPUT_CHIP_MIME, '1');
+    e.dataTransfer.setData('text/html', `<img src="${img}" />`);
+    e.dataTransfer.setData('text/plain', img);
+    // copyMove so an input-box drop can relocate the chip (dropEffect 'move')
+    // while a drop to the OS or another tab still copies.
+    e.dataTransfer.effectAllowed = 'copyMove';
+  }, []);
+
+  const handleAttachmentDragStart = useCallback(
+    (e: React.DragEvent, attachment: TextAttachment) => {
+      e.dataTransfer.setData(LUMO_ATTACHMENT_MIME, JSON.stringify(attachment));
+      e.dataTransfer.setData(LUMO_INPUT_CHIP_MIME, '1');
+      if (attachment.kind === 'file-ref') {
+        setFileRefDragData(
+          e.dataTransfer,
+          parseFileRefContent(attachment.content) ?? attachment.preview,
+        );
+      } else {
+        if (attachment.mediaType === 'text/html') {
+          e.dataTransfer.setData('text/html', attachment.content);
+        }
+        e.dataTransfer.setData('text/plain', attachment.content);
+      }
+      // Overrides the 'copy' set inside setFileRefDragData; see handleImageDragStart.
+      e.dataTransfer.effectAllowed = 'copyMove';
+    },
+    [],
+  );
+
   // ─── Internal drag-and-drop (from within the sidebar) ────────────────────
   const handleInputDragEnter = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
@@ -294,8 +330,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (!isInternalDrag) return;
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-  }, [isInternalDrag]);
+    // A drag that starts from an input-box chip is a *move*: the source chip is
+    // removed on dragend when the drop is accepted, so dragging an attachment
+    // between panels relocates it rather than duplicating it. Everything else
+    // (a transcript card, a file-list row) stays a copy — the source survives.
+    // Only chips advertise the marker, so the two coexist without the browser
+    // cancelling a drop over an effectAllowed/dropEffect mismatch.
+    const types = Array.from(e.dataTransfer.types);
+    const isInputChip = types.includes(LUMO_INPUT_CHIP_MIME);
+    const hasImage = types.includes(LUMO_IMAGE_DRAG_MIME);
+    // An image can only be accepted by a vision panel; otherwise degrade to a
+    // copy so the source chip does not vanish without landing anywhere.
+    const degradeToCopy = hasImage && !isVisionModel;
+    e.dataTransfer.dropEffect = isInputChip && !degradeToCopy ? 'move' : 'copy';
+  }, [isInternalDrag, isVisionModel]);
+
+  /** Removes the source chip once a move-drop has been accepted by a target. */
+  const handleChipDragEnd = useCallback((e: React.DragEvent, onRemove: () => void) => {
+    if (e.dataTransfer.dropEffect === 'move') onRemove();
+  }, []);
  
   const handleInputDrop = useCallback((e: React.DragEvent) => {
     if (!isInternalDrag) return;
@@ -371,7 +424,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             >
               {/* Image attachments */}
               {images.map((img, i) => (
-                <div key={`img-${i}`} className="relative shrink-0 group">
+                <div
+                  key={`img-${i}`}
+                  className="relative shrink-0 group cursor-grab active:cursor-grabbing"
+                  draggable
+                  onDragStart={(e) => handleImageDragStart(e, img)}
+                  onDragEnd={(e) => handleChipDragEnd(e, () => removeImage(i))}
+                >
                   <img src={img} className="h-14 w-14 object-cover rounded-lg" alt="" />
                   <button
                     onClick={() => removeImage(i)}
@@ -385,8 +444,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               {textAttachments.map((attachment) => (
                 <div
                   key={attachment.id}
-                  className="relative shrink-0 group flex items-center gap-1.5 h-14 px-2.5 rounded-lg bg-muted border border-border max-w-[180px]"
+                  className="relative shrink-0 group flex items-center gap-1.5 h-14 px-2.5 rounded-lg bg-muted border border-border max-w-[180px] cursor-grab active:cursor-grabbing"
                   title={attachment.preview}
+                  draggable
+                  onDragStart={(e) => handleAttachmentDragStart(e, attachment)}
+                  onDragEnd={(e) =>
+                    handleChipDragEnd(e, () => removeTextAttachment(attachment.id))
+                  }
                 >
                   {attachment.kind === 'page-context' ? (
                     <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
