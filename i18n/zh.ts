@@ -168,8 +168,6 @@ export const zh: TranslationSchema = {
       visionBadge: '视觉',
       reasoningEffort: '思考强度',
       reasoningEffortDefault: '跟随提供商默认（不发送）',
-      reasoningEffortHint:
-        '该模型作答前投入多少思考。档位取自该提供商自身的枚举并按原样显示，因此切换提供商类型会改变可选项。第一项完全不发送此参数——非推理模型请保持此项；若请求开始报错也请调回，部分网关会直接拒绝该参数。',
       modelCount_one: '{{count}} 个模型',
       modelCount_other: '{{count}} 个模型',
       noModels: '暂无模型',
@@ -230,7 +228,7 @@ export const zh: TranslationSchema = {
       pasteThresholdCustom: '自定义',
       maxSteps: '工具步数上限',
       maxStepsDesc:
-        '单次回复最多可以连续调用多少次工具。选择「永不暂停」则由模型自己决定何时结束；需要打断时点停止按钮。',
+        '单次回复最多可以连续调用多少次工具。',
       maxStepsNever: '永不暂停',
       maxStepsCount: '{{steps}} 步',
       maxStepsCustom: '自定义',

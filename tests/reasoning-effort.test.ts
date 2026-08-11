@@ -325,7 +325,6 @@ describe('i18n', () => {
       for (const key of [
         'options.models.reasoningEffort',
         'options.models.reasoningEffortDefault',
-        'options.models.reasoningEffortHint',
       ]) {
         expect(typeof lookup(bundle, key), `${name}: ${key}`).toBe('string');
       }

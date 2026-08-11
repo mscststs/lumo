@@ -159,10 +159,7 @@ export function ModelDialog({
             )}
           </Field>
 
-          <Field
-            label={t('options.models.reasoningEffort')}
-            hint={t('options.models.reasoningEffortHint')}
-          >
+          <Field label={t('options.models.reasoningEffort')}>
             {({ id, 'aria-describedby': describedBy }) => {
               const selected = normalizeReasoningEffort(value.reasoningEffort);
               const offered = reasoningEffortsFor(providerType);
