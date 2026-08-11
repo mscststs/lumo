@@ -6,6 +6,7 @@ import { storage } from '@/store/storage';
 import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
 import { deriveConversationTitle } from '@/lib/conversation-title';
+import { serializeAttachmentForModel } from '@/lib/attachment-serialization';
 import { MAX_RETRIES, retryDelay } from '@/lib/retry-policy';
 import { resolveSystemPrompt } from '@/lib/system-prompt';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
@@ -583,9 +584,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         })),
         ...textAttachments.map((attachment) => ({
           type: 'text' as const,
-          text: attachment.mediaType === 'text/html'
-            ? `[HTML Content]\n${attachment.content}`
-            : attachment.content,
+          text: serializeAttachmentForModel(attachment),
           state: 'done' as const,
         })),
         ...(text ? [{ type: 'text' as const, text, state: 'done' as const }] : []),

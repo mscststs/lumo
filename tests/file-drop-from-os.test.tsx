@@ -202,7 +202,7 @@ describe('side panel receiving files from the OS', () => {
     // the options page — not as a text attachment holding the raw wrapper.
     expect(screen.getByText('notes.md')).toBeTruthy();
     expect(screen.getByText('sidebar.files.file')).toBeTruthy();
-    expect(screen.queryByText('[file: notes.md]')).toBeNull();
+    expect(screen.queryByText('[filename: notes.md]')).toBeNull();
   });
 
   it('still stores the file when no chat is open, just unattributed', async () => {

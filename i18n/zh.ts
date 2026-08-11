@@ -61,10 +61,10 @@ export const zh: TranslationSchema = {
         '阅读这个页面，把其中的结构化数据（表格、列表、商品/联系人/价格等字段）提取为 Markdown 表格。如果页面没有结构化数据，请直接说明。',
       explainPage:
         '阅读这个页面，用通俗的语言解释它是什么、用来做什么，就像面对第一次看到它的人一样。',
-      translateSelection: '把选中的文本翻译成中文，只返回译文。',
+      translateSelection: '把以上文本内容翻译成中文，只返回译文。',
       explainSelection:
-        '用通俗的语言解释选中的文本。如果其中包含术语、代码或引用，也一并说明。',
-      summarizeSelection: '简洁地总结选中的文本。',
+        '用通俗的语言解释以上文本内容。如果其中包含术语、代码或引用，也一并说明。',
+      summarizeSelection: '简洁地总结以上文本内容。',
       describeImage: '详细描述这张图片：它展示了什么、包含哪些文字、有什么值得注意的地方。',
       extractTextImage:
         '提取这张图片中所有可见的文字。保留阅读顺序和排版，只返回文字内容。',

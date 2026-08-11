@@ -114,8 +114,15 @@ export interface TextAttachment {
   kind?: 'text' | 'file-ref' | 'page-context';
   /** The content type: 'text/plain' or 'text/html' */
   mediaType: 'text/plain' | 'text/html';
-  /** The actual text/html content, or `[file: name]` for file-ref kind */
+  /** The actual text/html content, or `[filename: name]` for file-ref kind */
   content: string;
+  /**
+   * Optional text to send to the model instead of `content`. Lets an
+   * attachment keep a clean, human-readable `content` for the UI card while
+   * shipping a richer (markers, tool hints) payload to the model at
+   * serialisation time. See `lib/attachment-serialization.ts`.
+   */
+  modelText?: string;
   /** A short preview label (first N chars, or the file name for file-ref) */
   preview: string;
   /** Optional display label override (e.g. "File" for file references) */

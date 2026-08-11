@@ -452,7 +452,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
      * here rather than in `ChatInput`: the drag started in another document, so
      * this panel never saw a `dragstart` and `isInternalDrag` is false. The
      * custom MIME type survives the cross-document drag, so honour it before
-     * the text/HTML classification below turns `[file: name]` into plain text.
+     * the text/HTML classification below turns `[filename: name]` into plain text.
      */
     const droppedFileName = dataTransfer.getData(LUMO_FILE_REF_MIME);
     if (droppedFileName) {

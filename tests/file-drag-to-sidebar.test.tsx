@@ -7,7 +7,7 @@
  * side panel classifies a drag by whether *it* saw the `dragstart`: a drag from
  * the options tab did not, so it takes the external path alongside page drags,
  * where the payload used to be read as text/HTML only — the file reference would
- * have degraded into a plain `[file: name]` text chip. Both halves are asserted
+ * have degraded into a plain `[filename: name]` text chip. Both halves are asserted
  * against the real components: the payload the row writes, and what the panel
  * makes of it.
  */
@@ -151,7 +151,7 @@ describe('options file list as a drag source', () => {
 
     expect(dataTransfer.getData(LUMO_FILE_REF_MIME)).toBe(FILE_NAME);
     // For drop targets that know nothing about Lumo.
-    expect(dataTransfer.getData('text/plain')).toBe(`[file: ${FILE_NAME}]`);
+    expect(dataTransfer.getData('text/plain')).toBe(`[filename: ${FILE_NAME}]`);
     expect(dataTransfer.effectAllowed).toBe('copy');
   });
 
@@ -221,16 +221,16 @@ describe('side panel receiving a file dragged from another document', () => {
     // the options tab.
     const dataTransfer = fakeDataTransfer({
       [LUMO_FILE_REF_MIME]: FILE_NAME,
-      'text/plain': `[file: ${FILE_NAME}]`,
+      'text/plain': `[filename: ${FILE_NAME}]`,
     });
     await act(async () => {
       fireEvent.drop(screen.getByRole('textbox'), { dataTransfer });
     });
 
     // The chip shows the file name under a "file" label; a text attachment would
-    // instead show the raw `[file: ...]` wrapper.
+    // instead show the raw `[filename: ...]` wrapper.
     expect(screen.getByText(FILE_NAME)).toBeTruthy();
     expect(screen.getByText('sidebar.files.file')).toBeTruthy();
-    expect(screen.queryByText(`[file: ${FILE_NAME}]`)).toBeNull();
+    expect(screen.queryByText(`[filename: ${FILE_NAME}]`)).toBeNull();
   });
 });

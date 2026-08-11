@@ -60,10 +60,10 @@ export const en = {
       explainPage:
         'Read this page and explain what it is and what it is for, in plain language, as if to someone seeing it for the first time.',
       translateSelection:
-        'Translate the selected text into my language. Return only the translation.',
+        'Translate the text above into my language. Return only the translation.',
       explainSelection:
-        'Explain the selected text in plain language. If it contains jargon, code, or references, unpack those too.',
-      summarizeSelection: 'Summarize the selected text concisely.',
+        'Explain the text above in plain language. If it contains jargon, code, or references, unpack those too.',
+      summarizeSelection: 'Summarize the text above concisely.',
       describeImage:
         'Describe this image in detail: what it shows, any text it contains, and anything notable about it.',
       extractTextImage:

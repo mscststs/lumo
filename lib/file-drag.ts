@@ -4,7 +4,7 @@
  * page file manager.
  *
  * Each of those sites used to inline the same two `setData` calls, so the
- * `[file: name]` wording of the plain-text fallback (the form the chat input and
+ * `[filename: name]` wording of the plain-text fallback (the form the chat
  * the model both read a reference in) was re-spelled per call site and drifted.
  * Centralising it also keeps the fallback in step with `parseFileRefContent`,
  * which recovers the name when a chip is dragged back out.
@@ -14,12 +14,12 @@ import { LUMO_FILE_REF_MIME } from '@/lib/constants';
 
 /** Renders a file reference in the textual form used inside message content. */
 export function fileRefContent(fileName: string): string {
-  return `[file: ${fileName}]`;
+  return `[filename: ${fileName}]`;
 }
 
 /** Recovers the file name from `fileRefContent` output; null if not a reference. */
 export function parseFileRefContent(content: string): string | null {
-  return /^\[file:\s*(.+)\]$/.exec(content)?.[1] ?? null;
+  return /^\[filename:\s*(.+)\]$/.exec(content)?.[1] ?? null;
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildPageContextAttachment,
   formatPageContext,
+  formatPageContextForModel,
   isPageContextAttachment,
   type PageContext,
 } from '@/lib/page-context';
@@ -20,12 +21,24 @@ describe('formatPageContext', () => {
     expect(text).toContain('url: https://example.com/docs?a=1');
   });
 
-  it('tells the model to pass the tab id to the page tools', () => {
-    // This is the whole point of the attachment: without the calling convention
-    // spelled out, the model guesses a tabId and operates on the wrong tab.
+  it('stays clean for the UI card: no marker and no tool hint', () => {
+    // The `[referenced browser tab]` marker and the tool-calling hint are model
+    // only — they must not leak into the transcript's attachment card.
     const text = formatPageContext(CONTEXT);
+    expect(text).not.toContain('[referenced browser tab]');
+    expect(text).not.toContain('page_*');
+    expect(text).not.toContain('Use tabId');
+  });
+});
+
+describe('formatPageContextForModel', () => {
+  it('marks the referenced browser tab and keeps the tool calling convention', () => {
+    const text = formatPageContextForModel(CONTEXT);
+    expect(text).toContain('[referenced browser tab]');
+    expect(text).toContain('tabId: 42');
     expect(text).toMatch(/tabId 42/);
     expect(text).toContain('page_*');
+    expect(text).toContain('Use tabId');
   });
 });
 
@@ -37,6 +50,15 @@ describe('buildPageContextAttachment', () => {
     expect(attachment.label).toBe('Page');
     expect(attachment.mediaType).toBe('text/plain');
     expect(isPageContextAttachment(attachment)).toBe(true);
+  });
+
+  it('separates the clean content from the model-facing text', () => {
+    const attachment = buildPageContextAttachment('id-1', CONTEXT, 'Page');
+    // The card shows clean identity; the marker and hint are model only.
+    expect(attachment.content).toBe(formatPageContext(CONTEXT));
+    expect(attachment.content).not.toContain('[referenced browser tab]');
+    expect(attachment.modelText).toBe(formatPageContextForModel(CONTEXT));
+    expect(attachment.modelText).toContain('[referenced browser tab]');
   });
 
   it('previews the title, which is what fits a narrow sidebar chip', () => {
