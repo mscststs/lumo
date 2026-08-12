@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { highlightCode } from '@/lib/code-highlight';
+import { selectAllRootProps } from '@/lib/use-select-all-scope';
 
 interface CodeViewProps {
   content: string;
@@ -39,8 +39,15 @@ export function CodeView({ content, language }: CodeViewProps) {
   return (
     <div className="code-view h-full overflow-auto">
       <div className="flex text-sm font-mono min-w-fit">
-        {/* Line numbers */}
-        <div className="shrink-0 sticky left-0 py-4 px-2 text-right select-none border-r border-border bg-muted/30 z-10">
+        {/*
+          Line numbers. Presentational only: hidden from assistive tech and kept
+          outside the select-all root so "select all, copy" yields pastable source
+          rather than source interleaved with line numbers.
+        */}
+        <div
+          aria-hidden="true"
+          className="shrink-0 sticky left-0 py-4 px-2 text-right select-none border-r border-border bg-muted/30 z-10"
+        >
           {lines.map((_, i) => (
             <div key={i} className="text-xs text-muted-foreground leading-5 px-1">
               {i + 1}
@@ -48,8 +55,8 @@ export function CodeView({ content, language }: CodeViewProps) {
           ))}
         </div>
 
-        {/* Code content */}
-        <div className="flex-1 py-4 px-4">
+        {/* Code content — the select-all scope for this view. */}
+        <div className="flex-1 py-4 px-4" {...selectAllRootProps}>
           {html ? (
             <div className="leading-5" dangerouslySetInnerHTML={{ __html: html }} />
           ) : (

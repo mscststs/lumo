@@ -17,6 +17,7 @@ import { cjk } from '@streamdown/cjk';
 import { cn } from '@/lib/utils';
 import { ThemeInit } from '@/lib/theme';
 import { useEvent } from '@/lib/event-bus';
+import { selectAllRootProps, useSelectAllScope } from '@/lib/use-select-all-scope';
 import { CodeView } from './CodeView';
 import {
   fileStorage,
@@ -37,6 +38,9 @@ export default function App() {
   const [zoom, setZoom] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>('rendered');
   const [copied, setCopied] = useState(false);
+
+  // Ctrl/Cmd+A selects the previewed content only, never the toolbar or gutter.
+  useSelectAllScope();
 
   const fileName = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -180,7 +184,11 @@ export default function App() {
       <ThemeInit />
 
       {/* Top Toolbar - 32px height */}
-      <header className="h-8 shrink-0 flex items-center justify-between px-3 border-b border-border bg-card">
+      {/*
+        Chrome, not content: excluded from text selection so a drag-select or
+        select-all over the file never picks up its name and MIME type.
+      */}
+      <header className="h-8 shrink-0 flex items-center justify-between px-3 border-b border-border bg-card select-none">
         <div className="flex items-center gap-1 min-w-0">
           <span className="text-xs font-medium text-foreground truncate max-w-[300px]">
             {fileName || t('options.preview.title')}
@@ -323,7 +331,10 @@ function TextPreview({
       return <CodeView content={content} language="markdown" />;
     }
     return (
-      <div className="p-6 max-w-3xl mx-auto sd-message-response break-words">
+      <div
+        className="p-6 max-w-3xl mx-auto sd-message-response break-words"
+        {...selectAllRootProps}
+      >
         <Streamdown plugins={{ code, cjk }}>{content}</Streamdown>
       </div>
     );
@@ -345,7 +356,7 @@ function TextPreview({
 
   // Plain text / CSV / others
   return (
-    <div className="p-4">
+    <div className="p-4" {...selectAllRootProps}>
       <pre className="text-sm font-mono text-foreground whitespace-pre-wrap break-words">
         {content}
       </pre>
