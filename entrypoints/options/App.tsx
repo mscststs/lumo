@@ -5,6 +5,7 @@ import {
   Palette,
   Plug,
   MessageSquareCode,
+  Terminal,
   Bug,
   FolderOpen,
   Info,
@@ -14,6 +15,7 @@ import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
+import { CommandSettingsPage } from './CommandSettings';
 import { ChatDebugPage } from './ChatDebug';
 import { FileManager } from './FileManager';
 import { AboutPage } from './About';
@@ -21,6 +23,7 @@ import { AboutPage } from './About';
 const NAV_ITEMS = [
   'models',
   'systemPrompt',
+  'commands',
   'mcp',
   'files',
   'ui',
@@ -83,6 +86,12 @@ export default function App() {
             label={t('options.nav.systemPrompt')}
           />
           <NavButton
+            active={activeNav === 'commands'}
+            onClick={() => navigate('commands')}
+            icon={<Terminal className="h-4 w-4" />}
+            label={t('options.nav.commands')}
+          />
+          <NavButton
             active={activeNav === 'mcp'}
             onClick={() => navigate('mcp')}
             icon={<Plug className="h-4 w-4" />}
@@ -119,6 +128,7 @@ export default function App() {
       <main className="flex-1 overflow-auto scrollbar-lumo p-6">
         {activeNav === 'models' && <ModelSettings />}
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
+        {activeNav === 'commands' && <CommandSettingsPage />}
         {activeNav === 'mcp' && <McpSettings />}
         {activeNav === 'files' && <FileManager />}
         {activeNav === 'ui' && <UISettingsPage />}

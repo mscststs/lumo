@@ -121,11 +121,22 @@ export const en = {
       reference: 'Reference as attachment',
     },
   },
+  commands: {
+    builtin: {
+      new: 'Start a new conversation',
+      exit: 'Close the side panel',
+    },
+    badge: {
+      builtin: 'Built-in',
+      user: 'Custom',
+    },
+  },
   options: {
     title: 'Lumo Settings',
     nav: {
       models: 'Models',
       systemPrompt: 'System Prompt',
+      commands: 'Commands',
       ui: 'UI Settings',
       mcp: 'MCP Services',
       files: 'Files',
@@ -211,6 +222,34 @@ export const en = {
       reset: 'Restore default',
       revert: 'Discard changes',
       saved: 'Saved',
+    },
+    commands: {
+      title: 'Commands',
+      description: 'Shortcuts that start with /.',
+      enableCommands: 'Enable slash commands',
+      enableCommandsDesc:
+        'When off, typing / in the input does nothing and no command expands on send.',
+      builtinSection: 'Built-in',
+      userSection: 'Custom',
+      addCommand: 'Add command',
+      editCommand: 'Edit command',
+      name: 'Trigger',
+      nameHint: 'Letters, digits, hyphens and underscores. Typed after /.',
+      namePlaceholder: 'fy',
+      phrase: 'Expands to',
+      phraseHint: 'Replaces the trigger when you send. Text typed after it is kept.',
+      phrasePlaceholder: 'Translate this page',
+      emptyUser: 'No custom commands yet.',
+      enabled: 'Enabled',
+      deleteConfirm: 'Delete /{{name}}?',
+      conflictHint: 'Enabling this will turn off: {{names}}',
+      errors: {
+        nameRequired: 'Enter a trigger.',
+        nameWhitespace: 'Spaces are not allowed in a trigger.',
+        nameSlash: 'Do not include / — it is added automatically.',
+        nameTooLong: 'Keep the trigger under 32 characters.',
+        phraseRequired: 'Enter the text this command expands to.',
+      },
     },
     ui: {
       title: 'UI Settings',

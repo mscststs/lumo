@@ -98,6 +98,15 @@ export interface UISettings {
   maxSteps: number;
 }
 
+// Slash-command settings live in `lib/slash-commands.ts` and are re-exported
+// here so storage, the options page and the composer share one import path.
+export type {
+  BuiltinCommandAction,
+  CommandSettings,
+  UserCommand,
+  ResolvedCommand,
+} from '@/lib/slash-commands';
+
 /**
  * A text attachment dragged from external sources (web pages, etc.).
  * Can be plain text, HTML, or a file reference. Sent as a separate text content part.

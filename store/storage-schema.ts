@@ -38,6 +38,11 @@ import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
 import { normalizePasteThreshold, DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { normalizeMaxSteps, DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import {
+  DEFAULT_COMMAND_SETTINGS,
+  normalizeCommandSettings,
+  type CommandSettings,
+} from '@/lib/slash-commands';
+import {
   DEFAULT_PANEL_LAYOUT,
   normalizeOrder,
   type PanelLayout,
@@ -60,6 +65,8 @@ export interface StorageSchema {
   selectedModel: { providerId: string; modelId: string } | null;
   mcpSettings: McpSettings;
   systemPrompt: SystemPromptSettings;
+  /** Slash commands the composer recognises. See `lib/slash-commands.ts`. */
+  commandSettings: CommandSettings;
   /**
    * Bumped after every write to the conversation database.
    *
@@ -181,6 +188,15 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       ...raw,
       injectCurrentTime: raw.injectCurrentTime ?? true,
     }),
+  },
+  commandSettings: {
+    key: 'commandSettings',
+    defaultValue: DEFAULT_COMMAND_SETTINGS,
+    exportable: true,
+    // Imports and hand-edited configs are the common source of invalid names,
+    // missing ids and colliding enabled triggers — all repaired here so the
+    // options page and the composer never see a half-broken record.
+    normalize: (raw) => normalizeCommandSettings(raw),
   },
   mcpSettings: {
     key: 'mcpSettings',

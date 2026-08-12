@@ -16,6 +16,7 @@ import { classifyDroppedFile, importTextFiles } from '@/lib/file-import';
 import { buildPageContextAttachment } from '@/lib/page-context';
 import { createTextAttachment } from '@/lib/text-attachment';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
+import type { BuiltinCommandAction } from '@/lib/slash-commands';
 import type { TextAttachment, Conversation } from '@/types';
 import type { ContextMenuPendingData } from '@/lib/context-menu';
 
@@ -171,6 +172,36 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       void handleSend(input, images, textAttachments, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId);
     },
     [handleSend, getSelectedProvider, getSelectedModel, selectedProviderId, selectedModelId],
+  );
+
+  /**
+   * Built-in slash commands recognised by the composer.
+   *
+   * The input box only *names* the action — the targets (conversation, side
+   * panel document) live here. `/new` reuses the header's new-chat path so the
+   * two stay identical; `/exit` closes the side panel document itself.
+   */
+  const onCommand = useCallback(
+    (action: BuiltinCommandAction) => {
+      if (action === 'new-chat') {
+        onNewChat();
+        return;
+      }
+      if (action === 'close-panel') {
+        // Side panel documents may call `window.close()` (Chrome 116+). There
+        // is no `chrome.sidePanel.close`; falling through silently would leave
+        // the user staring at a panel that ignored `/exit`.
+        try {
+          window.close();
+        } catch (error) {
+          console.error('[Lumo] Failed to close the side panel:', error);
+        }
+      }
+    },
+    // onNewChat is recreated every render (it closes over handleNewChat); the
+    // body only needs a stable call site, which this provides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [handleNewChat],
   );
 
   /** Resolve a dragged or right-clicked image source (data URL or remote URL) into a data URL. */
@@ -605,6 +636,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isVisionModel={isVisionModel()}
         onSend={onSend}
         onStop={handleStop}
+        onCommand={onCommand}
         isInternalDrag={isInternalDrag}
         onInternalFileDrop={addFileReference}
         onInternalTextDrop={addInternalTextDrop}

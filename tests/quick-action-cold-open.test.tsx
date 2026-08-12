@@ -43,6 +43,7 @@ vi.mock('@/store/storage', () => ({
       return PROVIDERS;
     },
     getUISettings: async () => ({ language: 'en', theme: 'light', maxSplitPanels: 1, sendKey: 'enter' }),
+    getCommandSettings: async () => ({ enabled: true, userCommands: [], disabledBuiltins: [] }),
   },
 }));
 

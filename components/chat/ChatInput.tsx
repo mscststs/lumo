@@ -4,14 +4,29 @@ import { Send, Square, ImagePlus, X, FileText, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { SuggestionPopup } from '@/components/ui/suggestion-popup';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME, LUMO_INPUT_CHIP_MIME } from '@/lib/constants';
 import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
 import { createTextAttachment } from '@/lib/text-attachment';
 import { setFileRefDragData, parseFileRefContent } from '@/lib/file-drag';
+import type { ActiveTrigger } from '@/lib/input-trigger';
+import {
+  COMMAND_PREFIX,
+  builtinCommandDescriptionPath,
+  expandPhraseCommand,
+  filterCommands,
+  matchCommandInput,
+  type BuiltinCommandAction,
+} from '@/lib/slash-commands';
+import { useSuggestionMenu, type SuggestionOption } from '@/lib/use-suggestion-menu';
 import { storage } from '@/store/storage';
+import { useEnabledCommands } from '@/store/useCommands';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
+
+/** Slash commands open only at the very start of the draft. */
+const SLASH_TRIGGERS = [{ char: COMMAND_PREFIX, placement: 'input-start' as const }];
 
 /**
  * How tall the composer may grow before it scrolls instead, in lines.
@@ -49,6 +64,12 @@ interface ChatInputProps {
   isVisionModel: boolean;
   onSend: (input: string, images: string[], textAttachments: TextAttachment[]) => void;
   onStop: () => void;
+  /**
+   * Built-in slash command the composer recognised at send time.
+   * The panel owns the actual behaviour (new chat, close panel) because both
+   * targets live outside the input box.
+   */
+  onCommand?: (action: BuiltinCommandAction) => void;
   /** Whether the current drag originates from within the sidebar */
   isInternalDrag: boolean;
   onInternalFileDrop?: (fileName: string) => void;
@@ -58,11 +79,12 @@ interface ChatInputProps {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { isStreaming, isVisionModel, onSend, onStop, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
+  { isStreaming, isVisionModel, onSend, onStop, onCommand, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
   ref,
 ) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  const [caret, setCaret] = useState(0);
   const [images, setImages] = useState<string[]>([]);
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
   const [isInternalDragOver, setIsInternalDragOver] = useState(false);
@@ -70,6 +92,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commands = useEnabledCommands();
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -183,13 +206,94 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setTextAttachments((prev) => prev.filter((a) => a.id !== id));
   };
  
+  /**
+   * Resolves a leading slash command before the draft leaves the composer.
+   *
+   * - Phrase commands expand in place and continue as an ordinary send.
+   * - Built-in commands report their action to the panel and leave any trailing
+   *   text (and every attachment) in the box, so `/new hello` starts a new chat
+   *   with "hello" still ready to edit rather than silently dropping it.
+   */
   const handleSend = () => {
-    if ((!input.trim() && images.length === 0 && textAttachments.length === 0) || isStreaming) return;
-    onSend(input.trim(), images, textAttachments);
+    if (isStreaming) return;
+
+    // Commands are recognised only when the draft *starts* with the trigger —
+    // the same rule the picker uses, so send-time and the popup can never
+    // disagree about whether a `/` means something. Leading whitespace turns
+    // the slash into prose and the whole draft is sent verbatim.
+    const invocation = matchCommandInput(input, commands);
+
+    if (invocation?.command.kind === 'builtin') {
+      onCommand?.(invocation.command.action);
+      // Keep the rest of the draft (and every attachment) — only the trigger is
+      // consumed. `/exit` with trailing text still closes the panel; the text is
+      // moot either way, but preserving it costs nothing and keeps the rule one.
+      setInput(invocation.rest);
+      setCaret(invocation.rest.length);
+      return;
+    }
+
+    const text =
+      invocation?.command.kind === 'user'
+        ? expandPhraseCommand(invocation.command.phrase, invocation.rest)
+        : input.trim();
+
+    if (!text && images.length === 0 && textAttachments.length === 0) return;
+    onSend(text, images, textAttachments);
     setInput('');
+    setCaret(0);
     setImages([]);
     setTextAttachments([]);
   };
+
+  // ─── Slash-command suggestion menu ──────────────────────────────────────
+  const resolveSuggestions = useCallback(
+    (trigger: ActiveTrigger): SuggestionOption[] => {
+      if (trigger.char !== COMMAND_PREFIX) return [];
+      return filterCommands(commands, trigger.query).map((command) => ({
+        id: `${command.kind}:${command.id}`,
+        label: `${COMMAND_PREFIX}${command.name}`,
+        description:
+          command.kind === 'builtin'
+            ? t(builtinCommandDescriptionPath(command.id))
+            : command.phrase,
+        badge:
+          command.kind === 'builtin'
+            ? t('commands.badge.builtin')
+            : t('commands.badge.user'),
+        // Trailing space so the user can keep typing the rest of the message.
+        insertText: `${COMMAND_PREFIX}${command.name} `,
+      }));
+    },
+    [commands, t],
+  );
+
+  const applySuggestion = useCallback((next: { value: string; caret: number }) => {
+    setInput(next.value);
+    setCaret(next.caret);
+    // Programmatic value writes do not move the native caret; place it after
+    // React has committed the new value so the next keystroke lands correctly.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.caret, next.caret);
+    });
+  }, []);
+
+  const suggestions = useSuggestionMenu({
+    value: input,
+    caret,
+    triggers: SLASH_TRIGGERS,
+    resolve: resolveSuggestions,
+    onApply: applySuggestion,
+  });
+
+  const syncCaret = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    setCaret(el.selectionStart ?? 0);
+  }, []);
  
   /**
    * Send key behavior follows the `sendKey` UI setting:
@@ -210,6 +314,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
       return;
     }
+
+    // Suggestion navigation owns the shared keys while the menu is open, so
+    // bare Enter selects a candidate instead of sending the draft.
+    if (suggestions.onKeyDown(e)) return;
 
     if (e.key !== 'Enter') return;
 
@@ -404,15 +512,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       onDragOver={handleInputDragOver}
       onDrop={handleInputDrop}
     >
-      <div
-        className={`rounded-xl border-2 overflow-hidden transition-all duration-150 focus-within:border-chat-user/50 ${
-          isInternalDragOver
-            ? 'border-chat-user border-dashed bg-chat-user/15 shadow-[0_0_8px_0_var(--color-chat-user)/20] scale-[1.01]'
-            : isInternalDrag
-              ? 'border-chat-user/50 border-dashed bg-chat-user/5'
-              : 'border-border bg-muted/50 border'
-        }`}
-      >
+      {/*
+        Relative wrapper so the suggestion popup can sit above the composer
+        without being clipped by the composer's own `overflow-hidden` (which
+        rounds the attachment strip). The popup is a sibling of the chrome,
+        not a child of it.
+      */}
+      <div className="relative">
+        <SuggestionPopup
+          open={suggestions.open}
+          items={suggestions.items}
+          activeIndex={suggestions.activeIndex}
+          onHover={suggestions.setActiveIndex}
+          onSelect={suggestions.select}
+        />
+        <div
+          className={`rounded-xl border-2 overflow-hidden transition-all duration-150 focus-within:border-chat-user/50 ${
+            isInternalDragOver
+              ? 'border-chat-user border-dashed bg-chat-user/15 shadow-[0_0_8px_0_var(--color-chat-user)/20] scale-[1.01]'
+              : isInternalDrag
+                ? 'border-chat-user/50 border-dashed bg-chat-user/5'
+                : 'border-border bg-muted/50 border'
+          }`}
+        >
         {/* Attachment previews inside the input box */}
         <AnimatePresence>
           {hasAttachments && (
@@ -480,11 +602,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           <Textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setCaret(e.target.selectionStart ?? e.target.value.length);
+            }}
+            onSelect={syncCaret}
+            onClick={syncCaret}
+            onKeyUp={syncCaret}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={t('sidebar.placeholder')}
-            className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none placeholder:text-muted-foreground/60 scrollbar-lumo"
+            className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 scrollbar-lumo"
             style={{ maxHeight: MAX_INPUT_HEIGHT }}
             rows={1}
           />
@@ -527,6 +655,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               </Button>
             )}
           </div>
+        </div>
         </div>
       </div>
     </div>

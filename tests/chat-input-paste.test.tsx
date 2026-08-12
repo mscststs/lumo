@@ -22,6 +22,10 @@ vi.mock('@/store/storage', () => ({
   storage: { getUISettings: async () => settings },
 }));
 
+vi.mock('@/store/useCommands', () => ({
+  useEnabledCommands: () => [],
+}));
+
 vi.mock('@/store/useStorageWatch', () => ({
   useStorageWatch: () => {},
 }));

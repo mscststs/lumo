@@ -4,6 +4,7 @@ import type {
   SystemPromptSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
+import type { CommandSettings } from '@/lib/slash-commands';
 import { MAX_SLOT_ID, defaultOrder, type PanelLayout } from '@/lib/panel-order';
 import {
   STORAGE_FIELDS,
@@ -201,6 +202,14 @@ export const storage = {
   },
   async setSystemPrompt(settings: SystemPromptSettings): Promise<void> {
     await setField('systemPrompt', settings);
+  },
+
+  // ----- Slash Commands -----
+  async getCommandSettings(): Promise<CommandSettings> {
+    return getField('commandSettings');
+  },
+  async setCommandSettings(settings: CommandSettings): Promise<void> {
+    await setField('commandSettings', settings);
   },
 
   // ----- Export / Import (driven by registry) -----
