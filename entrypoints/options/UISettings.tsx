@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CornerDownLeft, Download, Upload } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { CornerDownLeft } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -119,49 +117,6 @@ export function UISettingsPage() {
     await storage.setUISettings({ ...settings, maxSteps: steps });
   };
 
-  const handleExport = async () => {
-    try {
-      const config = await storage.exportConfig();
-      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `lumo-config-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Export failed:', err);
-    }
-  };
-
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const config = JSON.parse(text);
-        await storage.importConfig(config);
-        // Reload settings
-        const settings = await storage.getUISettings();
-        setLanguage(settings.language);
-        setMaxSplitPanels(settings.maxSplitPanels ?? 1);
-        setSendKey(settings.sendKey ?? 'enter');
-        setPasteThreshold(settings.pasteThreshold);
-        setMaxSteps(settings.maxSteps);
-        await i18n.changeLanguage(settings.language);
-        await setTheme(settings.theme);
-        alert(t('options.ui.importSuccess'));
-      } catch {
-        alert(t('options.ui.importError'));
-      }
-    };
-    input.click();
-  };
-
   return (
     <div className="max-w-2xl">
       <SettingsHeader
@@ -248,21 +203,6 @@ export function UISettingsPage() {
             <MaxStepsField value={maxSteps} onChange={handleMaxStepsChange} />
           </SettingRow>
         </SettingsGroup>
-
-        {/* Import/Export */}
-        <div className="border-t border-border pt-6">
-          <Label className="text-sm">{t('options.ui.importExport')}</Label>
-          <div className="flex gap-3 mt-3">
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('options.ui.exportConfig')}
-            </Button>
-            <Button variant="outline" onClick={handleImport}>
-              <Upload className="h-4 w-4 mr-2" />
-              {t('options.ui.importConfig')}
-            </Button>
-          </div>
-        </div>
       </div>
     </div>
   );

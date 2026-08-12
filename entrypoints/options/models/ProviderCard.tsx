@@ -35,10 +35,11 @@ import { moveModelById } from './reorder';
  *
  * Two deliberate departures from the previous accordion:
  *
- * - **Open by default.** This is a configuration screen, so the models are the
- *   content, not a detail to drill into. Collapsing is still available for
- *   users with many providers, but the closed state now carries the model
- *   count and key status so it is not information-free.
+ * - **Collapsed by default.** With several providers configured, the closed
+ *   state keeps the list a scan-friendly index — each card still shows the
+ *   model count and key status, so no information is lost. Expanding is one
+ *   click away and the models (the actual content) stay out of the way until
+ *   someone is actually configuring them.
  * - **Actions in a menu.** Edit / reorder / delete previously sat as four
  *   always-visible icon buttons per card, competing with the provider name.
  *   Collapsed into one trigger, the card header reads as data again.
@@ -67,7 +68,7 @@ export function ProviderCard({
   onReorderModels: (models: ModelConfig[]) => void;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   /**

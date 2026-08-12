@@ -135,16 +135,20 @@ export const en = {
     title: 'Lumo Settings',
     nav: {
       models: 'Models',
-      systemPrompt: 'System Prompt',
+      systemPrompt: 'Prompt',
       commands: 'Commands',
-      ui: 'UI Settings',
-      mcp: 'MCP Services',
+      ui: 'Personalization',
+      mcp: 'MCP',
       files: 'Files',
-      chatDebug: 'Chat Debug',
+      chatDebug: 'Debug',
       about: 'About',
     },
+    navGroups: {
+      core: 'Models & Resources',
+      customization: 'Personalization & Input',
+    },
     models: {
-      title: 'Model Configuration',
+      title: 'Models',
       description: 'Configure AI model providers and models.',
       addProvider: 'Add Provider',
       editProvider: 'Edit Provider',
@@ -207,7 +211,7 @@ export const en = {
       },
     },
     systemPrompt: {
-      title: 'System Prompt',
+      title: 'Prompt',
       description:
         'Instructions sent ahead of every conversation. Use them to shape the assistant\u2019s role, tone and how it handles browser tools.',
       enabled: 'Enable system prompt',
@@ -255,7 +259,7 @@ export const en = {
       },
     },
     ui: {
-      title: 'UI Settings',
+      title: 'Personalization',
       description: 'Customize appearance and language preferences.',
       language: 'Language',
       theme: 'Theme',
@@ -281,15 +285,9 @@ export const en = {
       maxStepsNever: 'Never pause',
       maxStepsCount: '{{steps}} steps',
       maxStepsCustom: 'Custom',
-      importExport: 'Import / Export',
-      importConfig: 'Import Configuration',
-      exportConfig: 'Export Configuration',
-      importSuccess: 'Configuration imported successfully',
-      importError: 'Failed to import configuration',
-      exportSuccess: 'Configuration exported successfully',
     },
     chatDebug: {
-      title: 'Chat Debug',
+      title: 'Debug',
       description: 'Inspect the current conversation with full AI SDK interaction details.',
       noConversation: 'No active conversation. Start a chat in the sidebar to see debug info here.',
       panelSelect: 'Panel',
@@ -316,7 +314,7 @@ export const en = {
       refreshHint: 'Data syncs automatically from the active sidebar conversation.',
     },
     mcp: {
-      title: 'MCP Services',
+      title: 'MCP',
       description: 'Manage Model Context Protocol (MCP) servers that provide tools to the AI assistant.',
       servers: 'Servers',
       tools: 'Tools',
@@ -460,6 +458,13 @@ export const en = {
         clearFiles: 'Clear files',
         clearFilesConfirm:
           'Delete all {{count}} stored files? This cannot be undone, and files referenced by past conversations will no longer open.',
+      },
+      importExport: {
+        title: 'Import / Export Configuration',
+        exportConfig: 'Export Configuration',
+        importConfig: 'Import Configuration',
+        importSuccess: 'Configuration imported successfully',
+        importError: 'Failed to import configuration',
       },
     },
   },

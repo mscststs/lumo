@@ -32,6 +32,31 @@ const NAV_ITEMS = [
 ] as const;
 type NavItem = (typeof NAV_ITEMS)[number];
 
+const NAV_GROUPS: { titleKey?: string; items: NavItem[] }[] = [
+  {
+    titleKey: 'options.navGroups.core',
+    items: ['models', 'mcp', 'files'],
+  },
+  {
+    titleKey: 'options.navGroups.customization',
+    items: ['ui', 'systemPrompt', 'commands'],
+  },
+  {
+    items: ['chatDebug', 'about'],
+  },
+];
+
+const NAV_ICONS: Record<NavItem, React.ReactNode> = {
+  models: <Cpu className="h-4 w-4" />,
+  systemPrompt: <MessageSquareCode className="h-4 w-4" />,
+  commands: <Terminal className="h-4 w-4" />,
+  mcp: <Plug className="h-4 w-4" />,
+  files: <FolderOpen className="h-4 w-4" />,
+  ui: <Palette className="h-4 w-4" />,
+  chatDebug: <Bug className="h-4 w-4" />,
+  about: <Info className="h-4 w-4" />,
+};
+
 function isValidNav(hash: string): hash is NavItem {
   return (NAV_ITEMS as readonly string[]).includes(hash);
 }
@@ -72,55 +97,32 @@ export default function App() {
         <div className="p-4 border-b border-border">
           <h1 className="text-lg font-semibold text-foreground truncate">{t('options.title')}</h1>
         </div>
-        <div className="flex-1 p-2 space-y-1">
-          <NavButton
-            active={activeNav === 'models'}
-            onClick={() => navigate('models')}
-            icon={<Cpu className="h-4 w-4" />}
-            label={t('options.nav.models')}
-          />
-          <NavButton
-            active={activeNav === 'systemPrompt'}
-            onClick={() => navigate('systemPrompt')}
-            icon={<MessageSquareCode className="h-4 w-4" />}
-            label={t('options.nav.systemPrompt')}
-          />
-          <NavButton
-            active={activeNav === 'commands'}
-            onClick={() => navigate('commands')}
-            icon={<Terminal className="h-4 w-4" />}
-            label={t('options.nav.commands')}
-          />
-          <NavButton
-            active={activeNav === 'mcp'}
-            onClick={() => navigate('mcp')}
-            icon={<Plug className="h-4 w-4" />}
-            label={t('options.nav.mcp')}
-          />
-          <NavButton
-            active={activeNav === 'files'}
-            onClick={() => navigate('files')}
-            icon={<FolderOpen className="h-4 w-4" />}
-            label={t('options.nav.files')}
-          />
-          <NavButton
-            active={activeNav === 'ui'}
-            onClick={() => navigate('ui')}
-            icon={<Palette className="h-4 w-4" />}
-            label={t('options.nav.ui')}
-          />
-          <NavButton
-            active={activeNav === 'chatDebug'}
-            onClick={() => navigate('chatDebug')}
-            icon={<Bug className="h-4 w-4" />}
-            label={t('options.nav.chatDebug')}
-          />
-          <NavButton
-            active={activeNav === 'about'}
-            onClick={() => navigate('about')}
-            icon={<Info className="h-4 w-4" />}
-            label={t('options.nav.about')}
-          />
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-2">
+            {NAV_GROUPS.map((group, gi) => (
+              <div
+                key={group.titleKey ?? group.items[0]}
+                className={gi > 0 ? 'mt-3 pt-3 border-t border-border' : ''}
+              >
+                {group.titleKey && (
+                  <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground truncate select-none">
+                    {t(group.titleKey)}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {group.items.map((item) => (
+                    <NavButton
+                      key={item}
+                      active={activeNav === item}
+                      onClick={() => navigate(item)}
+                      icon={NAV_ICONS[item]}
+                      label={t(`options.nav.${item}`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </nav>
 
