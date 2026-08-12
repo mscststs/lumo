@@ -21,6 +21,7 @@ import {
   type UnifiedReasoningEffort,
 } from '@/lib/reasoning-effort';
 import { toError } from '@/lib/provider-error';
+import { repairToolCall } from '@/lib/tool-call-repair';
 import { mcpRegistry } from '@/lib/mcp';
 import { DEFAULT_MAX_STEPS, stepAllowed } from '@/lib/max-steps';
 
@@ -563,7 +564,12 @@ export async function runAgentLoop({
       ...(reasoning ? { reasoning } : {}),
       // A single step per iteration — this loop drives continuation so it can
       // strip/inject images between steps.
-      ...(hasTools ? { tools, stopWhen: isStepCount(1) } : {}),
+      //
+      // `repairToolCall` recovers arguments a gateway mangled in transit (see
+      // `lib/tool-call-repair.ts`). Without it the SDK turns such a call into a
+      // `tool-error`, which spends one of this loop's steps on a call the model
+      // meant correctly.
+      ...(hasTools ? { tools, stopWhen: isStepCount(1), repairToolCall } : {}),
     });
 
     // `textStream` would drop every tool/reasoning chunk, so consume the full
