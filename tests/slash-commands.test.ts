@@ -54,6 +54,7 @@ describe('resolveEnabledCommands', () => {
   it('returns nothing when the master switch is off', () => {
     const settings: CommandSettings = {
       enabled: false,
+      applyTiming: 'send',
       disabledBuiltins: [],
       userCommands: [user({ name: 'fy' })],
     };
@@ -63,6 +64,7 @@ describe('resolveEnabledCommands', () => {
   it('honours disabledBuiltins and skips disabled user commands', () => {
     const settings: CommandSettings = {
       enabled: true,
+      applyTiming: 'send',
       disabledBuiltins: ['exit'],
       userCommands: [user({ name: 'fy' }), user({ name: 'off', enabled: false })],
     };
@@ -73,6 +75,7 @@ describe('resolveEnabledCommands', () => {
   it('drops a colliding user command in favour of the built-in already listed', () => {
     const settings: CommandSettings = {
       enabled: true,
+      applyTiming: 'send',
       disabledBuiltins: [],
       userCommands: [user({ name: 'new', phrase: 'should not win' })],
     };
@@ -123,6 +126,7 @@ describe('enabled-name uniqueness', () => {
 describe('match + expand', () => {
   const commands = resolveEnabledCommands({
     enabled: true,
+    applyTiming: 'send',
     disabledBuiltins: [],
     userCommands: [user({ name: 'fy', phrase: '翻译此页面' })],
   });
@@ -158,6 +162,7 @@ describe('match + expand', () => {
   it('filters by prefix then infix', () => {
     const list = resolveEnabledCommands({
       enabled: true,
+      applyTiming: 'send',
       disabledBuiltins: [],
       userCommands: [
         user({ name: 'note' }),
@@ -195,6 +200,12 @@ describe('normalizeCommandSettings', () => {
     });
     expect(normalized.userCommands[0]?.id).toBeTruthy();
     expect(normalized.userCommands[0]?.enabled).toBe(true);
+  });
+
+  it('defaults apply timing to send and coerces stray values', () => {
+    expect(normalizeCommandSettings({}).applyTiming).toBe('send');
+    expect(normalizeCommandSettings({ applyTiming: 'select' }).applyTiming).toBe('select');
+    expect(normalizeCommandSettings({ applyTiming: 'immediately' }).applyTiming).toBe('send');
   });
 
   it('createUserCommand returns a usable blank', () => {

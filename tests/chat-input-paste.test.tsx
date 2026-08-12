@@ -24,6 +24,11 @@ vi.mock('@/store/storage', () => ({
 
 vi.mock('@/store/useCommands', () => ({
   useEnabledCommands: () => [],
+  useCommandSettings: () => ({
+    settings: { enabled: true, applyTiming: 'send', userCommands: [], disabledBuiltins: [] },
+    isLoaded: true,
+    setSettings: async () => {},
+  }),
 }));
 
 vi.mock('@/store/useStorageWatch', () => ({

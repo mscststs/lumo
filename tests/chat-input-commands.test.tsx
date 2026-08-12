@@ -61,6 +61,7 @@ function typeValue(textarea: HTMLTextAreaElement, value: string) {
 beforeEach(() => {
   commandSettings = {
     enabled: true,
+    applyTiming: 'send',
     disabledBuiltins: [],
     userCommands: [
       { id: 'fy', name: 'fy', phrase: '翻译此页面', enabled: true },
@@ -185,7 +186,12 @@ describe('send-time resolution', () => {
   });
 
   it('does nothing at all when the master switch is off', async () => {
-    commandSettings = { enabled: false, disabledBuiltins: [], userCommands: [] };
+    commandSettings = {
+      enabled: false,
+      applyTiming: 'send',
+      disabledBuiltins: [],
+      userCommands: [],
+    };
     const onSend = vi.fn();
     const onCommand = vi.fn();
     const { textarea, container } = await renderInput({ onSend, onCommand });
@@ -201,5 +207,77 @@ describe('send-time resolution', () => {
       expect(onSend).toHaveBeenCalledWith('/', [], []);
     });
     expect(onCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe('select timing', () => {
+  beforeEach(() => {
+    commandSettings = {
+      enabled: true,
+      applyTiming: 'select',
+      disabledBuiltins: [],
+      userCommands: [
+        { id: 'fy', name: 'fy', phrase: '翻译此页面', enabled: true },
+      ],
+    };
+  });
+
+  it('runs a built-in action the moment the row is picked', async () => {
+    const onCommand = vi.fn();
+    const onSend = vi.fn();
+    const { textarea } = await renderInput({ onCommand, onSend });
+    typeValue(textarea, '/n');
+
+    await waitFor(() => expect(textarea.value).toBe('/n'));
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledWith('new-chat');
+    });
+    // Nothing was sent — the action consumed the row.
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('');
+  });
+
+  it('keeps text after the trigger when the built-in acts', async () => {
+    const onCommand = vi.fn();
+    const { textarea } = await renderInput({ onCommand });
+    // A space after the trigger closes the picker, so Enter travels the send
+    // path — which must still resolve the built-in and keep the trailing text.
+    typeValue(textarea, '/new keep me');
+
+    await waitFor(() => expect(textarea.value).toBe('/new keep me'));
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledWith('new-chat');
+    });
+    expect(textarea.value).toBe('keep me');
+  });
+
+  it('expands a phrase command in place when picked', async () => {
+    const onSend = vi.fn();
+    const { textarea } = await renderInput({ onSend });
+    // Caret sits right after the trigger, so the picker is open and Enter
+    // selects — which expands the phrase immediately instead of completing
+    // the trigger.
+    typeValue(textarea, '/fy');
+
+    await waitFor(() => expect(textarea.value).toBe('/fy'));
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(textarea.value).toBe('翻译此页面'));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('still expands through the send path once the picker is closed', async () => {
+    const onSend = vi.fn();
+    const { textarea } = await renderInput({ onSend });
+    typeValue(textarea, '/fy 这一段');
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('翻译此页面 这一段', [], []);
+    });
   });
 });

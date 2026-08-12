@@ -85,6 +85,15 @@ export interface UserCommand {
   enabled: boolean;
 }
 
+/**
+ * When a command's effect happens.
+ * - `'send'`: selecting a candidate only completes the trigger; the command
+ *   runs when the draft is sent.
+ * - `'select'`: selecting a candidate runs it immediately — built-ins act
+ *   (new chat, close panel), custom commands expand into the input.
+ */
+export type CommandApplyTiming = 'send' | 'select';
+
 export interface CommandSettings {
   /**
    * Master switch. When off, no command is recognised: the picker never opens
@@ -92,6 +101,8 @@ export interface CommandSettings {
    * can arrange commands while parked.
    */
   enabled: boolean;
+  /** When a picked command takes effect. Defaults to `'send'`. */
+  applyTiming: CommandApplyTiming;
   /** User-authored phrase commands, in the order the options page shows them. */
   userCommands: UserCommand[];
   /**
@@ -106,6 +117,7 @@ export interface CommandSettings {
 
 export const DEFAULT_COMMAND_SETTINGS: CommandSettings = {
   enabled: true,
+  applyTiming: 'send',
   userCommands: [],
   disabledBuiltins: [],
 };
@@ -481,5 +493,10 @@ export function normalizeCommandSettings(raw: unknown): CommandSettings {
     ),
   ];
 
-  return { enabled: source.enabled !== false, userCommands, disabledBuiltins };
+  return {
+    enabled: source.enabled !== false,
+    applyTiming: source.applyTiming === 'select' ? 'select' : 'send',
+    userCommands,
+    disabledBuiltins,
+  };
 }

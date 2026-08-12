@@ -21,7 +21,7 @@ import {
 } from '@/lib/slash-commands';
 import { useSuggestionMenu, type SuggestionOption } from '@/lib/use-suggestion-menu';
 import { storage } from '@/store/storage';
-import { useEnabledCommands } from '@/store/useCommands';
+import { useEnabledCommands, useCommandSettings } from '@/store/useCommands';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
 
@@ -93,6 +93,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commands = useEnabledCommands();
+  const { settings: commandSettings } = useCommandSettings();
+  const applyTiming = commandSettings.applyTiming;
+  // `onCommand` is summoned from inside `resolveSuggestions`' `apply` closures
+  // (select-timing), which outlive the render that created them, so it is read
+  // through a ref rather than captured.
+  const onCommandRef = useRef(onCommand);
+  onCommandRef.current = onCommand;
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -250,22 +257,51 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const resolveSuggestions = useCallback(
     (trigger: ActiveTrigger): SuggestionOption[] => {
       if (trigger.char !== COMMAND_PREFIX) return [];
-      return filterCommands(commands, trigger.query).map((command) => ({
-        id: `${command.kind}:${command.id}`,
-        label: `${COMMAND_PREFIX}${command.name}`,
-        description:
-          command.kind === 'builtin'
-            ? t(builtinCommandDescriptionPath(command.id))
-            : command.phrase,
-        badge:
-          command.kind === 'builtin'
-            ? t('commands.badge.builtin')
-            : t('commands.badge.user'),
-        // Trailing space so the user can keep typing the rest of the message.
-        insertText: `${COMMAND_PREFIX}${command.name} `,
-      }));
+      return filterCommands(commands, trigger.query).map((command) => {
+        const base = {
+          id: `${command.kind}:${command.id}`,
+          label: `${COMMAND_PREFIX}${command.name}`,
+          description:
+            command.kind === 'builtin'
+              ? t(builtinCommandDescriptionPath(command.id))
+              : command.phrase,
+          badge:
+            command.kind === 'builtin'
+              ? t('commands.badge.builtin')
+              : t('commands.badge.user'),
+        };
+
+        // 'select' timing: picking the row runs the command right away. The
+        // built-in acts immediately; the phrase command expands in place,
+        // keeping whatever the user typed after the trigger. The `apply`
+        // closure receives the live value because the query is not enough to
+        // know the trailing text at resolve time.
+        if (applyTiming === 'select') {
+          return {
+            ...base,
+            insertText: '',
+            apply: (value, active) => {
+              const rest = value.slice(active.end);
+              if (command.kind === 'builtin') {
+                onCommandRef.current?.(command.action);
+                return { value: rest, caret: rest.length };
+              }
+              const text = expandPhraseCommand(command.phrase, rest);
+              return { value: text, caret: text.length };
+            },
+          };
+        }
+
+        // 'send' timing: the row only completes the trigger; the command is
+        // resolved when the draft is sent.
+        return {
+          ...base,
+          // Trailing space so the user can keep typing the rest of the message.
+          insertText: `${COMMAND_PREFIX}${command.name} `,
+        };
+      });
     },
-    [commands, t],
+    [commands, t, applyTiming],
   );
 
   const applySuggestion = useCallback((next: { value: string; caret: number }) => {

@@ -229,6 +229,9 @@ export const en = {
       enableCommands: 'Enable slash commands',
       enableCommandsDesc:
         'When off, typing / in the input does nothing and no command expands on send.',
+      applyTiming: 'Trigger timing',
+      applyTimingSend: 'On send',
+      applyTimingSelect: 'On selection',
       builtinSection: 'Built-in',
       userSection: 'Custom',
       addCommand: 'Add command',

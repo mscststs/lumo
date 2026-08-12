@@ -3,6 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, Pencil, Plus, Terminal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDeleteBar } from '@/entrypoints/options/models/ConfirmDeleteBar';
 import { SettingsHeader } from '@/entrypoints/options/components/SettingsHeader';
@@ -49,6 +56,13 @@ export function CommandSettingsPage() {
 
   const handleToggleEnabled = async (enabled: boolean) => {
     await setSettings({ ...settings, enabled });
+  };
+
+  const handleApplyTimingChange = async (value: string) => {
+    await setSettings({
+      ...settings,
+      applyTiming: value === 'select' ? 'select' : 'send',
+    });
   };
 
   const handleToggleBuiltin = async (id: string, enabled: boolean) => {
@@ -112,6 +126,27 @@ export function CommandSettingsPage() {
           className="mt-0.5 shrink-0"
           aria-label={t('options.commands.enableCommands')}
         />
+      </div>
+
+      {/* When a picked command takes effect. No description, so the label and
+          the control sit on one line, vertically centred — same rule as
+          `SettingRow` on the other options pages. */}
+      <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <Label className="text-sm">{t('options.commands.applyTiming')}</Label>
+        </div>
+        <Select
+          value={settings.applyTiming}
+          onValueChange={handleApplyTimingChange}
+        >
+          <SelectTrigger className="w-40" aria-label={t('options.commands.applyTiming')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="send">{t('options.commands.applyTimingSend')}</SelectItem>
+            <SelectItem value="select">{t('options.commands.applyTimingSelect')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Built-in commands — same title treatment as the MCP built-in list. */}

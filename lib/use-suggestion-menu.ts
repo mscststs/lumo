@@ -29,6 +29,13 @@ export interface SuggestionOption extends SuggestionItem {
    * `/new ` (trailing space ready for the rest of the message).
    */
   insertText: string;
+  /**
+   * Host-supplied selection behaviour. When present it replaces the default
+   * token-replacement: it receives the live value and the active trigger and
+   * either returns the replacement to commit, or `null` when it handled the
+   * selection itself (e.g. ran a command action with no text to write).
+   */
+  apply?: (value: string, trigger: ActiveTrigger) => { value: string; caret: number } | null;
 }
 
 export interface UseSuggestionMenuOptions {
@@ -118,6 +125,12 @@ export function useSuggestionMenu({
       const item = items[index];
       if (!item) return;
       dismissedKeyRef.current = null;
+      if (item.apply) {
+        const result = item.apply(value, trigger);
+        if (result === null) return;
+        onApply(result);
+        return;
+      }
       onApply(replaceTriggerToken(value, trigger, item.insertText));
     },
     [trigger, items, onApply, value],
