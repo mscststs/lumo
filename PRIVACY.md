@@ -2,8 +2,6 @@
 
 **Lumo — AI-Powered Browser Sidebar Assistant**
 
-*Last updated: 2025-07-11*
-
 ## Overview
 
 Lumo is an open-source Chrome extension that provides an AI-powered sidebar assistant within your browser. This privacy policy describes how Lumo handles (or does not handle) user data.
