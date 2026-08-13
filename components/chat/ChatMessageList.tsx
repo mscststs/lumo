@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -38,6 +39,39 @@ export function ChatMessageList({
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
 
   const persisted = currentConversation?.messages ?? [];
+
+  // ─── Auto-scroll to bottom when the user sends a new message ────────────
+  // When the user is scrolled up reviewing history and then sends a message,
+  // `use-stick-to-bottom` correctly does NOT auto-follow (it respects the
+  // scroll position). But the user expectation after sending is to see their
+  // new message and the incoming reply, so we force-scroll on:
+  //   1. A new user message appearing (last message switches to role 'user')
+  //   2. Streaming starts (isStreaming flips true → assistant turn begins)
+  const prevMessageCountRef = useRef(persisted.length);
+  const prevIsStreamingRef = useRef(isStreaming);
+
+  useEffect(() => {
+    const prevCount = prevMessageCountRef.current;
+    prevMessageCountRef.current = persisted.length;
+
+    // A new user message was appended
+    if (persisted.length > prevCount) {
+      const lastMsg = persisted[persisted.length - 1];
+      if (lastMsg?.role === 'user') {
+        scrollToBottom();
+      }
+    }
+  }, [persisted.length, scrollToBottom]);
+
+  useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    prevIsStreamingRef.current = isStreaming;
+
+    // Streaming just started — scroll so the user sees the thinking indicator
+    if (isStreaming && !wasStreaming) {
+      scrollToBottom();
+    }
+  }, [isStreaming, scrollToBottom]);
   // The streamed turn is persisted under the id it streamed under, so once the
   // conversation contains it the live copy must step aside — otherwise the reply
   // would briefly appear twice.
