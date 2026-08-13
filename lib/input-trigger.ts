@@ -23,7 +23,7 @@
  * selecting it replaces the whole token rather than leaving a trailing `w`.
  */
 
-export type TriggerPlacement = 'input-start' | 'word-start';
+export type TriggerPlacement = 'input-start' | 'word-start' | 'anywhere';
 
 export interface TriggerSpec {
   /** The character that opens the menu (`/`, `@`, …). */
@@ -53,6 +53,10 @@ function isBoundary(char: string | undefined): boolean {
  * Walks left from the caret to the previous word edge, checks that the first
  * character there is a registered trigger in a legal placement, then walks right
  * to the next word edge so the whole token is claimed for replacement.
+ *
+ * For `anywhere` placement, the walk left stops as soon as it hits the trigger
+ * character — so `hello@world` with the caret after `world` finds the `@`
+ * regardless of what precedes it.
  */
 export function findActiveTrigger(
   value: string,
@@ -63,9 +67,22 @@ export function findActiveTrigger(
 
   const clamped = Math.max(0, Math.min(caret, value.length));
 
-  // Walk left to the start of the current word.
+  // Collect trigger chars for fast lookup during left-walk.
+  const anywhereTriggers = triggers.filter((t) => t.placement === 'anywhere');
+  const anywhereChars = new Set(anywhereTriggers.map((t) => t.char));
+
+  // Walk left to the start of the current word, but stop early if we hit an
+  // `anywhere` trigger character — that character IS the start of the token.
   let start = clamped;
-  while (start > 0 && !isBoundary(value[start - 1])) start -= 1;
+  while (start > 0 && !isBoundary(value[start - 1])) {
+    if (anywhereChars.has(value[start - 1]!)) {
+      // The character just before `start` is an `anywhere` trigger. It starts
+      // the token, so include it by decrementing once more.
+      start -= 1;
+      break;
+    }
+    start -= 1;
+  }
 
   const triggerChar = value[start];
   if (triggerChar === undefined) return null;
@@ -75,12 +92,10 @@ export function findActiveTrigger(
 
   if (spec.placement === 'input-start') {
     if (start !== 0) return null;
-  } else if (!isBoundary(value[start - 1])) {
-    // `word-start` with a non-boundary behind the trigger is unreachable via the
-    // left-walk above, but the check documents the rule and guards against a
-    // future rewrite that starts the search differently.
-    return null;
+  } else if (spec.placement === 'word-start') {
+    if (!isBoundary(value[start - 1])) return null;
   }
+  // `anywhere`: no placement constraint — the trigger is valid at any position.
 
   // Walk right to the end of the word so a mid-token caret still claims it.
   let end = clamped;

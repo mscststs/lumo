@@ -5,6 +5,7 @@ import type {
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
 import type { CommandSettings } from '@/lib/slash-commands';
+import type { MentionSettings } from '@/lib/mention-commands';
 import { MAX_SLOT_ID, defaultOrder, type PanelLayout } from '@/lib/panel-order';
 import {
   STORAGE_FIELDS,
@@ -210,6 +211,14 @@ export const storage = {
   },
   async setCommandSettings(settings: CommandSettings): Promise<void> {
     await setField('commandSettings', settings);
+  },
+
+  // ----- Mentions -----
+  async getMentionSettings(): Promise<MentionSettings> {
+    return getField('mentionSettings');
+  },
+  async setMentionSettings(settings: MentionSettings): Promise<void> {
+    await setField('mentionSettings', settings);
   },
 
   // ----- Export / Import (driven by registry) -----

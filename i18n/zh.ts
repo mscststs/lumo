@@ -128,12 +128,23 @@ export const zh: TranslationSchema = {
       user: '自定义',
     },
   },
+  mentions: {
+    badge: {
+      tab: '标签页',
+      file: '文件',
+    },
+    label: {
+      tab: '页面',
+      file: '文件',
+    },
+  },
   options: {
     title: 'Lumo 设置',
     nav: {
       models: '模型',
       systemPrompt: '提示词',
       commands: '命令',
+      mentions: '引用',
       ui: '个性化',
       mcp: 'MCP',
       files: '文件',
@@ -249,6 +260,18 @@ export const zh: TranslationSchema = {
         nameTooLong: '触发词请控制在 32 个字符以内。',
         phraseRequired: '请输入该命令展开后的文本。',
       },
+    },
+    mentions: {
+      title: '引用',
+      description: '使用 @ 引用浏览器标签页和文件。',
+      enableMentions: '启用 @ 引用',
+      enableMentionsDesc:
+        '关闭后，在输入框中输入 @ 不会触发引用选择器。',
+      sourcesSection: '引用来源',
+      tabs: '浏览器标签页',
+      tabsDesc: '将打开的标签页作为页面上下文附件引用。',
+      files: '文件',
+      filesDesc: '将存储的文件作为文件附件引用。',
     },
     ui: {
       title: '个性化',

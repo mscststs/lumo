@@ -43,6 +43,11 @@ import {
   type CommandSettings,
 } from '@/lib/slash-commands';
 import {
+  DEFAULT_MENTION_SETTINGS,
+  normalizeMentionSettings,
+  type MentionSettings,
+} from '@/lib/mention-commands';
+import {
   DEFAULT_PANEL_LAYOUT,
   normalizeOrder,
   type PanelLayout,
@@ -67,6 +72,8 @@ export interface StorageSchema {
   systemPrompt: SystemPromptSettings;
   /** Slash commands the composer recognises. See `lib/slash-commands.ts`. */
   commandSettings: CommandSettings;
+  /** @ mention settings. See `lib/mention-commands.ts`. */
+  mentionSettings: MentionSettings;
   /**
    * Bumped after every write to the conversation database.
    *
@@ -197,6 +204,12 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     // missing ids and colliding enabled triggers — all repaired here so the
     // options page and the composer never see a half-broken record.
     normalize: (raw) => normalizeCommandSettings(raw),
+  },
+  mentionSettings: {
+    key: 'mentionSettings',
+    defaultValue: DEFAULT_MENTION_SETTINGS,
+    exportable: true,
+    normalize: (raw) => normalizeMentionSettings(raw),
   },
   mcpSettings: {
     key: 'mcpSettings',

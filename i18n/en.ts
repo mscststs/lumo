@@ -131,12 +131,23 @@ export const en = {
       user: 'Custom',
     },
   },
+  mentions: {
+    badge: {
+      tab: 'Tab',
+      file: 'File',
+    },
+    label: {
+      tab: 'Page',
+      file: 'File',
+    },
+  },
   options: {
     title: 'Lumo Settings',
     nav: {
       models: 'Models',
       systemPrompt: 'Prompt',
       commands: 'Commands',
+      mentions: 'Mentions',
       ui: 'Personalization',
       mcp: 'MCP',
       files: 'Files',
@@ -257,6 +268,18 @@ export const en = {
         nameTooLong: 'Keep the trigger under 32 characters.',
         phraseRequired: 'Enter the text this command expands to.',
       },
+    },
+    mentions: {
+      title: 'Mentions',
+      description: 'Reference browser tabs and files with @.',
+      enableMentions: 'Enable @ mentions',
+      enableMentionsDesc:
+        'When off, typing @ in the input does nothing and no mention picker appears.',
+      sourcesSection: 'Sources',
+      tabs: 'Browser tabs',
+      tabsDesc: 'Reference open tabs as page context attachments.',
+      files: 'Files',
+      filesDesc: 'Reference stored files as file attachments.',
     },
     ui: {
       title: 'Personalization',

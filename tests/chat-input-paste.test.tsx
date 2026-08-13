@@ -19,7 +19,10 @@ vi.mock('react-i18next', () => ({
 const settings = { pasteThreshold: 500, sendKey: 'enter' } as UISettings;
 
 vi.mock('@/store/storage', () => ({
-  storage: { getUISettings: async () => settings },
+  storage: {
+    getUISettings: async () => settings,
+    getMentionSettings: async () => ({ enabled: true, tabsEnabled: true, filesEnabled: true }),
+  },
 }));
 
 vi.mock('@/store/useCommands', () => ({

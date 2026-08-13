@@ -23,6 +23,7 @@ vi.mock('@/store/storage', () => ({
   storage: {
     getUISettings: async () => uiSettings,
     getCommandSettings: async () => commandSettings,
+    getMentionSettings: async () => ({ enabled: true, tabsEnabled: true, filesEnabled: true }),
   },
 }));
 

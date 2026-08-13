@@ -6,6 +6,7 @@ import {
   Plug,
   MessageSquareCode,
   Terminal,
+  AtSign,
   Bug,
   FolderOpen,
   Info,
@@ -16,6 +17,7 @@ import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
 import { CommandSettingsPage } from './CommandSettings';
+import { MentionSettingsPage } from './MentionSettings';
 import { ChatDebugPage } from './ChatDebug';
 import { FileManager } from './FileManager';
 import { AboutPage } from './About';
@@ -24,6 +26,7 @@ const NAV_ITEMS = [
   'models',
   'systemPrompt',
   'commands',
+  'mentions',
   'mcp',
   'files',
   'ui',
@@ -39,7 +42,7 @@ const NAV_GROUPS: { titleKey?: string; items: NavItem[] }[] = [
   },
   {
     titleKey: 'options.navGroups.customization',
-    items: ['ui', 'systemPrompt', 'commands'],
+    items: ['ui', 'systemPrompt', 'commands', 'mentions'],
   },
   {
     items: ['chatDebug', 'about'],
@@ -50,6 +53,7 @@ const NAV_ICONS: Record<NavItem, React.ReactNode> = {
   models: <Cpu className="h-4 w-4" />,
   systemPrompt: <MessageSquareCode className="h-4 w-4" />,
   commands: <Terminal className="h-4 w-4" />,
+  mentions: <AtSign className="h-4 w-4" />,
   mcp: <Plug className="h-4 w-4" />,
   files: <FolderOpen className="h-4 w-4" />,
   ui: <Palette className="h-4 w-4" />,
@@ -131,6 +135,7 @@ export default function App() {
         {activeNav === 'models' && <ModelSettings />}
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
         {activeNav === 'commands' && <CommandSettingsPage />}
+        {activeNav === 'mentions' && <MentionSettingsPage />}
         {activeNav === 'mcp' && <McpSettings />}
         {activeNav === 'files' && <FileManager />}
         {activeNav === 'ui' && <UISettingsPage />}

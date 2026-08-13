@@ -107,6 +107,9 @@ export type {
   ResolvedCommand,
 } from '@/lib/slash-commands';
 
+// Mention settings re-exported for the same reason.
+export type { MentionSettings } from '@/lib/mention-commands';
+
 /**
  * A text attachment dragged from external sources (web pages, etc.).
  * Can be plain text, HTML, or a file reference. Sent as a separate text content part.

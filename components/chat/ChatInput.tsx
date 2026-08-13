@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, Square, ImagePlus, X, FileText, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,7 +10,7 @@ import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME, LUMO_IN
 import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
 import { createTextAttachment } from '@/lib/text-attachment';
 import { setFileRefDragData, parseFileRefContent } from '@/lib/file-drag';
-import type { ActiveTrigger } from '@/lib/input-trigger';
+import { findActiveTrigger, type ActiveTrigger } from '@/lib/input-trigger';
 import {
   COMMAND_PREFIX,
   builtinCommandDescriptionPath,
@@ -19,14 +19,19 @@ import {
   matchCommandInput,
   type BuiltinCommandAction,
 } from '@/lib/slash-commands';
+import { MENTION_PREFIX } from '@/lib/mention-commands';
 import { useSuggestionMenu, type SuggestionOption } from '@/lib/use-suggestion-menu';
+import { useMentionResolver } from '@/lib/use-mention-resolver';
 import { storage } from '@/store/storage';
 import { useEnabledCommands, useCommandSettings } from '@/store/useCommands';
+import { useMentionSettings } from '@/store/useMentions';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import type { SendKey, TextAttachment, UISettings } from '@/types';
 
 /** Slash commands open only at the very start of the draft. */
-const SLASH_TRIGGERS = [{ char: COMMAND_PREFIX, placement: 'input-start' as const }];
+const SLASH_TRIGGER = { char: COMMAND_PREFIX, placement: 'input-start' as const };
+/** Mentions open at any position — no whitespace required before `@`. */
+const MENTION_TRIGGER = { char: MENTION_PREFIX, placement: 'anywhere' as const };
 
 /**
  * How tall the composer may grow before it scrolls instead, in lines.
@@ -94,6 +99,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commands = useEnabledCommands();
   const { settings: commandSettings } = useCommandSettings();
+  const { settings: mentionSettings } = useMentionSettings();
   const applyTiming = commandSettings.applyTiming;
   // `onCommand` is summoned from inside `resolveSuggestions`' `apply` closures
   // (select-timing), which outlive the render that created them, so it is read
@@ -253,9 +259,32 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setTextAttachments([]);
   };
 
+  // ─── Mention resolver ──────────────────────────────────────────────────
+  const addMentionAttachment = useCallback((attachment: TextAttachment) => {
+    setTextAttachments((prev) => [...prev, attachment]);
+  }, []);
+
+  // Detect whether a `@` trigger is currently active so the resolver knows
+  // when to fetch fresh data (inactive → active = new session).
+  const mentionTriggerActive = useMemo(
+    () => {
+      if (!mentionSettings.enabled) return false;
+      const trigger = findActiveTrigger(input, caret, [MENTION_TRIGGER]);
+      return trigger !== null;
+    },
+    [input, caret, mentionSettings.enabled],
+  );
+
+  const resolveMentions = useMentionResolver({
+    settings: mentionSettings,
+    addAttachment: addMentionAttachment,
+    triggerActive: mentionTriggerActive,
+  });
+
   // ─── Slash-command suggestion menu ──────────────────────────────────────
   const resolveSuggestions = useCallback(
     (trigger: ActiveTrigger): SuggestionOption[] => {
+      if (trigger.char === MENTION_PREFIX) return resolveMentions(trigger);
       if (trigger.char !== COMMAND_PREFIX) return [];
       return filterCommands(commands, trigger.query).map((command) => {
         const base = {
@@ -301,7 +330,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         };
       });
     },
-    [commands, t, applyTiming],
+    [commands, t, applyTiming, resolveMentions],
   );
 
   const applySuggestion = useCallback((next: { value: string; caret: number }) => {
@@ -317,10 +346,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     });
   }, []);
 
+  // Build triggers array: always include slash; include mention if enabled.
+  const triggers = useMemo(
+    () =>
+      mentionSettings.enabled
+        ? [SLASH_TRIGGER, MENTION_TRIGGER]
+        : [SLASH_TRIGGER],
+    [mentionSettings.enabled],
+  );
+
   const suggestions = useSuggestionMenu({
     value: input,
     caret,
-    triggers: SLASH_TRIGGERS,
+    triggers,
     resolve: resolveSuggestions,
     onApply: applySuggestion,
   });
