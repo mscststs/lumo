@@ -5,21 +5,11 @@ import { consoleLog, attachedTabs } from './session-store';
 
 /**
  * DevTools Advanced MCP Server
- * Provides advanced browser debugging capabilities via chrome.debugger API (CDP):
- * - Real input simulation (mouse, keyboard, drag-and-drop)
- * - Accessibility tree inspection
- * - Full-page screenshots (beyond viewport)
- * - Element-level screenshots
- * - Network interception with response body access
- * - Device/network/geolocation emulation
- * - CPU throttling
- * - Console message collection
- * - JavaScript evaluation in isolated contexts
- *
- * CDP event collection lives in `collectors.ts` and only runs in the background
- * service worker. Debugger attachment is per-extension rather than per-context,
- * so the attached-tab set is shared through session storage instead of being
- * held on the instance.
+ * Provides 4 unified tools for advanced browser debugging via chrome.debugger API (CDP):
+ * - debug_session: Attach/detach the debugger
+ * - debug_input: Real input simulation (mouse click, keyboard type/press, drag-and-drop)
+ * - debug_emulate: Device, network, geolocation, media, and CPU emulation
+ * - debug_console: Console message collection
  */
 export class DevToolsAdvancedMcpServer implements IMcpServer {
   private status: McpServerStatus = 'disconnected';
@@ -29,7 +19,7 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
     return {
       id: 'devtools-advanced',
       name: 'DevTools Advanced',
-      description: 'Advanced debugging: real input simulation, accessibility tree, full-page screenshots, network interception, device emulation',
+      description: 'Advanced debugging: real input simulation, device/network/geolocation emulation, console messages',
       transport: 'builtin',
       builtin: true,
       enabled: true,
@@ -52,13 +42,11 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
   }
 
   async disconnect(): Promise<void> {
-    // Detach everywhere: a debugger attachment shows an infobar on the tab and
-    // is extension-global, so leaving it behind is user-visible.
     for (const tabId of await attachedTabs.read()) {
       try {
         await chrome.debugger.detach({ tabId });
       } catch {
-        // Tab may already be closed, or never attached in this session.
+        // Tab may already be closed.
       }
     }
     await attachedTabs.clear();
@@ -78,15 +66,12 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
     try {
       await chrome.debugger.attach({ tabId }, '1.3');
     } catch (error) {
-      // Another context (or an earlier service worker) may have attached
-      // already without the shared set reflecting it yet.
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('Another debugger') && !message.includes('already attached')) {
         throw error;
       }
     }
     await attachedTabs.add(tabId);
-    // Enable Runtime so the background collector receives console events.
     await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
   }
 
@@ -103,370 +88,207 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
   }
 
   getTools(): McpToolDefinition[] {
-    return [
-      { name: 'debug_attach', description: 'Attach the debugger to a tab (required before other debug tools)', inputSchema: { type: 'object', properties: { tabId: { type: 'number' } } } },
-      { name: 'debug_detach', description: 'Detach the debugger from a tab', inputSchema: { type: 'object', properties: { tabId: { type: 'number' } }, required: ['tabId'] } },
-      { name: 'debug_real_click', description: 'Simulate a real mouse click at coordinates using CDP Input', inputSchema: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, button: { type: 'string' }, clickCount: { type: 'number' }, tabId: { type: 'number' } }, required: ['x', 'y'] } },
-      { name: 'debug_real_type', description: 'Type text using real keyboard events via CDP', inputSchema: { type: 'object', properties: { text: { type: 'string' }, tabId: { type: 'number' } }, required: ['text'] } },
-      { name: 'debug_real_press_key', description: 'Press a specific key using CDP Input domain', inputSchema: { type: 'object', properties: { key: { type: 'string' }, modifiers: { type: 'number' }, tabId: { type: 'number' } }, required: ['key'] } },
-      { name: 'debug_drag_drop', description: 'Perform a drag and drop operation between two coordinates', inputSchema: { type: 'object', properties: { startX: { type: 'number' }, startY: { type: 'number' }, endX: { type: 'number' }, endY: { type: 'number' }, tabId: { type: 'number' } }, required: ['startX', 'startY', 'endX', 'endY'] } },
-      { name: 'debug_get_accessibility_tree', description: 'Get the full accessibility tree of the page', inputSchema: { type: 'object', properties: { tabId: { type: 'number' } } } },
-      { name: 'debug_full_page_screenshot', description: 'Take a full-page screenshot (beyond viewport)', inputSchema: { type: 'object', properties: { format: { type: 'string' }, quality: { type: 'number' }, tabId: { type: 'number' } } } },
-      { name: 'debug_element_screenshot', description: 'Take a screenshot of a specific element by selector', inputSchema: { type: 'object', properties: { selector: { type: 'string' }, tabId: { type: 'number' } }, required: ['selector'] } },
-      { name: 'debug_emulate_device', description: 'Emulate a device viewport (mobile, tablet, etc.)', inputSchema: { type: 'object', properties: { width: { type: 'number' }, height: { type: 'number' }, deviceScaleFactor: { type: 'number' }, mobile: { type: 'boolean' }, userAgent: { type: 'string' }, tabId: { type: 'number' } }, required: ['width', 'height'] } },
-      { name: 'debug_emulate_network', description: 'Emulate network conditions (offline, slow 3G, etc.)', inputSchema: { type: 'object', properties: { offline: { type: 'boolean' }, latency: { type: 'number' }, downloadThroughput: { type: 'number' }, uploadThroughput: { type: 'number' }, tabId: { type: 'number' } } } },
-      { name: 'debug_emulate_geolocation', description: 'Override geolocation coordinates', inputSchema: { type: 'object', properties: { latitude: { type: 'number' }, longitude: { type: 'number' }, accuracy: { type: 'number' }, tabId: { type: 'number' } }, required: ['latitude', 'longitude'] } },
-      { name: 'debug_cpu_throttle', description: 'Set CPU throttling rate', inputSchema: { type: 'object', properties: { rate: { type: 'number' }, tabId: { type: 'number' } }, required: ['rate'] } },
-      { name: 'debug_list_console_messages', description: 'List collected console messages from attached tabs', inputSchema: { type: 'object', properties: { level: { type: 'string' }, limit: { type: 'number' } } } },
-      { name: 'debug_emulate_media', description: 'Emulate CSS media features (dark mode, reduced motion, etc.)', inputSchema: { type: 'object', properties: { colorScheme: { type: 'string' }, reducedMotion: { type: 'string' }, forcedColors: { type: 'string' }, tabId: { type: 'number' } } } },
-    ];
+    return Object.entries(this.getAITools()).map(([name, definition]) => ({
+      name,
+      description: (definition as { description?: string }).description ?? '',
+      inputSchema: toJsonSchema((definition as { inputSchema?: unknown }).inputSchema),
+    }));
   }
 
   getAITools(): Record<string, AnyTool> {
     return {
-      debug_attach: tool({
-        description: 'Attach the debugger to a tab. This is required before using other debug tools. Shows a "debugging" infobar on the tab.',
+      debug_session: tool({
+        description:
+          'Manage debugger attachment. Actions: attach (attach debugger to a tab, shows "debugging" infobar), ' +
+          'detach (detach debugger, removes infobar). Attaching is required before debug_input or debug_emulate.',
         inputSchema: z.object({
-          tabId: z.number().optional().describe('Tab ID to attach to (optional, defaults to active tab)'),
+          action: z.enum(['attach', 'detach']).describe('The action to perform'),
+          tabId: z.number().optional().describe('[attach] Tab ID to attach to (defaults to active tab); [detach] Tab ID to detach from'),
         }),
-        execute: async ({ tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.ensureAttached(targetTabId);
-          return { success: true, tabId: targetTabId, message: 'Debugger attached successfully' };
-        },
-      }),
-
-      debug_detach: tool({
-        description: 'Detach the debugger from a tab, removing the "debugging" infobar.',
-        inputSchema: z.object({
-          tabId: z.number().describe('Tab ID to detach from'),
-        }),
-        execute: async ({ tabId }) => {
-          if (await attachedTabs.has(tabId)) {
-            await chrome.debugger.detach({ tabId });
-            await attachedTabs.remove(tabId);
+        execute: async (params: any) => {
+          switch (params.action) {
+            case 'attach': {
+              const targetTabId = await this.getTargetTabId(params.tabId);
+              await this.ensureAttached(targetTabId);
+              return { success: true, tabId: targetTabId, message: 'Debugger attached successfully' };
+            }
+            case 'detach': {
+              if (await attachedTabs.has(params.tabId)) {
+                await chrome.debugger.detach({ tabId: params.tabId });
+                await attachedTabs.remove(params.tabId);
+              }
+              return { success: true, tabId: params.tabId };
+            }
           }
-          return { success: true, tabId };
         },
       }),
 
-      debug_real_click: tool({
-        description: 'Simulate a real mouse click at specific coordinates using the CDP Input domain. This produces OS-level input events that are indistinguishable from real user input.',
+      debug_input: tool({
+        description:
+          'Simulate real user input via CDP Input domain. Actions: ' +
+          'click (mouse click at coordinates, indistinguishable from real user input), ' +
+          'type (type text using real keyboard events), ' +
+          'key (press a specific key with optional modifiers), ' +
+          'drag (drag and drop between two coordinates). ' +
+          'Auto-attaches debugger if needed.',
         inputSchema: z.object({
-          x: z.number().describe('X coordinate'),
-          y: z.number().describe('Y coordinate'),
-          button: z.enum(['left', 'right', 'middle']).optional().describe('Mouse button (default left)'),
-          clickCount: z.number().optional().describe('Number of clicks (default 1, use 2 for double-click)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+          action: z.enum(['click', 'type', 'key', 'drag']).describe('The input action to perform'),
+          x: z.number().optional().describe('[click] X coordinate'),
+          y: z.number().optional().describe('[click] Y coordinate'),
+          button: z.enum(['left', 'right', 'middle']).optional().describe('[click] Mouse button (default left)'),
+          clickCount: z.number().optional().describe('[click] Number of clicks (1=single, 2=double)'),
+          text: z.string().optional().describe('[type] Text to type'),
+          key: z.string().optional().describe('[key] Key to press (e.g., "Enter", "Tab", "Escape", "a", "ArrowDown")'),
+          modifiers: z.number().optional().describe('[key] Bit field: 1=Alt, 2=Ctrl, 4=Meta, 8=Shift'),
+          startX: z.number().optional().describe('[drag] Start X coordinate'),
+          startY: z.number().optional().describe('[drag] Start Y coordinate'),
+          endX: z.number().optional().describe('[drag] End X coordinate'),
+          endY: z.number().optional().describe('[drag] End Y coordinate'),
+          tabId: z.number().optional().describe('Tab ID (defaults to active tab)'),
         }),
-        execute: async ({ x, y, button, clickCount, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const btn = button || 'left';
-          const count = clickCount || 1;
-          // Mouse down
-          await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x, y,
-            button: btn,
-            clickCount: count,
-          });
-          // Mouse up
-          await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased',
-            x, y,
-            button: btn,
-            clickCount: count,
-          });
-          return { success: true, x, y, button: btn, clickCount: count };
-        },
-      }),
-
-      debug_real_type: tool({
-        description: 'Type text using real keyboard events via CDP Input domain. Each character generates proper keyDown/keyUp events. Works with any focused input.',
-        inputSchema: z.object({
-          text: z.string().describe('Text to type'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ text, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          for (const char of text) {
-            await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
-              type: 'keyDown',
-              text: char,
-              key: char,
-              unmodifiedText: char,
-            });
-            await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
-              type: 'keyUp',
-              text: char,
-              key: char,
-              unmodifiedText: char,
-            });
+        execute: async (params: any) => {
+          const targetTabId = await this.getTargetTabId(params.tabId);
+          switch (params.action) {
+            case 'click': {
+              const btn = params.button || 'left';
+              const count = params.clickCount || 1;
+              await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed', x: params.x, y: params.y, button: btn, clickCount: count,
+              });
+              await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased', x: params.x, y: params.y, button: btn, clickCount: count,
+              });
+              return { success: true, x: params.x, y: params.y, button: btn, clickCount: count };
+            }
+            case 'type': {
+              for (const char of params.text) {
+                await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
+                  type: 'keyDown', text: char, key: char, unmodifiedText: char,
+                });
+                await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
+                  type: 'keyUp', text: char, key: char, unmodifiedText: char,
+                });
+              }
+              return { success: true, typed: params.text, length: params.text.length };
+            }
+            case 'key': {
+              const keyCode = this.getKeyCode(params.key);
+              await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyDown', key: params.key, code: keyCode.code,
+                windowsVirtualKeyCode: keyCode.keyCode, modifiers: params.modifiers || 0,
+              });
+              await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyUp', key: params.key, code: keyCode.code,
+                windowsVirtualKeyCode: keyCode.keyCode, modifiers: params.modifiers || 0,
+              });
+              return { success: true, key: params.key, modifiers: params.modifiers || 0 };
+            }
+            case 'drag': {
+              await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed', x: params.startX, y: params.startY, button: 'left', clickCount: 1,
+              });
+              const steps = 10;
+              for (let i = 1; i <= steps; i++) {
+                const x = params.startX + (params.endX - params.startX) * (i / steps);
+                const y = params.startY + (params.endY - params.startY) * (i / steps);
+                await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
+                  type: 'mouseMoved', x, y, button: 'left',
+                });
+              }
+              await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased', x: params.endX, y: params.endY, button: 'left', clickCount: 1,
+              });
+              return { success: true, from: { x: params.startX, y: params.startY }, to: { x: params.endX, y: params.endY } };
+            }
           }
-          return { success: true, typed: text, length: text.length };
         },
       }),
 
-      debug_real_press_key: tool({
-        description: 'Press a specific key using CDP Input domain. Supports modifier keys (Ctrl, Alt, Shift, Meta).',
+      debug_emulate: tool({
+        description:
+          'Emulate browser conditions. Targets: ' +
+          'device (viewport size, scale, mobile flag, user agent), ' +
+          'network (offline, latency, throughput), ' +
+          'geolocation (latitude, longitude, accuracy), ' +
+          'media (prefers-color-scheme, prefers-reduced-motion, forced-colors), ' +
+          'cpu (throttling rate). Auto-attaches debugger if needed.',
         inputSchema: z.object({
-          key: z.string().describe('Key to press (e.g., "Enter", "Tab", "Escape", "a", "ArrowDown")'),
-          modifiers: z.number().optional().describe('Bit field: 1=Alt, 2=Ctrl, 4=Meta, 8=Shift'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+          target: z.enum(['device', 'network', 'geolocation', 'media', 'cpu']).describe('The emulation target'),
+          width: z.number().optional().describe('[device] Viewport width in pixels'),
+          height: z.number().optional().describe('[device] Viewport height in pixels'),
+          deviceScaleFactor: z.number().optional().describe('[device] Device scale factor (default 1)'),
+          mobile: z.boolean().optional().describe('[device] Emulate mobile (default false)'),
+          userAgent: z.string().optional().describe('[device] Custom user agent string'),
+          offline: z.boolean().optional().describe('[network] Simulate offline (default false)'),
+          latency: z.number().optional().describe('[network] Additional latency in ms (default 0)'),
+          downloadThroughput: z.number().optional().describe('[network] Max download bytes/s (-1 unlimited)'),
+          uploadThroughput: z.number().optional().describe('[network] Max upload bytes/s (-1 unlimited)'),
+          latitude: z.number().optional().describe('[geolocation] Latitude (-90 to 90)'),
+          longitude: z.number().optional().describe('[geolocation] Longitude (-180 to 180)'),
+          accuracy: z.number().optional().describe('[geolocation] Position accuracy in meters (default 1)'),
+          colorScheme: z.enum(['light', 'dark']).optional().describe('[media] Emulate prefers-color-scheme'),
+          reducedMotion: z.enum(['reduce', 'no-preference']).optional().describe('[media] Emulate prefers-reduced-motion'),
+          forcedColors: z.enum(['active', 'none']).optional().describe('[media] Emulate forced-colors'),
+          rate: z.number().optional().describe('[cpu] Throttling rate (1=normal, 2=2x slower, 4=4x slower)'),
+          tabId: z.number().optional().describe('Tab ID (defaults to active tab)'),
         }),
-        execute: async ({ key, modifiers, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const keyCode = this.getKeyCode(key);
-          await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
-            type: 'keyDown',
-            key,
-            code: keyCode.code,
-            windowsVirtualKeyCode: keyCode.keyCode,
-            modifiers: modifiers || 0,
-          });
-          await this.sendCommand(targetTabId, 'Input.dispatchKeyEvent', {
-            type: 'keyUp',
-            key,
-            code: keyCode.code,
-            windowsVirtualKeyCode: keyCode.keyCode,
-            modifiers: modifiers || 0,
-          });
-          return { success: true, key, modifiers: modifiers || 0 };
-        },
-      }),
-
-      debug_drag_drop: tool({
-        description: 'Perform a drag and drop operation between two coordinates using CDP mouse events.',
-        inputSchema: z.object({
-          startX: z.number().describe('Start X coordinate'),
-          startY: z.number().describe('Start Y coordinate'),
-          endX: z.number().describe('End X coordinate'),
-          endY: z.number().describe('End Y coordinate'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ startX, startY, endX, endY, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          // Mouse down at start
-          await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x: startX, y: startY,
-            button: 'left',
-            clickCount: 1,
-          });
-          // Move to end (with intermediate steps for smooth drag)
-          const steps = 10;
-          for (let i = 1; i <= steps; i++) {
-            const x = startX + (endX - startX) * (i / steps);
-            const y = startY + (endY - startY) * (i / steps);
-            await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
-              type: 'mouseMoved',
-              x, y,
-              button: 'left',
-            });
+        execute: async (params: any) => {
+          const targetTabId = await this.getTargetTabId(params.tabId);
+          switch (params.target) {
+            case 'device': {
+              await this.sendCommand(targetTabId, 'Emulation.setDeviceMetricsOverride', {
+                width: params.width,
+                height: params.height,
+                deviceScaleFactor: params.deviceScaleFactor || 1,
+                mobile: params.mobile || false,
+              });
+              if (params.userAgent) {
+                await this.sendCommand(targetTabId, 'Network.setUserAgentOverride', { userAgent: params.userAgent });
+              }
+              return { success: true, viewport: { width: params.width, height: params.height, deviceScaleFactor: params.deviceScaleFactor || 1, mobile: params.mobile || false }, userAgent: params.userAgent };
+            }
+            case 'network': {
+              await this.sendCommand(targetTabId, 'Network.enable');
+              await this.sendCommand(targetTabId, 'Network.emulateNetworkConditions', {
+                offline: params.offline || false,
+                latency: params.latency || 0,
+                downloadThroughput: params.downloadThroughput ?? -1,
+                uploadThroughput: params.uploadThroughput ?? -1,
+              });
+              return { success: true, conditions: { offline: params.offline || false, latency: params.latency || 0, downloadThroughput: params.downloadThroughput ?? -1, uploadThroughput: params.uploadThroughput ?? -1 } };
+            }
+            case 'geolocation': {
+              await this.sendCommand(targetTabId, 'Emulation.setGeolocationOverride', {
+                latitude: params.latitude,
+                longitude: params.longitude,
+                accuracy: params.accuracy || 1,
+              });
+              return { success: true, location: { latitude: params.latitude, longitude: params.longitude, accuracy: params.accuracy || 1 } };
+            }
+            case 'media': {
+              const features: Array<{ name: string; value: string }> = [];
+              if (params.colorScheme) features.push({ name: 'prefers-color-scheme', value: params.colorScheme });
+              if (params.reducedMotion) features.push({ name: 'prefers-reduced-motion', value: params.reducedMotion });
+              if (params.forcedColors) features.push({ name: 'forced-colors', value: params.forcedColors });
+              await this.sendCommand(targetTabId, 'Emulation.setEmulatedMedia', { features });
+              return { success: true, emulatedFeatures: features };
+            }
+            case 'cpu': {
+              await this.sendCommand(targetTabId, 'Emulation.setCPUThrottlingRate', { rate: params.rate });
+              return { success: true, rate: params.rate };
+            }
           }
-          // Mouse up at end
-          await this.sendCommand(targetTabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased',
-            x: endX, y: endY,
-            button: 'left',
-            clickCount: 1,
-          });
-          return { success: true, from: { x: startX, y: startY }, to: { x: endX, y: endY } };
         },
       }),
 
-      debug_get_accessibility_tree: tool({
-        description: 'Get the full accessibility tree of the page. Returns nodes with role, name, value, and children. Useful for understanding page structure from an a11y perspective.',
-        inputSchema: z.object({
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.sendCommand(targetTabId, 'Accessibility.enable');
-          const result = await this.sendCommand(targetTabId, 'Accessibility.getFullAXTree') as { nodes: Array<{
-            nodeId: string;
-            role?: { value: string };
-            name?: { value: string };
-            value?: { value: string };
-            properties?: Array<{ name: string; value: { value: unknown } }>;
-            childIds?: string[];
-            ignored?: boolean;
-          }> };
-          // Simplify the tree for AI consumption
-          const nodes = (result.nodes || [])
-            .filter(n => !n.ignored)
-            .slice(0, 200)
-            .map(n => ({
-              nodeId: n.nodeId,
-              role: n.role?.value,
-              name: n.name?.value,
-              value: n.value?.value,
-              properties: n.properties?.reduce((acc, p) => {
-                acc[p.name] = p.value?.value;
-                return acc;
-              }, {} as Record<string, unknown>),
-              childIds: n.childIds,
-            }));
-          return { totalNodes: result.nodes?.length || 0, returnedNodes: nodes.length, nodes };
-        },
-      }),
-
-      debug_full_page_screenshot: tool({
-        description: 'Take a full-page screenshot that captures content beyond the visible viewport. Returns base64-encoded image.',
-        inputSchema: z.object({
-          format: z.enum(['png', 'jpeg', 'webp']).optional().describe('Image format (default png)'),
-          quality: z.number().optional().describe('Image quality 0-100 (for jpeg/webp)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ format, quality, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          // Get page dimensions
-          const layoutMetrics = await this.sendCommand(targetTabId, 'Page.getLayoutMetrics') as {
-            contentSize: { width: number; height: number };
-          };
-          const { width, height } = layoutMetrics.contentSize;
-          // Capture full page
-          const result = await this.sendCommand(targetTabId, 'Page.captureScreenshot', {
-            format: format || 'png',
-            quality: quality || undefined,
-            clip: { x: 0, y: 0, width, height, scale: 1 },
-            captureBeyondViewport: true,
-          }) as { data: string };
-          return {
-            content: [
-              { type: 'image', data: result.data, mimeType: `image/${format || 'png'}` },
-              {
-                type: 'text',
-                text: `Full-page screenshot captured (${format || 'png'}, ${width}x${height})`,
-              },
-            ],
-            isError: false,
-          };
-        },
-      }),
-
-      debug_element_screenshot: tool({
-        description: 'Take a screenshot of a specific element identified by CSS selector.',
-        inputSchema: z.object({
-          selector: z.string().describe('CSS selector of the element to screenshot'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ selector, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          // Get element bounds via Runtime.evaluate
-          const boundsResult = await this.sendCommand(targetTabId, 'Runtime.evaluate', {
-            expression: `(() => { const el = document.querySelector('${selector.replace(/'/g, "\\'")}'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
-            returnByValue: true,
-          }) as { result: { value: { x: number; y: number; width: number; height: number } | null } };
-          const bounds = boundsResult.result?.value;
-          if (!bounds) return { error: `Element not found: ${selector}` };
-          // Capture screenshot of the element area
-          const result = await this.sendCommand(targetTabId, 'Page.captureScreenshot', {
-            format: 'png',
-            clip: { ...bounds, scale: 1 },
-          }) as { data: string };
-          return {
-            content: [
-              { type: 'image', data: result.data, mimeType: 'image/png' },
-              {
-                type: 'text',
-                text: `Element screenshot captured (${selector}, ${Math.round(bounds.width)}x${Math.round(bounds.height)})`,
-              },
-            ],
-            isError: false,
-          };
-        },
-      }),
-
-      debug_emulate_device: tool({
-        description: 'Emulate a device viewport with custom dimensions, scale factor, and user agent. Useful for testing responsive layouts.',
-        inputSchema: z.object({
-          width: z.number().describe('Viewport width in pixels'),
-          height: z.number().describe('Viewport height in pixels'),
-          deviceScaleFactor: z.number().optional().describe('Device scale factor (default 1)'),
-          mobile: z.boolean().optional().describe('Whether to emulate a mobile device (default false)'),
-          userAgent: z.string().optional().describe('Custom user agent string'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ width, height, deviceScaleFactor, mobile, userAgent, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.sendCommand(targetTabId, 'Emulation.setDeviceMetricsOverride', {
-            width,
-            height,
-            deviceScaleFactor: deviceScaleFactor || 1,
-            mobile: mobile || false,
-          });
-          if (userAgent) {
-            await this.sendCommand(targetTabId, 'Network.setUserAgentOverride', {
-              userAgent,
-            });
-          }
-          return { success: true, viewport: { width, height, deviceScaleFactor: deviceScaleFactor || 1, mobile: mobile || false }, userAgent };
-        },
-      }),
-
-      debug_emulate_network: tool({
-        description: 'Emulate network conditions like offline mode, slow 3G, etc. Set all values to -1 to disable throttling.',
-        inputSchema: z.object({
-          offline: z.boolean().optional().describe('Simulate offline (default false)'),
-          latency: z.number().optional().describe('Additional latency in ms (default 0)'),
-          downloadThroughput: z.number().optional().describe('Max download speed in bytes/s (-1 for unlimited)'),
-          uploadThroughput: z.number().optional().describe('Max upload speed in bytes/s (-1 for unlimited)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ offline, latency, downloadThroughput, uploadThroughput, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.sendCommand(targetTabId, 'Network.enable');
-          await this.sendCommand(targetTabId, 'Network.emulateNetworkConditions', {
-            offline: offline || false,
-            latency: latency || 0,
-            downloadThroughput: downloadThroughput ?? -1,
-            uploadThroughput: uploadThroughput ?? -1,
-          });
-          return {
-            success: true,
-            conditions: { offline: offline || false, latency: latency || 0, downloadThroughput: downloadThroughput ?? -1, uploadThroughput: uploadThroughput ?? -1 },
-          };
-        },
-      }),
-
-      debug_emulate_geolocation: tool({
-        description: 'Override the browser\'s geolocation to specified coordinates.',
-        inputSchema: z.object({
-          latitude: z.number().describe('Latitude (-90 to 90)'),
-          longitude: z.number().describe('Longitude (-180 to 180)'),
-          accuracy: z.number().optional().describe('Position accuracy in meters (default 1)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ latitude, longitude, accuracy, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.sendCommand(targetTabId, 'Emulation.setGeolocationOverride', {
-            latitude,
-            longitude,
-            accuracy: accuracy || 1,
-          });
-          return { success: true, location: { latitude, longitude, accuracy: accuracy || 1 } };
-        },
-      }),
-
-      debug_cpu_throttle: tool({
-        description: 'Set CPU throttling rate. 1 means no throttling, 2 means 2x slowdown, 4 means 4x slowdown, etc.',
-        inputSchema: z.object({
-          rate: z.number().describe('Throttling rate (1 = normal, 2 = 2x slower, 4 = 4x slower, etc.)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ rate, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          await this.sendCommand(targetTabId, 'Emulation.setCPUThrottlingRate', { rate });
-          return { success: true, rate };
-        },
-      }),
-
-      debug_list_console_messages: tool({
-        description: 'List console messages and uncaught exceptions collected from attached tabs. Collection runs in the background for as long as the debugger stays attached, so messages persist even if the side panel was closed. Attach with debug_attach first.',
+      debug_console: tool({
+        description:
+          'List console messages and uncaught exceptions collected from attached tabs. ' +
+          'Collection runs in the background for as long as the debugger stays attached. ' +
+          'Attach with debug_session first.',
         inputSchema: z.object({
           level: z.enum(['log', 'info', 'warning', 'error', 'debug']).optional().describe('Filter by log level'),
-          limit: z.number().optional().describe('Maximum number of messages to return (default 50)'),
+          limit: z.number().optional().describe('Maximum messages to return (default 50)'),
         }),
         execute: async ({ level, limit }) => {
           let messages = await consoleLog.read();
@@ -474,27 +296,6 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
           const maxResults = limit || 50;
           const results = messages.slice(-maxResults).reverse();
           return { total: messages.length, returned: results.length, messages: results };
-        },
-      }),
-
-      debug_emulate_media: tool({
-        description: 'Emulate CSS media features like prefers-color-scheme (dark/light mode), prefers-reduced-motion, and forced-colors.',
-        inputSchema: z.object({
-          colorScheme: z.enum(['light', 'dark']).optional().describe('Emulate prefers-color-scheme'),
-          reducedMotion: z.enum(['reduce', 'no-preference']).optional().describe('Emulate prefers-reduced-motion'),
-          forcedColors: z.enum(['active', 'none']).optional().describe('Emulate forced-colors'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ colorScheme, reducedMotion, forcedColors, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const features: Array<{ name: string; value: string }> = [];
-          if (colorScheme) features.push({ name: 'prefers-color-scheme', value: colorScheme });
-          if (reducedMotion) features.push({ name: 'prefers-reduced-motion', value: reducedMotion });
-          if (forcedColors) features.push({ name: 'forced-colors', value: forcedColors });
-          await this.sendCommand(targetTabId, 'Emulation.setEmulatedMedia', {
-            features,
-          });
-          return { success: true, emulatedFeatures: features };
         },
       }),
     };
@@ -530,10 +331,23 @@ export class DevToolsAdvancedMcpServer implements IMcpServer {
       'F12': { code: 'F12', keyCode: 123 },
     };
     if (keyMap[key]) return keyMap[key];
-    // Single character
     if (key.length === 1) {
       return { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) };
     }
     return { code: key, keyCode: 0 };
+  }
+}
+
+/**
+ * Render a tool's zod schema as JSON Schema for the settings UI.
+ */
+function toJsonSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  try {
+    const json = z.toJSONSchema(schema as z.ZodType, { io: 'input' }) as Record<string, unknown>;
+    delete json.$schema;
+    return json;
+  } catch {
+    return { type: 'object', properties: {} };
   }
 }

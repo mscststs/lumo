@@ -46,7 +46,7 @@ describe('content script injection contract', () => {
     expect(sendToContent).toContain(CONTENT_SCRIPT_FILE_REFERENCE);
     // The failure message has to name the escape hatch; a bare "failed" makes the
     // model retry the same unusable call.
-    expect(sendToContent).toContain('page_get_text');
+    expect(sendToContent).toContain('page_evaluate');
   });
 
   it('keys injection off an absent response, not a thrown error', () => {

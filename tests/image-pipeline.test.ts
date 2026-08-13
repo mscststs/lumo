@@ -115,10 +115,10 @@ describe('sanitizeToolResultImages', () => {
 });
 
 describe('extractImagesFromParts', () => {
-  const imageToolPart = {
-    type: 'tool-call',
+  // Case 1: Direct content array (legacy / unit test style)
+  const directOutputPart = {
+    type: 'tool-page_screenshot',
     toolCallId: 'call_1',
-    toolName: 'page_screenshot',
     state: 'output-available',
     input: {},
     output: {
@@ -130,8 +130,51 @@ describe('extractImagesFromParts', () => {
     },
   } as unknown as ChatMessagePart;
 
-  it('collects images from tool parts', () => {
-    const parts = [imageToolPart, { type: 'text', text: 'ignored', state: 'done' }] as ChatMessagePart[];
+  // Case 2: JSON-wrapped (SDK wraps when tool has no toModelOutput)
+  const jsonWrappedPart = {
+    type: 'tool-capture_screen',
+    toolCallId: 'call_2',
+    state: 'output-available',
+    input: {},
+    output: {
+      type: 'json',
+      value: {
+        content: [
+          { type: 'image', data: RED_PNG_DATA, mimeType: 'image/png' },
+          { type: 'text', text: 'Screenshot captured' },
+        ],
+        isError: false,
+      },
+    },
+  } as unknown as ChatMessagePart;
+
+  // Case 3: Content-wrapped (SDK wraps when tool has toModelOutput returning images)
+  const contentWrappedPart = {
+    type: 'tool-page_screenshot',
+    toolCallId: 'call_3',
+    state: 'output-available',
+    input: {},
+    output: {
+      type: 'content',
+      value: [
+        { type: 'file', mediaType: 'image/png', data: { type: 'data', data: RED_PNG_DATA } },
+        { type: 'text', text: 'Screenshot captured' },
+      ],
+    },
+  } as unknown as ChatMessagePart;
+
+  it('collects images from direct content array (case 1)', () => {
+    const parts = [directOutputPart, { type: 'text', text: 'ignored', state: 'done' }] as ChatMessagePart[];
+    expect(extractImagesFromParts(parts)).toEqual([{ data: RED_PNG_DATA, mimeType: 'image/png' }]);
+  });
+
+  it('collects images from JSON-wrapped output (case 2, no toModelOutput)', () => {
+    const parts = [jsonWrappedPart] as ChatMessagePart[];
+    expect(extractImagesFromParts(parts)).toEqual([{ data: RED_PNG_DATA, mimeType: 'image/png' }]);
+  });
+
+  it('collects images from content-wrapped output (case 3, with toModelOutput)', () => {
+    const parts = [contentWrappedPart] as ChatMessagePart[];
     expect(extractImagesFromParts(parts)).toEqual([{ data: RED_PNG_DATA, mimeType: 'image/png' }]);
   });
 

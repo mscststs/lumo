@@ -133,16 +133,61 @@ export function extractImagesFromParts(parts: ChatMessagePart[]): Array<{ data: 
     if (!isToolUIPart(part)) continue;
     const output = (part as { output?: unknown }).output;
     if (!output || typeof output !== 'object') continue;
-    const content = (output as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (const item of content) {
-      const p = item as { type?: string; data?: unknown; mimeType?: unknown };
-      if (p.type === 'image' && typeof p.data === 'string' && typeof p.mimeType === 'string') {
-        images.push({ data: p.data, mimeType: p.mimeType });
+
+    // AI SDK wraps tool outputs in one of several shapes depending on whether
+    // `toModelOutput` exists on the tool and whether the raw result was a string:
+    //
+    // 1. Direct: { content: [{ type: 'image', data, mimeType }, ...] }
+    //    (Legacy / direct assignment in unit tests)
+    //
+    // 2. JSON-wrapped (no toModelOutput): { type: 'json', value: { content: [...] } }
+    //    SDK's `createToolModelOutput` wraps non-string results this way.
+    //
+    // 3. Content-wrapped (with toModelOutput that returns images):
+    //    { type: 'content', value: [{ type: 'file', mediaType, data: { type: 'data', data } }, ...] }
+    //    Our `mcpToModelOutput` produces this for image-bearing results.
+
+    const typed = output as { type?: string; value?: unknown; content?: unknown };
+
+    // Case 1: direct content array on output
+    if (Array.isArray(typed.content)) {
+      extractFromContentArray(typed.content, images);
+      continue;
+    }
+
+    // Case 2: JSON-wrapped — unwrap .value and look for .content inside
+    if (typed.type === 'json' && typed.value && typeof typed.value === 'object') {
+      const inner = typed.value as { content?: unknown };
+      if (Array.isArray(inner.content)) {
+        extractFromContentArray(inner.content, images);
+      }
+      continue;
+    }
+
+    // Case 3: content-wrapped by toModelOutput — value is an array of parts
+    if (typed.type === 'content' && Array.isArray(typed.value)) {
+      for (const item of typed.value) {
+        const p = item as { type?: string; mediaType?: string; data?: { type?: string; data?: string } };
+        if (p.type === 'file' && p.mediaType?.startsWith('image/') && p.data?.type === 'data' && typeof p.data.data === 'string') {
+          images.push({ data: p.data.data, mimeType: p.mediaType });
+        }
       }
     }
   }
   return images;
+}
+
+/** Extract images from a raw content array (CallToolResult format). */
+function extractFromContentArray(
+  content: unknown[],
+  images: Array<{ data: string; mimeType: string }>,
+): void {
+  for (const item of content) {
+    const p = item as { type?: string; data?: unknown; mimeType?: unknown };
+    if (p.type === 'image' && typeof p.data === 'string' && typeof p.mimeType === 'string') {
+      images.push({ data: p.data, mimeType: p.mimeType });
+    }
+  }
 }
 
 /**

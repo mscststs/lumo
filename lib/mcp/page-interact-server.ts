@@ -14,10 +14,6 @@ const CONTENT_SCRIPT_FILE = 'content-scripts/content.js';
 
 /**
  * Render a tool's zod schema as JSON Schema for the settings UI.
- *
- * `z.toJSONSchema` throws on constructs it cannot represent; a tool list is a
- * display concern, so an unrepresentable schema degrades to a bare object rather
- * than breaking the page.
  */
 function toJsonSchema(schema: unknown): Record<string, unknown> {
   if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
@@ -57,35 +53,21 @@ export function wrapCodeForCdp(code: string): string {
 
 /**
  * Decide whether `code` should be treated as a single expression.
- *
- * Only the *top level* is inspected. Keywords and `;` nested inside brackets
- * belong to an inner function body and say nothing about the outer form — an
- * IIFE like `(() => { const a = 1; return a; })()` is a perfectly good
- * expression, and `({ const: 1 }).const` uses a keyword as a property name.
- *
- * Otherwise conservative: a top-level statement keyword, `return`, or a `;`
- * separating statements means statement form. A false negative merely requires
- * the caller's explicit `return` (already the documented fallback); a false
- * positive would turn working code into a syntax error.
  */
 function looksLikeExpression(code: string): boolean {
   const trimmed = code.trim();
   if (!trimmed) return false;
   const top = topLevelOnly(stripStringsAndComments(trimmed));
-  // A top-level `return` is only valid in the statement form.
   if (/(^|[^\w$.])return([^\w$]|$)/.test(top)) return false;
-  // Statement-only keywords cannot appear in an expression position.
   if (/(^|[^\w$.])(var|let|const|if|for|while|do|switch|throw|try|class|debugger)([^\w$]|$)/.test(top)) {
     return false;
   }
-  // A `;` anywhere but the very end means multiple statements.
   if (/;/.test(top.replace(/;\s*$/, ''))) return false;
   return true;
 }
 
 /**
  * Blank the contents of every bracketed group, keeping only depth-0 source.
- * Lets keyword/`;` detection ignore nested function bodies and object literals.
  */
 function topLevelOnly(code: string): string {
   let depth = 0;
@@ -107,8 +89,7 @@ function topLevelOnly(code: string): string {
 }
 
 /**
- * Blank out string/template/regex literals and comments so keyword and `;`
- * detection cannot be fooled by their contents (e.g. `"return"`, `a/*;*\/b`).
+ * Blank out string/template/regex literals and comments.
  */
 function stripStringsAndComments(code: string): string {
   return code
@@ -121,20 +102,16 @@ function stripStringsAndComments(code: string): string {
 
 /**
  * Page Interaction MCP Server
- * Provides tools for interacting with web page content:
- * - Content reading (`page_read`: Readability → Markdown)
- * - Structure & interaction (`page_snapshot` / `page_find`: ARIA tree + stable refs)
- * - DOM reading (attributes, computed styles) and querying
- * - User interaction simulation (click, fill, type, hover, scroll) by ref or selector
- * - Form manipulation (fill form, select options)
- * - Wait operations (wait for selector, text)
- * - Screenshot capture
- *
- * `page_read` / `page_snapshot` / `page_find` and the `ref` branch of the action
- * tools run in the resident content script (`entrypoints/content.ts`), because
- * element identity has to outlive a single call. Everything else keeps using
- * `chrome.scripting.executeScript`, which still works on pages where a content
- * script cannot be injected.
+ * Provides 9 unified tools for interacting with web page content:
+ * - page_read: Content reading (Readability → Markdown)
+ * - page_snapshot: Accessibility snapshot with stable refs + search/find
+ * - page_evaluate: Universal JavaScript execution (replaces all DOM queries, scroll, focus, hover, etc.)
+ * - page_click: Click elements by ref or selector
+ * - page_fill: Unified form operations (input, textarea, select, checkbox, radio, batch fill)
+ * - page_keyboard: Type text or press keys
+ * - page_wait: Wait for arbitrary JS conditions
+ * - page_screenshot: Capture viewport, full page, or element screenshots
+ * - page_list_frames: Discover iframes
  */
 export class PageInteractMcpServer implements IMcpServer {
   private status: McpServerStatus = 'disconnected';
@@ -144,7 +121,7 @@ export class PageInteractMcpServer implements IMcpServer {
     return {
       id: 'page-interact',
       name: 'Page Interaction',
-      description: 'Markdown page reading, accessibility snapshots with stable refs, DOM manipulation, form filling, clicking, and screenshots',
+      description: 'Markdown page reading, accessibility snapshots with stable refs, JS evaluation, form filling, clicking, and screenshots',
       transport: 'builtin',
       builtin: true,
       enabled: true,
@@ -207,14 +184,6 @@ export class PageInteractMcpServer implements IMcpServer {
 
   /**
    * Run a CDP operation under a one-shot debugger attachment.
-   *
-   * `page_evaluate` (and its CSP fallback) needs CDP's `Runtime.evaluate` for a
-   * single execution, but `chrome.debugger.attach` is a persistent, per-extension
-   * session that surfaces a "debugging" infobar on the tab. Leaving it behind
-   * after a one-shot call is a user-visible state leak, so we attach only when
-   * *we* are the first to attach and always release in `finally` — yet only the
-   * attachment we made, never a session owned by another context (DevTools
-   * Advanced, or an explicit `debug_attach`).
    */
   private async runWithDebugger<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
     let attachedHere = false;
@@ -224,7 +193,6 @@ export class PageInteractMcpServer implements IMcpServer {
         attachedHere = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        // Another context attached first; that session is not ours to release.
         if (!message.includes('Another debugger') && !message.includes('already attached')) {
           throw error;
         }
@@ -238,7 +206,7 @@ export class PageInteractMcpServer implements IMcpServer {
         try {
           await chrome.debugger.detach({ tabId });
         } catch {
-          // The tab may have closed mid-flight; nothing left to release.
+          // The tab may have closed mid-flight.
         }
         await attachedTabs.remove(tabId);
       }
@@ -246,16 +214,12 @@ export class PageInteractMcpServer implements IMcpServer {
   }
 
   /**
-   * Execute JavaScript via CDP Runtime.evaluate. Used as fallback when
-   * chrome.scripting is blocked by CSP, or when page_evaluate is called
-   * with useCDP=true.
+   * Execute JavaScript via CDP Runtime.evaluate.
    */
   private async evaluateViaCDP(tabId: number, expression: string): Promise<{ success: boolean; result?: unknown; error?: string }> {
     try {
       const result = await this.runWithDebugger(tabId, () =>
         chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
-          // `Runtime.evaluate` runs a script, not a function body; see
-          // `wrapCodeForCdp` for why the raw code cannot be passed through.
           expression: wrapCodeForCdp(expression),
           returnByValue: true,
           awaitPromise: true,
@@ -274,22 +238,13 @@ export class PageInteractMcpServer implements IMcpServer {
   }
 
   /**
-   * Send a request to the page content script, injecting it on demand when the
-   * tab predates the extension (or was reloaded before the script registered).
-   *
-   * Injection cannot be driven by `sendMessage` rejecting. That only happens when
-   * a tab has *no* listener at all, and every tab already has one: the WebMCP
-   * bridge registers at `document_start` on `<all_urls>` and returns `false` for
-   * messages outside its own namespace. A foreign listener declining a message
-   * still makes `sendMessage` resolve — with `undefined`. So the signal that our
-   * script is absent is an undefined *response*, not a thrown error.
+   * Send a request to the page content script, injecting it on demand.
    */
   private async sendToContent(tabId: number, request: PageRequest): Promise<PageResponse> {
     const send = async (): Promise<PageResponse | undefined> => {
       try {
         return (await chrome.tabs.sendMessage(tabId, request)) as PageResponse | undefined;
       } catch {
-        // No listener whatsoever, or the tab went away mid-flight.
         return undefined;
       }
     };
@@ -306,7 +261,7 @@ export class PageInteractMcpServer implements IMcpServer {
       throw new Error(
         `Page script unavailable on this page (${error instanceof Error ? error.message : String(error)}). ` +
           'Restricted pages such as chrome://, the Web Store and other extensions cannot be scripted; ' +
-          'use page_get_text or page_get_html there instead.',
+          'use page_evaluate with useCDP=true there instead.',
       );
     }
 
@@ -314,14 +269,12 @@ export class PageInteractMcpServer implements IMcpServer {
     if (second) return second;
     throw new Error(
       'Page script did not respond after injection. The page may have navigated ' +
-        'mid-request; retry, or use page_get_text if the page cannot be scripted.',
+        'mid-request; retry, or use page_evaluate with useCDP=true if the page cannot be scripted.',
     );
   }
 
   /**
-   * Run a request through the content script and flatten the result into the
-   * tool convention: `{ error }` for failures (which `registry.ts` turns into
-   * `isError: true`), the payload itself otherwise.
+   * Run a request through the content script and flatten the result.
    */
   private async requestPage(
     tabId: number | undefined,
@@ -345,10 +298,6 @@ export class PageInteractMcpServer implements IMcpServer {
 
   /**
    * Act on a `ref` from `page_snapshot`.
-   *
-   * A ref that no longer resolves returns an explicit error rather than falling
-   * back to a selector: silently operating on a neighbouring element is the
-   * data-corruption failure mode this whole path exists to remove.
    */
   private async actOnRef(
     tabId: number | undefined,
@@ -364,13 +313,6 @@ export class PageInteractMcpServer implements IMcpServer {
     }));
   }
 
-  /**
-   * UI-facing tool list, derived from the same zod schemas the model sees.
-   *
-   * This used to be a hand-written JSON Schema array kept in sync by hand, and
-   * it had already drifted (`frameId` was missing from several entries). Deriving
-   * it removes the class of bug rather than fixing one instance.
-   */
   getTools(): McpToolDefinition[] {
     return Object.entries(this.getAITools()).map(([name, definition]) => ({
       name,
@@ -385,9 +327,8 @@ export class PageInteractMcpServer implements IMcpServer {
         description:
           'Read the page as clean Markdown, preserving heading levels, lists, tables, ' +
           'image alt text and link URLs while stripping navigation, ads and cookie ' +
-          'banners. Prefer this over page_get_text or page_get_html for understanding ' +
-          'page content. Mode "auto" (default) detects article-like pages and falls ' +
-          'back to whole-page cleanup for app UIs such as dashboards or search results. ' +
+          'banners. Mode "auto" (default) detects article-like pages and falls ' +
+          'back to whole-page cleanup for app UIs. ' +
           'If the result reports truncated: true, call again with offset to continue.',
         inputSchema: z.object({
           mode: z.enum(['auto', 'article', 'full']).optional()
@@ -414,66 +355,60 @@ export class PageInteractMcpServer implements IMcpServer {
       page_snapshot: tool({
         description:
           'Capture a structured accessibility snapshot of the page: every element with ' +
-          'its role, accessible name, state ([disabled]/[checked]/[level=N]) and a ' +
-          'stable [ref=eN] handle. Pass a ref to page_click/page_fill instead of a CSS ' +
-          'selector — refs keep pointing at the same element after the DOM changes, ' +
-          'while positional selectors silently drift to a neighbour. Use page_find on ' +
-          'large pages to avoid capturing the whole tree.',
+          'its role, accessible name, state and a stable [ref=eN] handle. Pass a ref to ' +
+          'page_click/page_fill instead of a CSS selector — refs survive DOM changes. ' +
+          'Use the filter parameter (text or regex) to search within the snapshot and ' +
+          'return only matching nodes with surrounding context, avoiding full-tree capture on large pages.',
         inputSchema: z.object({
           selector: z.string().optional().describe('Snapshot only this subtree'),
           interactiveOnly: z.boolean().optional().describe('Only elements that can be acted on (default false)'),
-          depth: z.number().optional().describe('Truncate output below this tree depth. Does not affect which elements are discovered.'),
+          depth: z.number().optional().describe('Truncate output below this tree depth'),
+          filter: z.string().optional().describe('Search text (case-insensitive substring) or regex (wrap in slashes, e.g. "/error/i") to find specific elements'),
+          filterContext: z.number().optional().describe('Levels of surrounding context for filter matches (default 2)'),
           maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
-          offset: z.number().optional().describe('Character offset, for paging through large snapshots'),
+          offset: z.number().optional().describe('Character offset, for paging'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, interactiveOnly, depth, maxChars, offset, tabId }) =>
-          this.requestPage(tabId, () => ({
+        execute: async ({ selector, interactiveOnly, depth, filter, filterContext, maxChars, offset, tabId }) => {
+          // If filter is provided, use the find pathway
+          if (filter) {
+            const isRegex = filter.startsWith('/');
+            return this.requestPage(tabId, () => ({
+              type: 'lumo:page:find',
+              text: isRegex ? undefined : filter,
+              regex: isRegex ? filter : undefined,
+              context: filterContext ?? 2,
+              maxChars,
+              offset,
+            }));
+          }
+          // Otherwise use the full snapshot pathway
+          return this.requestPage(tabId, () => ({
             type: 'lumo:page:snapshot',
             selector,
             interactiveOnly: interactiveOnly ?? false,
             depth,
             maxChars,
             offset,
-          })),
-      }),
-
-      page_find: tool({
-        description:
-          'Search the page accessibility snapshot for text or a regex and return only ' +
-          'the matching nodes with their path from the root and surrounding context. ' +
-          'Much cheaper than page_snapshot when you only need to locate one element ' +
-          'and its ref.',
-        inputSchema: z.object({
-          text: z.string().optional().describe('Case-insensitive substring. Provide text or regex, not both.'),
-          regex: z.string().optional().describe('Regex; wrap in slashes for flags, e.g. "/error/i"'),
-          context: z.number().optional().describe('Levels of surrounding context to render (default 2)'),
-          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
-          offset: z.number().optional().describe('Character offset, for paging through many matches'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ text, regex, context, maxChars, offset, tabId }) =>
-          this.requestPage(tabId, () => ({
-            type: 'lumo:page:find',
-            text,
-            regex,
-            context: context ?? 2,
-            maxChars,
-            offset,
-          })),
+          }));
+        },
       }),
 
       page_evaluate: tool({
-        description: 'Execute JavaScript code in the page context and return the result. The code may be a single expression (its value is returned automatically) or a statement block using an explicit `return`. Top-level `await` is supported. The result must be JSON-serializable. If blocked by CSP, automatically falls back to CDP Runtime.evaluate (requires debugger, will auto-attach).',
+        description:
+          'Execute JavaScript code in the page context and return the result. ' +
+          'The code may be a single expression (its value is returned automatically) or a statement block using an explicit `return`. ' +
+          'Top-level `await` is supported. The result must be JSON-serializable. ' +
+          'Use this for any DOM query, scroll, focus, hover, attribute reading, computed style, or other page inspection that doesn\'t need a dedicated tool. ' +
+          'If blocked by CSP, automatically falls back to CDP Runtime.evaluate.',
         inputSchema: z.object({
           code: z.string().describe('JavaScript code to execute in the page'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          useCDP: z.boolean().optional().describe('Force using CDP Runtime.evaluate instead of chrome.scripting (bypasses CSP, auto-attaches debugger)'),
+          useCDP: z.boolean().optional().describe('Force using CDP Runtime.evaluate (bypasses CSP, auto-attaches debugger)'),
         }),
         execute: async ({ code, tabId, useCDP }) => {
           const targetTabId = await this.getTargetTabId(tabId);
 
-          // If useCDP is explicitly set, go directly to CDP
           if (useCDP) {
             return this.evaluateViaCDP(targetTabId, code);
           }
@@ -482,29 +417,17 @@ export class PageInteractMcpServer implements IMcpServer {
             const results = await chrome.scripting.executeScript({
               target: { tabId: targetTabId },
               func: async (codeStr: string) => {
-                // Compile the code with the AsyncFunction constructor instead of
-                // `eval`. Unlike a direct `eval` call this does not capture the
-                // surrounding scope (so the injected wrapper's own variables stay
-                // invisible to user code), it runs in global scope like a real
-                // page script, it allows top-level `await`, and it does not force
-                // the bundler to deoptimize/skip minification of this module.
                 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
                   ...args: string[]
                 ) => (...callArgs: unknown[]) => Promise<unknown>;
 
                 let run: (...callArgs: unknown[]) => Promise<unknown>;
                 const compile = (): string | undefined => {
-                  // 1. Prefer expression semantics so `1 + 1`, `document.title`
-                  //    or `({a: 1})` return their value without an explicit return.
                   try {
                     run = new AsyncFunction(`return (${codeStr}\n);`);
                     return;
-                  } catch { /* not an expression, keep trying */ }
+                  } catch { /* not an expression */ }
 
-                  // 2. Retry as an expression with trailing semicolons removed,
-                  //    so `document.title;` still returns a value instead of
-                  //    silently falling through to statement mode (which yields
-                  //    undefined).
                   const stripped = codeStr.replace(/;\s*$/, '');
                   if (stripped !== codeStr) {
                     try {
@@ -513,7 +436,6 @@ export class PageInteractMcpServer implements IMcpServer {
                     } catch { /* still not an expression */ }
                   }
 
-                  // 3. Fall back to a statement body needing an explicit `return`.
                   try {
                     run = new AsyncFunction(codeStr);
                     return;
@@ -529,8 +451,6 @@ export class PageInteractMcpServer implements IMcpServer {
 
                 try {
                   const value = await run!();
-                  // Surface non-serializable results explicitly instead of
-                  // letting them silently turn into undefined/null.
                   try {
                     return { success: true, result: JSON.parse(JSON.stringify(value ?? null)) };
                   } catch {
@@ -548,22 +468,16 @@ export class PageInteractMcpServer implements IMcpServer {
 
             const scriptResult = results?.[0]?.result as { success: boolean; error?: string } | undefined;
 
-            // Check if CSP blocked the execution
             if (scriptResult && !scriptResult.success && scriptResult.error &&
-                (scriptResult.error.includes('EvalError') || 
+                (scriptResult.error.includes('EvalError') ||
                  scriptResult.error.includes('unsafe-eval') ||
                  scriptResult.error.includes('Content Security Policy'))) {
-              // Fallback to CDP. The transport used is an implementation
-              // detail; annotating the result only pollutes the payload the
-              // caller has to parse.
               return this.evaluateViaCDP(targetTabId, code);
             }
 
             return scriptResult ?? { success: false, error: 'Script execution returned no result' };
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
-            // If the scripting API itself failed (e.g., cannot inject into chrome:// pages),
-            // try CDP as fallback
             if (errorMsg.includes('Cannot access') || errorMsg.includes('Cannot script') ||
                 errorMsg.includes('Extension manifest')) {
               return this.evaluateViaCDP(targetTabId, code);
@@ -573,205 +487,15 @@ export class PageInteractMcpServer implements IMcpServer {
         },
       }),
 
-      page_get_text: tool({
-        description:
-          '[Deprecated — prefer page_read] Get raw visible text via innerText. ' +
-          'Returns no heading levels, link URLs, image alt text or table structure. ' +
-          'Kept as an escape hatch for pages where the content script cannot run ' +
-          '(chrome://, the Web Store, other extension pages).',
-        inputSchema: z.object({
-          selector: z.string().optional().describe('CSS selector to get text from (optional, defaults to body)'),
-          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
-          offset: z.number().optional().describe('Character offset, for paging through long pages'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame.'),
-        }),
-        execute: async ({ selector, maxChars, offset, tabId, frameId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const result = await this.executeOnTab(targetTabId, (sel: string) => {
-            const el = sel ? document.querySelector(sel) : document.body;
-            if (!el) return { error: `Element not found: ${sel}` };
-            // Use innerText instead of textContent to preserve line breaks between
-            // block elements and respect CSS visibility (hidden elements excluded).
-            const text = (el as HTMLElement).innerText?.trim() || '';
-            return { text };
-          }, [selector || ''], frameId);
-          if ('error' in result) return result;
-          // The whole page used to be returned regardless of size; a single call
-          // could exhaust the context window.
-          const limited = applyOutputLimit(result.text, { maxChars, offset });
-          return { text: limited.text, length: limited.text.length, limit: limited.limit };
-        },
-      }),
-
-      page_get_html: tool({
-        description:
-          '[Deprecated — prefer page_read] Get raw HTML of the page or an element. ' +
-          'Verbose and full of markup noise; use page_read for content or ' +
-          'page_snapshot for structure. Kept as an escape hatch for pages where the ' +
-          'content script cannot run.',
-        inputSchema: z.object({
-          selector: z.string().optional().describe('CSS selector (optional, defaults to document root)'),
-          outer: z.boolean().optional().describe('If true, return outerHTML; if false, return innerHTML (default false)'),
-          maxChars: z.number().optional().describe(`Max characters to return (default ${DEFAULT_MAX_CHARS})`),
-          offset: z.number().optional().describe('Character offset, for paging through long documents'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ selector, outer, maxChars, offset, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const result = await this.executeOnTab(targetTabId, (sel: string, getOuter: boolean) => {
-            const el = sel ? document.querySelector(sel) : document.documentElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            return { html: getOuter ? el.outerHTML : el.innerHTML };
-          }, [selector || '', outer || false]);
-          if ('error' in result) return result;
-          const limited = applyOutputLimit(result.html, { maxChars, offset });
-          return { html: limited.text, limit: limited.limit };
-        },
-      }),
-
-      page_query_selector: tool({
-        description: 'Query a single element and return its tag, text content, attributes, bounding rect, and visibility.',
-        inputSchema: z.object({
-          selector: z.string().describe('CSS selector to query'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame.'),
-        }),
-        execute: async ({ selector, tabId, frameId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string) => {
-            const el = document.querySelector(sel);
-            if (!el) return { error: `Element not found: ${sel}` };
-            const rect = el.getBoundingClientRect();
-            const attrs: Record<string, string> = {};
-            for (const attr of el.attributes) {
-              attrs[attr.name] = attr.value;
-            }
-            return {
-              tag: el.tagName.toLowerCase(),
-              text: el.textContent?.trim().slice(0, 500) || '',
-              attributes: attrs,
-              rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-              visible: rect.width > 0 && rect.height > 0,
-              value: (el as HTMLInputElement).value || undefined,
-            };
-          }, [selector], frameId);
-        },
-      }),
-
-      page_query_selector_all: tool({
-        description: 'Query all matching elements and return their properties. Returns tag, text, id, class, attributes, and optionally bounding rect.',
-        inputSchema: z.object({
-          selector: z.string().describe('CSS selector to query'),
-          limit: z.number().optional().describe('Maximum number of elements to return (default 50)'),
-          detailed: z.boolean().optional().describe('If true, include bounding rect and all attributes for each element (default false)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ selector, limit, detailed, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, maxCount: number, isDetailed: boolean) => {
-            const elements = document.querySelectorAll(sel);
-            const results: Array<{
-              index: number; tag: string; text: string;
-              id?: string; className?: string; href?: string; value?: string;
-              name?: string; type?: string; selector?: string;
-              rect?: { x: number; y: number; width: number; height: number };
-              attributes?: Record<string, string>;
-              visible?: boolean;
-            }> = [];
-            const count = Math.min(elements.length, maxCount);
-            for (let i = 0; i < count; i++) {
-              const el = elements[i]!;
-              // Generate a usable selector for the element
-              let elSelector: string | undefined;
-              if (el.id) {
-                elSelector = `#${el.id}`;
-              } else if (el.getAttribute('name')) {
-                elSelector = `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]`;
-              } else {
-                // Use nth-of-type from the base selector
-                elSelector = `${sel}:nth-of-type(${i + 1})`;
-              }
-
-              const entry: typeof results[number] = {
-                index: i,
-                tag: el.tagName.toLowerCase(),
-                text: (el as HTMLElement).innerText?.trim().slice(0, 200) || el.textContent?.trim().slice(0, 200) || '',
-                id: el.id || undefined,
-                className: el.className || undefined,
-                href: (el as HTMLAnchorElement).href || undefined,
-                value: (el as HTMLInputElement).value || undefined,
-                name: el.getAttribute('name') || undefined,
-                type: (el as HTMLInputElement).type || undefined,
-                selector: elSelector,
-              };
-
-              if (isDetailed) {
-                const rect = el.getBoundingClientRect();
-                entry.rect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                entry.visible = rect.width > 0 && rect.height > 0;
-                const attrs: Record<string, string> = {};
-                for (const attr of el.attributes) {
-                  attrs[attr.name] = attr.value;
-                }
-                entry.attributes = attrs;
-              }
-
-              results.push(entry);
-            }
-            return { total: elements.length, returned: count, elements: results };
-          }, [selector, limit || 50, detailed || false]);
-        },
-      }),
-
-      page_get_attribute: tool({
-        description: 'Get a specific attribute value of an element.',
-        inputSchema: z.object({
-          selector: z.string().describe('CSS selector'),
-          attribute: z.string().describe('Attribute name to get'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ selector, attribute, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, attr: string) => {
-            const el = document.querySelector(sel);
-            if (!el) return { error: `Element not found: ${sel}` };
-            return { selector: sel, attribute: attr, value: el.getAttribute(attr) };
-          }, [selector, attribute]);
-        },
-      }),
-
-      page_get_computed_style: tool({
-        description: 'Get computed CSS style properties of an element.',
-        inputSchema: z.object({
-          selector: z.string().describe('CSS selector'),
-          properties: z.array(z.string()).optional().describe('Specific CSS properties to get (optional, returns common ones by default)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ selector, properties, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, props: string[]) => {
-            const el = document.querySelector(sel);
-            if (!el) return { error: `Element not found: ${sel}` };
-            const computed = getComputedStyle(el);
-            const defaultProps = ['display', 'visibility', 'opacity', 'color', 'backgroundColor', 'fontSize', 'fontWeight', 'width', 'height', 'position', 'overflow'];
-            const targetProps = props.length > 0 ? props : defaultProps;
-            const styles: Record<string, string> = {};
-            for (const prop of targetProps) {
-              styles[prop] = computed.getPropertyValue(prop) || (computed as unknown as Record<string, string>)[prop] || '';
-            }
-            return { selector: sel, styles };
-          }, [selector, properties || []]);
-        },
-      }),
-
       page_click: tool({
-        description: 'Click an element. Prefer ref from page_snapshot: a ref keeps pointing at the same element after the DOM changes, while a positional CSS selector silently drifts to a neighbour. Dispatches mousedown, mouseup, and click events.',
+        description:
+          'Click an element. Prefer ref from page_snapshot: a ref keeps pointing at the same element after the DOM changes, ' +
+          'while a positional CSS selector silently drifts to a neighbour. Dispatches mousedown, mouseup, and click events.',
         inputSchema: z.object({
           ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
+          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame. Ignored when ref is used.'),
+          frameId: z.number().optional().describe('Frame ID (ignored when ref is used)'),
         }),
         execute: async ({ ref, selector, tabId, frameId }) => {
           if (ref) return this.actOnRef(tabId, 'click', ref);
@@ -790,345 +514,331 @@ export class PageInteractMcpServer implements IMcpServer {
       }),
 
       page_fill: tool({
-        description: 'Fill an input or textarea with text. Prefer ref from page_snapshot over a CSS selector. Clears the existing value, then sets the new value via the native setter (so React controlled components update) and triggers input/change events.',
+        description:
+          'Fill form elements. Supports input/textarea (type: "text"), select dropdowns (type: "select"), ' +
+          'checkboxes/radios (type: "check"), and batch operations (type: "batch"). ' +
+          'Prefer ref from page_snapshot over CSS selectors. ' +
+          'For text inputs: clears existing value, sets new value via native setter (React-compatible), triggers input/change events. ' +
+          'For selects: matches by value or visible text. For checkboxes: toggles or sets explicitly.',
         inputSchema: z.object({
-          value: z.string().describe('Value to fill in'),
-          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
+          type: z.enum(['text', 'select', 'check', 'batch']).describe('The fill type to perform'),
+          value: z.string().optional().describe('[text, select] Value to fill or option to select'),
+          ref: z.string().optional().describe('[text, select, check] Element ref from page_snapshot (preferred)'),
+          selector: z.string().optional().describe('[text, select, check] CSS selector (fallback)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          frameId: z.number().optional().describe('Frame ID to execute in (use page_list_frames to get frame IDs). Defaults to main frame. Ignored when ref is used.'),
-        }),
-        execute: async ({ ref, selector, value, tabId, frameId }) => {
-          if (ref) return this.actOnRef(tabId, 'fill', ref, { value });
-          if (!selector) return { error: 'Provide either ref or selector' };
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, val: string) => {
-            const el = document.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            el.focus();
-            // Use native setter to bypass React controlled components
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype, 'value'
-            )?.set || Object.getOwnPropertyDescriptor(
-              window.HTMLTextAreaElement.prototype, 'value'
-            )?.set;
-            if (nativeInputValueSetter) {
-              nativeInputValueSetter.call(el, val);
-            } else {
-              el.value = val;
-            }
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { success: true, selector: sel, filledValue: val };
-          }, [selector, value], frameId);
-        },
-      }),
-
-      page_fill_form: tool({
-        description: 'Fill multiple form fields at once. Each field is specified by selector and value.',
-        inputSchema: z.object({
+          frameId: z.number().optional().describe('[text] Frame ID (ignored when ref is used)'),
+          checked: z.boolean().optional().describe('[check] Target state (omit to toggle)'),
           fields: z.array(z.object({
             selector: z.string().describe('CSS selector of the form field'),
             value: z.string().describe('Value to fill'),
-          })).describe('Array of fields to fill'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
+          })).optional().describe('[batch] Array of fields to fill'),
         }),
-        execute: async ({ fields, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (fieldList: Array<{ selector: string; value: string }>) => {
-            const results: Array<{ selector: string; success: boolean; error?: string }> = [];
-            for (const field of fieldList) {
-              const el = document.querySelector(field.selector) as HTMLInputElement | HTMLTextAreaElement;
-              if (!el) {
-                results.push({ selector: field.selector, success: false, error: 'Element not found' });
-                continue;
+        execute: async (params: any) => {
+          switch (params.type) {
+            case 'text': {
+              if (params.ref) return this.actOnRef(params.tabId, 'fill', params.ref, { value: params.value });
+              if (!params.selector) return { error: 'Provide either ref or selector' };
+              const targetTabId = await this.getTargetTabId(params.tabId);
+              return this.executeOnTab(targetTabId, (sel: string, val: string) => {
+                const el = document.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement;
+                if (!el) return { error: `Element not found: ${sel}` };
+                el.focus();
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                  window.HTMLInputElement.prototype, 'value'
+                )?.set || Object.getOwnPropertyDescriptor(
+                  window.HTMLTextAreaElement.prototype, 'value'
+                )?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(el, val);
+                } else {
+                  el.value = val;
+                }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { success: true, selector: sel, filledValue: val };
+              }, [params.selector, params.value], params.frameId);
+            }
+            case 'select': {
+              if (params.ref) return this.actOnRef(params.tabId, 'select-option', params.ref, { value: params.value });
+              if (!params.selector) return { error: 'Provide either ref or selector' };
+              const targetTabId = await this.getTargetTabId(params.tabId);
+              return this.executeOnTab(targetTabId, (sel: string, val: string) => {
+                const el = document.querySelector(sel) as HTMLSelectElement;
+                if (!el) return { error: `Element not found: ${sel}` };
+                if (el.tagName.toLowerCase() !== 'select') return { error: `Element is not a select: ${el.tagName}` };
+                // Try matching by value first, then by visible text
+                let matched = false;
+                for (const opt of el.options) {
+                  if (opt.value === val || opt.text === val) {
+                    el.value = opt.value;
+                    matched = true;
+                    break;
+                  }
+                }
+                if (!matched) el.value = val;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { success: true, selectedValue: el.value, selectedText: el.options[el.selectedIndex]?.text };
+              }, [params.selector, params.value]);
+            }
+            case 'check': {
+              if (params.ref) {
+                return this.actOnRef(params.tabId, 'check-checkbox', params.ref, {
+                  checked: params.checked !== undefined ? params.checked : null,
+                });
               }
-              el.focus();
-              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value'
-              )?.set || Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value'
-              )?.set;
-              if (nativeInputValueSetter) {
-                nativeInputValueSetter.call(el, field.value);
-              } else {
-                el.value = field.value;
-              }
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              results.push({ selector: field.selector, success: true });
+              if (!params.selector) return { error: 'Provide either ref or selector' };
+              const targetTabId = await this.getTargetTabId(params.tabId);
+              return this.executeOnTab(targetTabId, (sel: string, shouldCheck: boolean | null) => {
+                const el = document.querySelector(sel) as HTMLInputElement;
+                if (!el) return { error: `Element not found: ${sel}` };
+                if (el.type !== 'checkbox' && el.type !== 'radio') return { error: `Element is not a checkbox/radio: ${el.type}` };
+                const newValue = shouldCheck !== null ? shouldCheck : !el.checked;
+                el.checked = newValue;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                return { success: true, checked: el.checked };
+              }, [params.selector, params.checked !== undefined ? params.checked : null]);
             }
-            return { results };
-          }, [fields]);
-        },
-      }),
-
-      page_select_option: tool({
-        description: 'Select an option in a <select> element by value or visible text. Prefer ref from page_snapshot over a CSS selector.',
-        inputSchema: z.object({
-          value: z.string().describe('Value (or visible text) of the option to select'),
-          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ ref, selector, value, tabId }) => {
-          if (ref) return this.actOnRef(tabId, 'select-option', ref, { value });
-          if (!selector) return { error: 'Provide either ref or selector' };
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, val: string) => {
-            const el = document.querySelector(sel) as HTMLSelectElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            if (el.tagName.toLowerCase() !== 'select') return { error: `Element is not a select: ${el.tagName}` };
-            el.value = val;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { success: true, selectedValue: el.value, selectedText: el.options[el.selectedIndex]?.text };
-          }, [selector, value]);
-        },
-      }),
-
-      page_type_text: tool({
-        description: 'Type text character by character into an element, simulating keyboard events for each character.',
-        inputSchema: z.object({
-          text: z.string().describe('Text to type'),
-          selector: z.string().optional().describe('CSS selector of element to type into (optional, types into focused element)'),
-          delay: z.number().optional().describe('Delay between keystrokes in ms (default 0, executed synchronously)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ text, selector, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (txt: string, sel: string) => {
-            const el = (sel ? document.querySelector(sel) : document.activeElement) as HTMLInputElement;
-            if (!el) return { error: sel ? `Element not found: ${sel}` : 'No focused element' };
-            if (sel) el.focus();
-            for (const char of txt) {
-              el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
-              el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
-              // Append character
-              const nativeSetter = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value'
-              )?.set || Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value'
-              )?.set;
-              const newValue = (el.value || '') + char;
-              if (nativeSetter) {
-                nativeSetter.call(el, newValue);
-              } else {
-                el.value = newValue;
-              }
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+            case 'batch': {
+              const targetTabId = await this.getTargetTabId(params.tabId);
+              return this.executeOnTab(targetTabId, (fieldList: Array<{ selector: string; value: string }>) => {
+                const results: Array<{ selector: string; success: boolean; error?: string }> = [];
+                for (const field of fieldList) {
+                  const el = document.querySelector(field.selector) as HTMLInputElement | HTMLTextAreaElement;
+                  if (!el) {
+                    results.push({ selector: field.selector, success: false, error: 'Element not found' });
+                    continue;
+                  }
+                  el.focus();
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                  )?.set || Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype, 'value'
+                  )?.set;
+                  if (nativeInputValueSetter) {
+                    nativeInputValueSetter.call(el, field.value);
+                  } else {
+                    el.value = field.value;
+                  }
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  results.push({ selector: field.selector, success: true });
+                }
+                return { results };
+              }, [params.fields]);
             }
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { success: true, typed: txt, length: txt.length };
-          }, [text, selector || '']);
+          }
         },
       }),
 
-      page_press_key: tool({
-        description: 'Press a keyboard key (e.g., "Enter", "Escape", "Tab", "ArrowDown"). Dispatches keydown, keypress, and keyup events.',
+      page_keyboard: tool({
+        description:
+          'Keyboard input. Actions: type (type text character-by-character with keyboard events), ' +
+          'press (press a single key like Enter, Escape, Tab, ArrowDown). ' +
+          'Operates on the focused element, or specify a selector to focus first.',
         inputSchema: z.object({
-          key: z.string().describe('Key to press (e.g., "Enter", "Escape", "Tab", "Space", "ArrowDown")'),
-          selector: z.string().optional().describe('CSS selector of element to press key on (optional, uses focused element)'),
+          action: z.enum(['type', 'press']).describe('The action to perform'),
+          text: z.string().optional().describe('[type] Text to type character by character'),
+          key: z.string().optional().describe('[press] Key to press (e.g., "Enter", "Escape", "Tab", "Space", "ArrowDown")'),
+          selector: z.string().optional().describe('CSS selector of element (uses focused element if omitted)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ key, selector, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (k: string, sel: string) => {
-            const el = (sel ? document.querySelector(sel) : document.activeElement) as HTMLElement;
-            if (!el) return { error: sel ? `Element not found: ${sel}` : 'No focused element' };
-            if (sel) el.focus();
-            const opts = { key: k, code: k, bubbles: true, cancelable: true };
-            el.dispatchEvent(new KeyboardEvent('keydown', opts));
-            el.dispatchEvent(new KeyboardEvent('keypress', opts));
-            el.dispatchEvent(new KeyboardEvent('keyup', opts));
-            // Handle Enter on forms
-            if (k === 'Enter' && el.closest('form')) {
-              const form = el.closest('form');
-              form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        execute: async (params: any) => {
+          const targetTabId = await this.getTargetTabId(params.tabId);
+          switch (params.action) {
+            case 'type': {
+              return this.executeOnTab(targetTabId, (txt: string, sel: string) => {
+                const el = (sel ? document.querySelector(sel) : document.activeElement) as HTMLInputElement;
+                if (!el) return { error: sel ? `Element not found: ${sel}` : 'No focused element' };
+                if (sel) el.focus();
+                for (const char of txt) {
+                  el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+                  el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+                  const nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                  )?.set || Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype, 'value'
+                  )?.set;
+                  const newValue = (el.value || '') + char;
+                  if (nativeSetter) {
+                    nativeSetter.call(el, newValue);
+                  } else {
+                    el.value = newValue;
+                  }
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+                }
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { success: true, typed: txt, length: txt.length };
+              }, [params.text, params.selector || '']);
             }
-            return { success: true, key: k };
-          }, [key, selector || '']);
-        },
-      }),
-
-      page_hover: tool({
-        description: 'Hover over an element, triggering mouseenter and mouseover events. Prefer ref from page_snapshot over a CSS selector.',
-        inputSchema: z.object({
-          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ ref, selector, tabId }) => {
-          if (ref) return this.actOnRef(tabId, 'hover', ref);
-          if (!selector) return { error: 'Provide either ref or selector' };
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string) => {
-            const el = document.querySelector(sel) as HTMLElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-            el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-            return { success: true, tag: el.tagName.toLowerCase() };
-          }, [selector]);
-        },
-      }),
-
-      page_scroll: tool({
-        description: 'Scroll the page or a specific element in a direction.',
-        inputSchema: z.object({
-          direction: z.enum(['up', 'down', 'left', 'right', 'top', 'bottom']).describe('Scroll direction'),
-          amount: z.number().optional().describe('Scroll amount in pixels (default 500, ignored for top/bottom)'),
-          selector: z.string().optional().describe('CSS selector of element to scroll (optional, scrolls the page)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ direction, amount, selector, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (dir: string, px: number, sel: string) => {
-            const el = sel ? document.querySelector(sel) : document.documentElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            const target = sel ? el : window;
-            switch (dir) {
-              case 'up': (target as Window).scrollBy ? (target as Window).scrollBy(0, -px) : el.scrollTop -= px; break;
-              case 'down': (target as Window).scrollBy ? (target as Window).scrollBy(0, px) : el.scrollTop += px; break;
-              case 'left': (target as Window).scrollBy ? (target as Window).scrollBy(-px, 0) : el.scrollLeft -= px; break;
-              case 'right': (target as Window).scrollBy ? (target as Window).scrollBy(px, 0) : el.scrollLeft += px; break;
-              case 'top': if (sel) { el.scrollTop = 0; } else { window.scrollTo(0, 0); } break;
-              case 'bottom': if (sel) { el.scrollTop = el.scrollHeight; } else { window.scrollTo(0, document.body.scrollHeight); } break;
+            case 'press': {
+              return this.executeOnTab(targetTabId, (k: string, sel: string) => {
+                const el = (sel ? document.querySelector(sel) : document.activeElement) as HTMLElement;
+                if (!el) return { error: sel ? `Element not found: ${sel}` : 'No focused element' };
+                if (sel) el.focus();
+                const opts = { key: k, code: k, bubbles: true, cancelable: true };
+                el.dispatchEvent(new KeyboardEvent('keydown', opts));
+                el.dispatchEvent(new KeyboardEvent('keypress', opts));
+                el.dispatchEvent(new KeyboardEvent('keyup', opts));
+                if (k === 'Enter' && el.closest('form')) {
+                  const form = el.closest('form');
+                  form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                }
+                return { success: true, key: k };
+              }, [params.key, params.selector || '']);
             }
-            return { success: true, direction: dir, scrollTop: el.scrollTop, scrollLeft: el.scrollLeft };
-          }, [direction, amount || 500, selector || '']);
+          }
         },
       }),
 
-      page_wait_for_selector: tool({
-        description: 'Wait for an element matching the selector to appear in the DOM. Polls at 100ms intervals.',
+      page_wait: tool({
+        description:
+          'Wait for a condition to become true on the page. The condition is a JavaScript expression ' +
+          'that will be evaluated repeatedly (every 100ms) until it returns a truthy value or times out. ' +
+          'Examples: "document.querySelector(\'.loaded\')" (wait for element), ' +
+          '"document.body.innerText.includes(\'Success\')" (wait for text), ' +
+          '"document.readyState === \'complete\'" (wait for load).',
         inputSchema: z.object({
-          selector: z.string().describe('CSS selector to wait for'),
+          condition: z.string().describe('JavaScript expression that returns truthy when the condition is met'),
           timeout: z.number().optional().describe('Timeout in milliseconds (default 5000)'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
-        execute: async ({ selector, timeout, tabId }) => {
+        execute: async ({ condition, timeout, tabId }) => {
           const targetTabId = await this.getTargetTabId(tabId);
           const maxTime = timeout || 5000;
           const startTime = Date.now();
-          while (Date.now() - startTime < maxTime) {
-            const found = await this.executeOnTab(targetTabId, (sel: string) => {
-              return !!document.querySelector(sel);
-            }, [selector]);
-            if (found) return { success: true, selector, elapsed: Date.now() - startTime };
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-          return { error: `Timeout waiting for selector: ${selector}`, timeout: maxTime };
-        },
-      }),
 
-      page_wait_for_text: tool({
-        description: 'Wait for specific text to appear on the page. Polls at 100ms intervals.',
-        inputSchema: z.object({
-          text: z.string().describe('Text to wait for'),
-          timeout: z.number().optional().describe('Timeout in milliseconds (default 5000)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ text, timeout, tabId }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          const maxTime = timeout || 5000;
-          const startTime = Date.now();
+          // Try scripting API with Function constructor (avoids eval CSP issues)
+          // The injected function returns { ok: true, value: bool } on success
+          // or { ok: false } when Function constructor is blocked by CSP
+          const pollViaScripting = async (): Promise<{ ok: boolean; value: boolean }> => {
+            return await this.executeOnTab(targetTabId, (code: string) => {
+              try {
+                const fn = new Function(`return (${code})`) as () => unknown;
+                return { ok: true, value: !!fn() };
+              } catch {
+                return { ok: false, value: false };
+              }
+            }, [condition]) as { ok: boolean; value: boolean };
+          };
+
+          try {
+            const probe = await pollViaScripting();
+            if (probe.ok) {
+              // Scripting works — use it for polling
+              if (probe.value) return { success: true, condition, elapsed: Date.now() - startTime };
+
+              while (Date.now() - startTime < maxTime) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                const poll = await pollViaScripting();
+                if (poll.value) return { success: true, condition, elapsed: Date.now() - startTime };
+              }
+              return { error: `Timeout waiting for condition: ${condition}`, timeout: maxTime };
+            }
+            // Function constructor blocked by CSP — fall through to CDP
+          } catch {
+            // executeScript itself failed (restricted page) — fall through to CDP
+          }
+
+          // CDP fallback: poll via Runtime.evaluate
           while (Date.now() - startTime < maxTime) {
-            const found = await this.executeOnTab(targetTabId, (txt: string) => {
-              return document.body.innerText.includes(txt);
-            }, [text]);
-            if (found) return { success: true, text, elapsed: Date.now() - startTime };
+            const cdpResult = await this.evaluateViaCDP(targetTabId, condition);
+            if (cdpResult.success && cdpResult.result) {
+              return { success: true, condition, elapsed: Date.now() - startTime };
+            }
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
-          return { error: `Timeout waiting for text: ${text}`, timeout: maxTime };
+          return { error: `Timeout waiting for condition: ${condition}`, timeout: maxTime };
         },
       }),
 
       page_screenshot: tool({
-        description: 'Take a screenshot of the currently visible area of the tab. Returns a base64-encoded image data URL.',
+        description:
+          'Take a screenshot. Scope: "viewport" (visible area, default), "fullpage" (entire page beyond viewport, uses CDP), ' +
+          '"element" (specific element by CSS selector, uses CDP). Returns base64-encoded image.',
         inputSchema: z.object({
+          scope: z.enum(['viewport', 'fullpage', 'element']).optional().default('viewport').describe('Screenshot scope'),
+          format: z.enum(['png', 'jpeg', 'webp']).optional().describe('Image format (default png)'),
+          quality: z.number().optional().describe('Image quality 0-100 (for jpeg/webp)'),
+          selector: z.string().optional().describe('[element] CSS selector of the element to screenshot'),
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-          format: z.enum(['png', 'jpeg']).optional().describe('Image format (default png)'),
-          quality: z.number().optional().describe('JPEG quality 0-100 (only for jpeg format)'),
         }),
-        execute: async ({ tabId, format, quality }) => {
-          const targetTabId = await this.getTargetTabId(tabId);
-          // Ensure the tab is active for captureVisibleTab
-          const tab = await chrome.tabs.get(targetTabId);
-          if (!tab.active) {
-            await chrome.tabs.update(targetTabId, { active: true });
-            await new Promise((resolve) => setTimeout(resolve, 200));
-          }
-          const imageFormat = format || 'png';
-          const options: { format?: string; quality?: number } = {
-            format: imageFormat,
-          };
-          if (format === 'jpeg' && quality !== undefined) {
-            options.quality = quality;
-          }
-          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, options as chrome.extensionTypes.ImageDetails);
-          const comma = dataUrl.indexOf(',');
-          const mimeType = dataUrl.slice(5, comma).split(';')[0] || (imageFormat === 'jpeg' ? 'image/jpeg' : 'image/png');
-          return {
-            content: [
-              { type: 'image', data: comma > 0 ? dataUrl.slice(comma + 1) : dataUrl, mimeType },
-              { type: 'text', text: `Screenshot captured (${imageFormat})` },
-            ],
-            isError: false,
-          };
-        },
-      }),
+        execute: async (params: any) => {
+          const targetTabId = await this.getTargetTabId(params.tabId);
 
-      page_focus: tool({
-        description: 'Focus an element. Prefer ref from page_snapshot over a CSS selector.',
-        inputSchema: z.object({
-          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ ref, selector, tabId }) => {
-          if (ref) return this.actOnRef(tabId, 'focus', ref);
-          if (!selector) return { error: 'Provide either ref or selector' };
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string) => {
-            const el = document.querySelector(sel) as HTMLElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            el.focus();
-            return { success: true, tag: el.tagName.toLowerCase() };
-          }, [selector]);
-        },
-      }),
-
-      page_check_checkbox: tool({
-        description: 'Check or uncheck a checkbox or radio input. Prefer ref from page_snapshot over a CSS selector.',
-        inputSchema: z.object({
-          ref: z.string().optional().describe('Element ref from page_snapshot (preferred — survives DOM changes)'),
-          selector: z.string().optional().describe('CSS selector (fallback; may drift if the DOM changed since you looked)'),
-          checked: z.boolean().optional().describe('Whether to check (true) or uncheck (false). Defaults to toggle.'),
-          tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
-        }),
-        execute: async ({ ref, selector, checked, tabId }) => {
-          if (ref) {
-            return this.actOnRef(tabId, 'check-checkbox', ref, {
-              checked: checked !== undefined ? checked : null,
-            });
+          switch (params.scope) {
+            case 'viewport': {
+              const tab = await chrome.tabs.get(targetTabId);
+              if (!tab.active) {
+                await chrome.tabs.update(targetTabId, { active: true });
+                await new Promise((resolve) => setTimeout(resolve, 200));
+              }
+              const imageFormat = params.format || 'png';
+              const options: { format?: string; quality?: number } = { format: imageFormat };
+              if (params.format === 'jpeg' && params.quality !== undefined) {
+                options.quality = params.quality;
+              }
+              const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, options as chrome.extensionTypes.ImageDetails);
+              const comma = dataUrl.indexOf(',');
+              const mimeType = dataUrl.slice(5, comma).split(';')[0] || (imageFormat === 'jpeg' ? 'image/jpeg' : 'image/png');
+              return {
+                content: [
+                  { type: 'image', data: comma > 0 ? dataUrl.slice(comma + 1) : dataUrl, mimeType },
+                  { type: 'text', text: `Screenshot captured (${imageFormat}, viewport)` },
+                ],
+                isError: false,
+              };
+            }
+            case 'fullpage': {
+              return this.runWithDebugger(targetTabId, async () => {
+                const layoutMetrics = await chrome.debugger.sendCommand({ tabId: targetTabId }, 'Page.getLayoutMetrics') as {
+                  contentSize: { width: number; height: number };
+                };
+                const { width, height } = layoutMetrics.contentSize;
+                const result = await chrome.debugger.sendCommand({ tabId: targetTabId }, 'Page.captureScreenshot', {
+                  format: params.format || 'png',
+                  quality: params.quality || undefined,
+                  clip: { x: 0, y: 0, width, height, scale: 1 },
+                  captureBeyondViewport: true,
+                }) as { data: string };
+                return {
+                  content: [
+                    { type: 'image', data: result.data, mimeType: `image/${params.format || 'png'}` },
+                    { type: 'text', text: `Full-page screenshot captured (${params.format || 'png'}, ${width}x${height})` },
+                  ],
+                  isError: false,
+                };
+              });
+            }
+            case 'element': {
+              return this.runWithDebugger(targetTabId, async () => {
+                const boundsResult = await chrome.debugger.sendCommand({ tabId: targetTabId }, 'Runtime.evaluate', {
+                  expression: `(() => { const el = document.querySelector('${params.selector.replace(/'/g, "\\'")}'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+                  returnByValue: true,
+                }) as { result: { value: { x: number; y: number; width: number; height: number } | null } };
+                const bounds = boundsResult.result?.value;
+                if (!bounds) return { error: `Element not found: ${params.selector}` };
+                const result = await chrome.debugger.sendCommand({ tabId: targetTabId }, 'Page.captureScreenshot', {
+                  format: params.format || 'png',
+                  quality: params.quality || undefined,
+                  clip: { ...bounds, scale: 1 },
+                }) as { data: string };
+                return {
+                  content: [
+                    { type: 'image', data: result.data, mimeType: `image/${params.format || 'png'}` },
+                    { type: 'text', text: `Element screenshot captured (${params.selector}, ${Math.round(bounds.width)}x${Math.round(bounds.height)})` },
+                  ],
+                  isError: false,
+                };
+              });
+            }
           }
-          if (!selector) return { error: 'Provide either ref or selector' };
-          const targetTabId = await this.getTargetTabId(tabId);
-          return this.executeOnTab(targetTabId, (sel: string, shouldCheck: boolean | null) => {
-            const el = document.querySelector(sel) as HTMLInputElement;
-            if (!el) return { error: `Element not found: ${sel}` };
-            if (el.type !== 'checkbox' && el.type !== 'radio') return { error: `Element is not a checkbox/radio: ${el.type}` };
-            const newValue = shouldCheck !== null ? shouldCheck : !el.checked;
-            el.checked = newValue;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            return { success: true, checked: el.checked };
-          }, [selector, checked !== undefined ? checked : null]);
         },
       }),
 
       page_list_frames: tool({
-        description: 'List all frames (iframes) in a tab with their frame IDs, URLs, and names. Use the returned frameId with other page_* tools to operate on iframe content.',
+        description: 'List all frames (iframes) in a tab with their frame IDs, URLs, and type. Use the returned frameId with page_evaluate or page_click to operate on iframe content.',
         inputSchema: z.object({
           tabId: z.number().optional().describe('Tab ID (optional, defaults to active tab)'),
         }),
@@ -1144,7 +854,6 @@ export class PageInteractMcpServer implements IMcpServer {
               frameType: frame.frameId === 0 ? 'main_frame' : 'sub_frame',
             })),
             total: frames.length,
-            usage: 'Pass the frameId to other page_* tools to operate on iframe content',
           };
         },
       }),
