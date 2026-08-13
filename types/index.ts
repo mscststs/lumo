@@ -60,6 +60,12 @@ export interface ProviderConfig {
 export type SendKey = 'enter' | 'meta-enter';
 
 /**
+ * Allowed font-size presets (in pixels). Applied to `<html>` to scale all
+ * `rem`-based UI proportionally.
+ */
+export type FontSize = 12 | 13 | 14 | 15 | 16 | 17 | 18;
+
+/**
  * A user-selectable colour theme.
  *
  * `'system'` is a *preference*, not a palette — it resolves to one of the
@@ -81,6 +87,8 @@ export type ResolvedTheme = Exclude<Theme, 'system'>;
 export interface UISettings {
   language: 'en' | 'zh';
   theme: Theme;
+  /** Global UI font size in pixels. Default is 14. */
+  fontSize: FontSize;
   /** Maximum number of side-by-side chat panels (1–3). Default is 1. */
   maxSplitPanels: 1 | 2 | 3;
   /** Which key combination sends a chat message. Default is Enter. */

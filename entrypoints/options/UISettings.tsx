@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTheme, THEME_OPTIONS } from '@/lib/theme';
+import { DEFAULT_FONT_SIZE, FONT_SIZE_OPTIONS } from '@/lib/font-size';
 import { DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import { cn, isMacPlatform } from '@/lib/utils';
@@ -18,7 +19,7 @@ import { MaxStepsField } from './components/MaxStepsField';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
-import type { SendKey, Theme, UISettings } from '@/types';
+import type { SendKey, Theme, FontSize, UISettings } from '@/types';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -64,6 +65,7 @@ export function UISettingsPage() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [language, setLanguage] = useState<UISettings['language']>('en');
+  const [fontSize, setFontSize] = useState<FontSize>(DEFAULT_FONT_SIZE);
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
@@ -72,6 +74,7 @@ export function UISettingsPage() {
   useEffect(() => {
     storage.getUISettings().then((settings) => {
       setLanguage(settings.language);
+      setFontSize(settings.fontSize ?? DEFAULT_FONT_SIZE);
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
       setSendKey(settings.sendKey ?? 'enter');
       setPasteThreshold(settings.pasteThreshold);
@@ -89,6 +92,13 @@ export function UISettingsPage() {
 
   const handleThemeChange = async (val: string) => {
     await setTheme(val as Theme);
+  };
+
+  const handleFontSizeChange = async (val: string) => {
+    const size = Number(val) as FontSize;
+    setFontSize(size);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, fontSize: size });
   };
 
   const handleMaxSplitPanelsChange = async (val: string) => {
@@ -147,6 +157,21 @@ export function UISettingsPage() {
               <SelectContent>
                 {THEME_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.fontSize')}>
+            <Select value={String(fontSize)} onValueChange={handleFontSizeChange}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.fontSize')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FONT_SIZE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={String(opt.value)}>
                     {t(opt.labelKey)}
                   </SelectItem>
                 ))}

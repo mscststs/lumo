@@ -35,6 +35,7 @@ import type { McpSettings } from '@/lib/mcp/types';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
 import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
+import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@/lib/font-size-registry';
 import { normalizePasteThreshold, DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { normalizeMaxSteps, DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import {
@@ -138,6 +139,7 @@ export interface StorageFieldDef<K extends StorageKey> {
 const DEFAULT_UI_SETTINGS: UISettings = {
   language: 'en',
   theme: DEFAULT_THEME,
+  fontSize: DEFAULT_FONT_SIZE,
   maxSplitPanels: 1,
   sendKey: 'enter',
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
@@ -175,6 +177,7 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // (and pre-field configs). An unrecognised value would otherwise reach
       // `data-theme`, match no token block, and silently leave light tokens.
       theme: normalizeTheme(raw.theme),
+      fontSize: normalizeFontSize(raw.fontSize),
       maxSplitPanels: raw.maxSplitPanels ?? 1,
       sendKey: raw.sendKey ?? 'enter',
       // A config written before this setting existed, or one carrying a value a

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ThemeInit } from '@/lib/theme';
+import { FontSizeInit } from '@/lib/font-size';
 import { emitEvent } from '@/lib/event-bus';
 import { SplitView } from '@/components/chat/SplitView';
 
@@ -38,6 +39,7 @@ export default function App() {
   return (
     <div className="h-screen w-full bg-background overflow-hidden">
       <ThemeInit />
+      <FontSizeInit />
       <SplitView />
     </div>
   );

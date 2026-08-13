@@ -81,4 +81,20 @@
   root.style.backgroundColor = theme.background;
   root.style.colorScheme = theme.dark ? 'dark' : 'light';
   root.setAttribute('data-theme-preload', '');
+
+  // ─── Font Size ────────────────────────────────────────────────────────────
+  // Same mirror pattern: `lib/font-size.ts` writes to localStorage, read here
+  // synchronously so the first frame is already at the correct scale.
+  var FONT_SIZE_KEY = 'lumo:font-size';
+  var DEFAULT_SIZE = 16;
+  var VALID_SIZES = [12, 13, 14, 15, 16, 17, 18];
+  var rawSize = null;
+  try {
+    rawSize = localStorage.getItem(FONT_SIZE_KEY);
+  } catch (e) {
+    rawSize = null;
+  }
+  var fontSize = rawSize !== null ? Number(rawSize) : DEFAULT_SIZE;
+  if (VALID_SIZES.indexOf(fontSize) === -1) fontSize = DEFAULT_SIZE;
+  root.style.fontSize = fontSize + 'px';
 })();

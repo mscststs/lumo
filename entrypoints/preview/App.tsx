@@ -16,6 +16,7 @@ import { code } from '@streamdown/code';
 import { cjk } from '@streamdown/cjk';
 import { cn } from '@/lib/utils';
 import { ThemeInit } from '@/lib/theme';
+import { FontSizeInit } from '@/lib/font-size';
 import { useEvent } from '@/lib/event-bus';
 import { selectAllRootProps, useSelectAllScope } from '@/lib/use-select-all-scope';
 import { CodeView } from './CodeView';
@@ -182,6 +183,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-full bg-background">
       <ThemeInit />
+      <FontSizeInit />
 
       {/* Top Toolbar - 32px height */}
       {/*

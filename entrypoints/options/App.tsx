@@ -12,6 +12,7 @@ import {
   Info,
 } from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
+import { FontSizeInit } from '@/lib/font-size';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
@@ -96,6 +97,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-background">
       <ThemeInit />
+      <FontSizeInit />
       {/* Left Navigation */}
       <nav className="w-56 shrink-0 border-r border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
