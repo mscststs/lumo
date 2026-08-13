@@ -20,6 +20,7 @@ import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
 import type { SendKey, Theme, FontSize, UISettings } from '@/types';
+import { resolveLanguage } from '@/i18n';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -64,7 +65,7 @@ function SendKeyBadge({ value }: { value: SendKey }) {
 export function UISettingsPage() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
-  const [language, setLanguage] = useState<UISettings['language']>('en');
+  const [language, setLanguage] = useState<UISettings['language']>('auto');
   const [fontSize, setFontSize] = useState<FontSize>(DEFAULT_FONT_SIZE);
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
@@ -85,7 +86,7 @@ export function UISettingsPage() {
   const handleLanguageChange = async (val: string) => {
     const lang = val as UISettings['language'];
     setLanguage(lang);
-    await i18n.changeLanguage(lang);
+    await i18n.changeLanguage(resolveLanguage(lang));
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, language: lang });
   };
@@ -143,6 +144,7 @@ export function UISettingsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">{t('options.ui.languageAuto')}</SelectItem>
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="zh">中文</SelectItem>
               </SelectContent>

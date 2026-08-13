@@ -137,7 +137,7 @@ export interface StorageFieldDef<K extends StorageKey> {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_UI_SETTINGS: UISettings = {
-  language: 'en',
+  language: 'auto',
   theme: DEFAULT_THEME,
   fontSize: DEFAULT_FONT_SIZE,
   maxSplitPanels: 1,

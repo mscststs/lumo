@@ -285,6 +285,7 @@ export const en = {
       title: 'Personalization',
       description: 'Customize appearance and language preferences.',
       language: 'Language',
+      languageAuto: 'Auto',
       theme: 'Theme',
       themeLight: 'Light',
       themeDark: 'Dark',

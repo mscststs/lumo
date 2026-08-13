@@ -85,7 +85,7 @@ export type Theme = 'light' | 'dark' | 'midnight' | 'system';
 export type ResolvedTheme = Exclude<Theme, 'system'>;
 
 export interface UISettings {
-  language: 'en' | 'zh';
+  language: 'auto' | 'en' | 'zh';
   theme: Theme;
   /** Global UI font size in pixels. Default is 14. */
   fontSize: FontSize;

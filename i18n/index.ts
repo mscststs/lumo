@@ -8,9 +8,38 @@ const resources = {
   zh: { translation: zh },
 };
 
+/** Supported concrete languages (everything except 'auto'). */
+const SUPPORTED_LANGS = Object.keys(resources);
+
+/**
+ * Detect the best concrete language from the browser/OS locale.
+ * Returns 'zh' for any Chinese variant, 'en' otherwise.
+ */
+export function detectLanguage(): 'en' | 'zh' {
+  let raw: string = 'en';
+  if (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage) {
+    raw = chrome.i18n.getUILanguage();
+  } else if (typeof navigator !== 'undefined' && navigator.language) {
+    raw = navigator.language;
+  }
+  const base = (raw.split('-')[0] ?? 'en').toLowerCase();
+  return SUPPORTED_LANGS.includes(base) ? (base as 'en' | 'zh') : 'en';
+}
+
+/**
+ * Resolve the stored language setting to a concrete language code.
+ * 'auto' (or any falsy/unrecognised value) triggers browser detection.
+ */
+export function resolveLanguage(language: string | undefined): 'en' | 'zh' {
+  if (language && language !== 'auto' && SUPPORTED_LANGS.includes(language)) {
+    return language as 'en' | 'zh';
+  }
+  return detectLanguage();
+}
+
 i18n.use(initReactI18next).init({
   resources,
-  lng: 'en',
+  lng: detectLanguage(),
   fallbackLng: 'en',
   interpolation: {
     escapeValue: false,
@@ -41,9 +70,10 @@ export default i18n;
  * cold-start latency the sum of both round trips.
  */
 export async function applyLanguage(language: string | undefined): Promise<void> {
-  if (!language || language === i18n.language) return;
+  const resolved = resolveLanguage(language);
+  if (resolved === i18n.language) return;
   try {
-    await i18n.changeLanguage(language);
+    await i18n.changeLanguage(resolved);
   } catch (error) {
     // Keep the default language rather than blocking the render on a bad value.
     console.error('[Lumo] Failed to apply stored language:', error);
@@ -56,8 +86,11 @@ export function watchLanguageChanges(): void {
     if (areaName !== 'local') return;
     if (!('uiSettings' in changes)) return;
     const newSettings = changes.uiSettings?.newValue as { language?: string } | undefined;
-    if (newSettings?.language && newSettings.language !== i18n.language) {
-      i18n.changeLanguage(newSettings.language);
+    if (newSettings?.language) {
+      const resolved = resolveLanguage(newSettings.language);
+      if (resolved !== i18n.language) {
+        i18n.changeLanguage(resolved);
+      }
     }
   });
 }

@@ -277,6 +277,7 @@ export const zh: TranslationSchema = {
       title: '个性化',
       description: '自定义外观和语言偏好。',
       language: '语言',
+      languageAuto: '自动',
       theme: '主题',
       themeLight: '浅色',
       themeDark: '深色',
