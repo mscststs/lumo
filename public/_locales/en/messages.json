@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "AI-powered browser sidebar assistant",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Open Lumo Sidebar",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

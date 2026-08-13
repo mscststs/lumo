@@ -10,8 +10,9 @@ export default defineConfig({
     disabled: true,
   },
   manifest: {
-    name: 'Lumo',
-    description: 'AI-powered browser sidebar assistant',
+    default_locale: 'en',
+    name: '__MSG_extName__',
+    description: '__MSG_extDescription__',
     permissions: [
       'sidePanel',
       'storage',
@@ -37,7 +38,7 @@ export default defineConfig({
       default_path: 'sidepanel.html',
     },
     action: {
-      default_title: 'Open Lumo Sidebar',
+      default_title: '__MSG_actionTitle__',
     },
     options_ui: {
       page: 'options.html',
