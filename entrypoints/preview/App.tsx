@@ -369,17 +369,18 @@ function TextPreview({
 /**
  * HTML rendered preview using a manifest-declared sandbox page.
  *
- * Chrome Extension MV3 enforces strict CSP that blocks inline scripts even in
- * Blob URL iframes. The workaround is to use a page declared in
- * manifest.sandbox which has a relaxed CSP. We load sandbox.html as an iframe,
- * then postMessage the HTML content to it for rendering.
+ * Chrome Extension MV3 enforces strict CSP on extension pages. The manifest
+ * sandbox page has a relaxed CSP (allowing inline scripts, eval, and external
+ * CDN resources). We embed sandbox.html as an iframe, then postMessage the
+ * HTML content to it. Inside sandbox.html, a nested iframe renders the user
+ * HTML via srcdoc, keeping the message listener alive for live updates.
+ *
+ * Limitations: WebGL is unavailable (Chrome restricts it on opaque origins).
  */
 function HtmlPreview({ content }: { content: string }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const readyRef = useRef(false);
 
-  // Latest content, so the ready handshake always posts current HTML even if it
-  // arrives before the first render settles.
   const contentRef = useRef(content);
   contentRef.current = content;
 
@@ -387,7 +388,7 @@ function HtmlPreview({ content }: { content: string }) {
     iframeRef.current?.contentWindow?.postMessage({ html: contentRef.current }, '*');
   }, []);
 
-  // Handshake and load, attached once for the life of the iframe.
+  // Handshake: wait for sandbox-ready, then post content.
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type !== 'sandbox-ready') return;
@@ -398,7 +399,7 @@ function HtmlPreview({ content }: { content: string }) {
 
     const iframe = iframeRef.current;
     const handleLoad = () => {
-      // Fallback for a ready signal that arrived before this listener existed.
+      // Fallback in case ready signal arrived before listener was attached.
       window.setTimeout(post, 50);
     };
     iframe?.addEventListener('load', handleLoad);
@@ -409,15 +410,7 @@ function HtmlPreview({ content }: { content: string }) {
     };
   }, [post]);
 
-  /**
-   * Re-post when the file changes under a live preview.
-   *
-   * This used to be a ref callback keyed on `content`, which only runs when the
-   * node mounts or unmounts — the iframe stays mounted across a reload, so an
-   * edited HTML file kept rendering its original content forever. Guarded on the
-   * handshake because posting before the sandbox is listening is dropped, and the
-   * handshake itself posts the first payload.
-   */
+  // Re-post on content change for live preview updates.
   useEffect(() => {
     if (!readyRef.current) return;
     post();

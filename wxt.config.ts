@@ -31,6 +31,10 @@ export default defineConfig({
       'contextMenus',
     ],
     host_permissions: ['<all_urls>'],
+    content_security_policy: {
+      sandbox:
+        "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: blob: data:; child-src 'self' blob:;",
+    },
     sandbox: {
       pages: ['sandbox.html'],
     },
