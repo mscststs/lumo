@@ -232,6 +232,11 @@
   }
 }
 
+/* CodeMirror scroller inherits the unified scrollbar */
+.cm-scroller {
+  @apply scrollbar-lumo;
+}
+
 /* ─── Radix popover / dialog transitions ─────────────────────────────────────
    `tailwindcss-animate` is not a dependency, so the `data-[state]:animate-in`
    classes shadcn ships are no-ops here. These keyframes drive the same

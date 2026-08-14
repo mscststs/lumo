@@ -8,20 +8,13 @@
  * `select-none` cannot fix that on its own: it only suppresses pointer-driven
  * selection, the nodes stay inside a document-wide range.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import {
-  SELECT_ALL_ROOT_ATTR,
   selectAllRootProps,
   useSelectAllScope,
 } from '@/lib/use-select-all-scope';
-import { CodeView } from '@/entrypoints/preview/CodeView';
-
-// The Shiki import is lazy and irrelevant here; the raw-source fallback renders.
-vi.mock('@/lib/code-highlight', () => ({
-  highlightCode: () => Promise.reject(new Error('unused')),
-}));
 
 afterEach(() => {
   cleanup();
@@ -109,21 +102,5 @@ describe('select-all scope', () => {
     unmount();
 
     expect(pressSelectAll().defaultPrevented).toBe(false);
-  });
-});
-
-describe('CodeView selection surface', () => {
-  it('puts line numbers outside the select-all root', () => {
-    const { container } = render(<CodeView content={'a\nb\nc'} language="javascript" />);
-
-    const root = container.querySelector(`[${SELECT_ALL_ROOT_ATTR}]`);
-    expect(root).not.toBeNull();
-    expect(root!.textContent).toContain('a');
-
-    const gutter = container.querySelector('[aria-hidden="true"]');
-    expect(gutter).not.toBeNull();
-    expect(gutter!.textContent).toBe('123');
-    // The gutter must not live inside the selectable region.
-    expect(root!.contains(gutter!)).toBe(false);
   });
 });

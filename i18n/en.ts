@@ -1,6 +1,7 @@
 export const en = {
   common: {
     save: 'Save',
+    saving: 'Saving…',
     cancel: 'Cancel',
     delete: 'Delete',
     edit: 'Edit',
@@ -450,6 +451,7 @@ export const en = {
       title: 'File Preview',
       fileNotFound: 'File not found',
       unsupported: 'Preview not supported for this file type',
+      unsaved: 'Unsaved',
       download: 'Download',
       close: 'Close',
       zoomIn: 'Zoom in',

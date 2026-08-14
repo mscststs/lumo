@@ -3,6 +3,7 @@ import type { TranslationSchema } from './en';
 export const zh: TranslationSchema = {
   common: {
     save: '保存',
+    saving: '保存中…',
     cancel: '取消',
     delete: '删除',
     edit: '编辑',
@@ -441,6 +442,7 @@ export const zh: TranslationSchema = {
       title: '文件预览',
       fileNotFound: '文件未找到',
       unsupported: '不支持预览此文件类型',
+      unsaved: '未保存',
       download: '下载',
       close: '关闭',
       zoomIn: '放大',

@@ -11,6 +11,7 @@ import {
   Code,
   Eye,
   ExternalLink,
+  Save,
 } from 'lucide-react';
 import { Streamdown } from 'streamdown';
 import { code } from '@streamdown/code';
@@ -20,7 +21,8 @@ import { ThemeInit } from '@/lib/theme';
 import { FontSizeInit } from '@/lib/font-size';
 import { useEvent } from '@/lib/event-bus';
 import { selectAllRootProps, useSelectAllScope } from '@/lib/use-select-all-scope';
-import { CodeView } from './CodeView';
+import { CodeEditor } from './EditorView';
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,14 +49,34 @@ export default function App() {
   const [zoom, setZoom] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>('rendered');
   const [copied, setCopied] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains('dark'),
+  );
+
+  // Track dark mode changes
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   // Ctrl/Cmd+A selects the previewed content only, never the toolbar or gutter.
   useSelectAllScope();
 
+  const [fileNameOverride, setFileNameOverride] = useState<string | null>(null);
+
   const fileName = useMemo(() => {
+    if (fileNameOverride) return fileNameOverride;
     const params = new URLSearchParams(window.location.search);
     return params.get('file');
-  }, []);
+  }, [fileNameOverride]);
 
   /**
    * The blob URL currently handed to the <img>, tracked outside React state.
@@ -155,9 +177,14 @@ export default function App() {
   });
 
   const handleSwitchFile = (name: string) => {
+    if (name === fileName) return;
     const url = new URL(window.location.href);
     url.searchParams.set('file', name);
-    window.location.href = url.toString();
+    window.history.replaceState(null, '', url.toString());
+    // Update the fileName-derived state and reload the file
+    setDirty(false);
+    editorContentRef.current = null;
+    setFileNameOverride(name);
   };
 
   const handleDownload = async () => {
@@ -178,6 +205,27 @@ export default function App() {
     window.close();
   };
 
+  // --- Editor save logic ---
+  const editorContentRef = useRef<string | null>(null);
+
+  const handleEditorChange = useCallback((newContent: string) => {
+    editorContentRef.current = newContent;
+    setDirty(newContent !== content);
+  }, [content]);
+
+  const handleSave = useCallback(async (directContent?: string) => {
+    const saveContent = directContent ?? editorContentRef.current;
+    if (!fileName || saveContent == null) return;
+    setSaving(true);
+    try {
+      await fileStorage.writeFile(fileName, saveContent);
+      setContent(saveContent);
+      setDirty(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [fileName]);
+
   const handleCopy = async () => {
     if (content == null) return;
     try {
@@ -197,6 +245,15 @@ export default function App() {
   const showModeSwitch =
     metadata &&
     (metadata.mimeType === 'text/markdown' || metadata.mimeType === 'text/html');
+
+  // If the new file doesn't support mode switching, fall back:
+  // - non-markdown/html files have no "rendered" view → force 'source'
+  // - markdown/html always have both, so keep current mode
+  useEffect(() => {
+    if (metadata && !showModeSwitch && viewMode === 'rendered') {
+      setViewMode('source');
+    }
+  }, [metadata, showModeSwitch, viewMode]);
 
   return (
     <div className="flex flex-col h-screen w-full bg-background">
@@ -237,6 +294,17 @@ export default function App() {
             <span className="text-xs text-muted-foreground ml-1 shrink-0">
               {metadata.mimeType}
             </span>
+          )}
+          {/* Unsaved indicator + save button */}
+          {dirty && (
+            <button
+              onClick={() => handleSave()}
+              disabled={saving}
+              className="flex items-center gap-1 h-5 rounded px-1.5 ml-2 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+            >
+              <Save className="h-3 w-3" />
+              <span>{saving ? t('common.saving') : t('options.preview.unsaved')}</span>
+            </button>
           )}
         </div>
 
@@ -309,7 +377,7 @@ export default function App() {
       </header>
 
       {/* Preview Content Area */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto bg-background">
         {loading && (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             {t('common.loading')}
@@ -331,6 +399,9 @@ export default function App() {
             content={content}
             mimeType={metadata.mimeType}
             viewMode={viewMode}
+            isDark={isDark}
+            onSave={handleSave}
+            onChange={handleEditorChange}
           />
         )}
       </main>
@@ -358,54 +429,112 @@ function ImagePreview({ src, zoom }: { src: string; zoom: number }) {
  * Text preview with support for:
  * - Markdown (rendered via Streamdown or source view)
  * - HTML (rendered in iframe or source view)
- * - Code files (syntax highlighted via Shiki, with copy button)
+ * - Code files (editable via CodeMirror)
  * - Plain text
  */
 function TextPreview({
   content,
   mimeType,
   viewMode,
+  isDark,
+  onSave,
+  onChange,
 }: {
   content: string;
   mimeType: string;
   viewMode: ViewMode;
+  isDark: boolean;
+  onSave: (content: string) => void;
+  onChange: (content: string) => void;
 }) {
-  // Markdown
+  // Markdown — both rendered + editor always mounted, toggled via opacity
   if (mimeType === 'text/markdown') {
-    if (viewMode === 'source') {
-      return <CodeView content={content} language="markdown" />;
-    }
     return (
-      <div
-        className="p-6 max-w-3xl mx-auto sd-message-response break-words"
-        {...selectAllRootProps}
-      >
-        <Streamdown plugins={{ code, cjk }}>{content}</Streamdown>
+      <div className="relative h-full">
+        <div
+          className={cn(
+            'absolute inset-0 overflow-auto transition-opacity duration-75',
+            viewMode === 'rendered' ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <div
+            className="p-6 max-w-3xl mx-auto sd-message-response break-words"
+            {...selectAllRootProps}
+          >
+            <Streamdown plugins={{ code, cjk }}>{content}</Streamdown>
+          </div>
+        </div>
+        <div
+          className={cn(
+            'absolute inset-0 transition-opacity duration-75',
+            viewMode === 'source' ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <CodeEditor
+            content={content}
+            language="markdown"
+            isDark={isDark}
+            onSave={onSave}
+            onChange={onChange}
+          />
+        </div>
       </div>
     );
   }
 
-  // HTML
+  // HTML — both rendered + editor always mounted
   if (mimeType === 'text/html') {
-    if (viewMode === 'source') {
-      return <CodeView content={content} language="html" />;
-    }
-    return <HtmlPreview content={content} />;
+    return (
+      <div className="relative h-full">
+        <div
+          className={cn(
+            'absolute inset-0 transition-opacity duration-75',
+            viewMode === 'rendered' ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <HtmlPreview content={content} />
+        </div>
+        <div
+          className={cn(
+            'absolute inset-0 transition-opacity duration-75',
+            viewMode === 'source' ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <CodeEditor
+            content={content}
+            language="html"
+            isDark={isDark}
+            onSave={onSave}
+            onChange={onChange}
+          />
+        </div>
+      </div>
+    );
   }
 
-  // Code files - syntax highlighted
+  // Code files - editable (single mode, no toggle)
   const language = getLanguageFromMime(mimeType);
   if (language && language !== 'csv') {
-    return <CodeView content={content} language={language} />;
+    return (
+      <CodeEditor
+        content={content}
+        language={language}
+        isDark={isDark}
+        onSave={onSave}
+        onChange={onChange}
+      />
+    );
   }
 
-  // Plain text / CSV / others
+  // Plain text / CSV / others - editable
   return (
-    <div className="p-4" {...selectAllRootProps}>
-      <pre className="text-sm font-mono text-foreground whitespace-pre-wrap break-words">
-        {content}
-      </pre>
-    </div>
+    <CodeEditor
+      content={content}
+      language=""
+      isDark={isDark}
+      onSave={onSave}
+      onChange={onChange}
+    />
   );
 }
 
@@ -465,7 +594,7 @@ function HtmlPreview({ content }: { content: string }) {
     <iframe
       ref={iframeRef}
       src={sandboxUrl}
-      className="w-full h-full border-none bg-white"
+      className="w-full h-full border-none bg-background"
       title="HTML Preview"
     />
   );
