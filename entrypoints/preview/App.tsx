@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Code,
   Eye,
+  ExternalLink,
 } from 'lucide-react';
 import { Streamdown } from 'streamdown';
 import { code } from '@streamdown/code';
@@ -20,6 +21,12 @@ import { FontSizeInit } from '@/lib/font-size';
 import { useEvent } from '@/lib/event-bus';
 import { selectAllRootProps, useSelectAllScope } from '@/lib/use-select-all-scope';
 import { CodeView } from './CodeView';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   fileStorage,
   type FileMetadata,
@@ -35,6 +42,7 @@ export default function App() {
   const [content, setContent] = useState<string | null>(null);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [allFiles, setAllFiles] = useState<FileMetadata[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>('rendered');
@@ -123,6 +131,8 @@ export default function App() {
 
   useEffect(() => {
     void loadFile();
+    // Load file list for switcher
+    void fileStorage.listFiles().then(setAllFiles);
   }, [loadFile]);
 
   // Revoke the outstanding blob URL on unmount only. Reloads revoke their own
@@ -138,9 +148,17 @@ export default function App() {
    * this tab as a `files:changed` broadcast rather than any DOM or storage event.
    */
   useEvent('files:changed', ({ names }) => {
+    // Refresh file list for the switcher
+    void fileStorage.listFiles().then(setAllFiles);
     if (!fileName || !names.includes(fileName)) return;
     void loadFile(true);
   });
+
+  const handleSwitchFile = (name: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('file', name);
+    window.location.href = url.toString();
+  };
 
   const handleDownload = async () => {
     if (!fileName) return;
@@ -192,11 +210,31 @@ export default function App() {
       */}
       <header className="h-8 shrink-0 flex items-center justify-between px-3 border-b border-border bg-card select-none">
         <div className="flex items-center gap-1 min-w-0">
-          <span className="text-xs font-medium text-foreground truncate max-w-[300px]">
-            {fileName || t('options.preview.title')}
-          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center min-w-0 h-6 rounded px-1.5 hover:bg-accent transition-colors">
+                <span className="text-xs font-medium text-foreground truncate max-w-[300px]">
+                  {fileName || t('options.preview.title')}
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={4} className="max-h-64 overflow-y-auto">
+              {allFiles.map((file) => (
+                <DropdownMenuItem
+                  key={file.name}
+                  onClick={() => handleSwitchFile(file.name)}
+                  className={cn(file.name === fileName && 'bg-accent')}
+                >
+                  <span className="truncate">{file.name}</span>
+                  <span className="ml-auto pl-3 text-[10px] text-muted-foreground shrink-0">
+                    {file.mimeType.split('/')[1]}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {metadata && (
-            <span className="text-xs text-muted-foreground ml-2 shrink-0">
+            <span className="text-xs text-muted-foreground ml-1 shrink-0">
               {metadata.mimeType}
             </span>
           )}
@@ -222,6 +260,11 @@ export default function App() {
                 </>
               )}
             </button>
+          )}
+
+          {/* Open with external playground (HTML only) */}
+          {metadata?.mimeType === 'text/html' && content !== null && (
+            <OpenWithMenu content={content} />
           )}
 
           {/* Zoom controls */}
@@ -425,6 +468,102 @@ function HtmlPreview({ content }: { content: string }) {
       className="w-full h-full border-none bg-white"
       title="HTML Preview"
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Open With Menu — external playground services
+// ---------------------------------------------------------------------------
+
+interface PlaygroundService {
+  id: string;
+  name: string;
+  /** Open the user's HTML content in this service. */
+  open: (html: string) => void;
+}
+
+/**
+ * List of supported external playgrounds that can receive raw HTML.
+ * Each uses a hidden form POST to pre-fill the editor.
+ */
+const PLAYGROUND_SERVICES: PlaygroundService[] = [
+  {
+    id: 'codepen',
+    name: 'CodePen',
+    open(html: string) {
+      // CodePen accepts JSON via a hidden form POST.
+      // https://blog.codepen.io/documentation/prefill/
+      const data = JSON.stringify({ html });
+      postForm('https://codepen.io/pen/define', { data });
+    },
+  },
+  {
+    id: 'jsfiddle',
+    name: 'JSFiddle',
+    open(html: string) {
+      // JSFiddle POST API
+      // https://docs.jsfiddle.net/api/display-a-fiddle-from-post
+      postForm('https://jsfiddle.net/api/post/library/pure/', { html });
+    },
+  },
+  {
+    id: 'stackblitz',
+    name: 'StackBlitz',
+    open(html: string) {
+      // StackBlitz POST API
+      // https://developer.stackblitz.com/docs/platform/post-api
+      postForm('https://stackblitz.com/run', {
+        'project[files][index.html]': html,
+        'project[template]': 'html',
+        'project[title]': 'Preview',
+      });
+    },
+  },
+];
+
+/** Submit a hidden form POST to open a URL in a new tab. */
+function postForm(action: string, fields: Record<string, string>) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.target = '_blank';
+  form.style.display = 'none';
+
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
+}
+
+function OpenWithMenu({ content }: { content: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex items-center gap-1 h-6 rounded px-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          title={t('options.preview.openWith')}
+        >
+          <ExternalLink className="h-3 w-3" />
+          <span className="hidden sm:inline">{t('options.preview.openWith')}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={4}>
+        {PLAYGROUND_SERVICES.map((svc) => (
+          <DropdownMenuItem key={svc.id} onClick={() => svc.open(content)}>
+            {svc.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

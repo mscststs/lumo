@@ -450,6 +450,7 @@ export const zh: TranslationSchema = {
       source: '源码',
       switchMode: '切换视图模式',
       copy: '复制源码',
+      openWith: '打开方式…',
     },
     about: {
       title: '关于',

@@ -459,6 +459,7 @@ export const en = {
       source: 'Source',
       switchMode: 'Switch view mode',
       copy: 'Copy source',
+      openWith: 'Open with…',
     },
     about: {
       title: 'About',
