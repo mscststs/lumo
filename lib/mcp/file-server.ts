@@ -8,7 +8,7 @@ import type {
   McpToolExecutionContext,
   AnyTool,
 } from './types';
-import { fileStorage, getPreviewCategory } from './file-storage';
+import { fileStorage, getPreviewCategory, isLikelyTextContent } from './file-storage';
 import { downloadAsZip } from '@/lib/zip-download';
 import { applyEdits, applyUnifiedDiff } from './file-edit';
 import { applyOutputLimit, DEFAULT_MAX_CHARS } from '@/lib/page/output-limit';
@@ -311,7 +311,16 @@ export class FileMcpServer implements IMcpServer {
           }
 
           const metadata = await fileStorage.getMetadata(name);
-          const category = getPreviewCategory(metadata?.mimeType || '');
+          let category = getPreviewCategory(metadata?.mimeType || '');
+
+          // Fallback: sniff content for legacy files stored as octet-stream
+          if (category === 'unsupported') {
+            const blob = await fileStorage.readFileAsBlob(name);
+            if (blob && await isLikelyTextContent(blob)) {
+              category = 'text';
+            }
+          }
+
           if (category === 'unsupported') {
             return {
               error: `File "${name}" (${metadata?.mimeType}) is not previewable. Only images and text files are supported.`,

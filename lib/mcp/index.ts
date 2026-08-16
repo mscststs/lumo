@@ -9,7 +9,7 @@ export { ExternalMcpServer } from './external-server';
 export { WebMcpServer } from './webmcp-server';
 export { fileStorage } from './file-storage';
 export type { FileMetadata, StoredFile } from './file-storage';
-export { inferMimeType, getPreviewCategory, getLanguageFromMime } from './file-storage';
+export { inferMimeType, getPreviewCategory, getLanguageFromMime, isLikelyTextContent } from './file-storage';
 export { registerMcpCollectors } from './collectors';
 export {
   networkLog,

@@ -34,6 +34,7 @@ import {
   type FileMetadata,
   getPreviewCategory,
   getLanguageFromMime,
+  isLikelyTextContent,
 } from '@/lib/mcp';
 
 type ViewMode = 'rendered' | 'source';
@@ -127,7 +128,18 @@ export default function App() {
         }
 
         setMetadata(meta);
-        const category = getPreviewCategory(meta.mimeType);
+        let category = getPreviewCategory(meta.mimeType);
+
+        // Fallback for legacy files stored as octet-stream: sniff content
+        if (category === 'unsupported') {
+          const blob = await fileStorage.readFileAsBlob(fileName);
+          if (blob && await isLikelyTextContent(blob)) {
+            category = 'text';
+            // Update metadata locally so the UI reflects text/plain
+            meta.mimeType = 'text/plain';
+            setMetadata({ ...meta });
+          }
+        }
 
         if (category === 'image') {
           const url = await fileStorage.getObjectUrl(fileName);

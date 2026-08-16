@@ -94,10 +94,26 @@ export function inferMimeType(filename: string): string {
     sh: 'text/x-shellscript',
     bash: 'text/x-shellscript',
     zsh: 'text/x-shellscript',
+    bat: 'text/x-bat',
+    cmd: 'text/x-bat',
+    ps1: 'text/x-powershell',
+    psm1: 'text/x-powershell',
     sql: 'text/x-sql',
     graphql: 'text/x-graphql',
     vue: 'text/x-vue',
     svelte: 'text/x-svelte',
+    // Config / Data
+    ini: 'text/plain',
+    cfg: 'text/plain',
+    conf: 'text/plain',
+    env: 'text/plain',
+    log: 'text/plain',
+    dockerfile: 'text/plain',
+    makefile: 'text/plain',
+    gitignore: 'text/plain',
+    editorconfig: 'text/plain',
+    properties: 'text/plain',
+    lock: 'text/plain',
     // Images
     png: 'image/png',
     jpg: 'image/jpeg',
@@ -113,7 +129,46 @@ export function inferMimeType(filename: string): string {
     tar: 'application/x-tar',
     gz: 'application/gzip',
   };
-  return mimeMap[ext] || 'application/octet-stream';
+  // Direct extension match
+  if (mimeMap[ext]) return mimeMap[ext];
+
+  // Handle dot-prefixed config files (e.g. ".gitignore", ".editorconfig")
+  const basename = filename.split('/').pop()?.split('\\').pop()?.toLowerCase() || '';
+  const basenameNoExt = basename.startsWith('.') ? basename.slice(1) : '';
+  if (basenameNoExt && mimeMap[basenameNoExt]) return mimeMap[basenameNoExt];
+
+  // Handle well-known extensionless files
+  const knownTextFiles = ['makefile', 'dockerfile', 'rakefile', 'gemfile', 'procfile', 'license', 'readme', 'changelog'];
+  if (knownTextFiles.includes(basename)) return 'text/plain';
+
+  return 'application/octet-stream';
+}
+
+/**
+ * Detect whether a Blob (or its leading bytes) looks like a plain-text file.
+ *
+ * Reads the first 8 KB and checks for non-text bytes. The heuristic mirrors
+ * what `git` and the UNIX `file` command use:
+ * - NULL bytes (0x00) → binary
+ * - Control chars except TAB (0x09), LF (0x0A), CR (0x0D) → binary
+ * - Bytes ≥ 0x80 are allowed (UTF-8 multibyte)
+ *
+ * Returns `true` if the sample looks like text, `false` otherwise.
+ */
+export async function isLikelyTextContent(blob: Blob): Promise<boolean> {
+  const SAMPLE_SIZE = 8192; // 8 KB
+  const slice = blob.slice(0, SAMPLE_SIZE);
+  const buffer = await slice.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i]!;
+    // Allow TAB, LF, CR, and printable ASCII + high bytes (UTF-8)
+    if (b === 0x00) return false;
+    if (b < 0x08) return false;
+    if (b > 0x0d && b < 0x20) return false;
+  }
+  return true;
 }
 
 /**
@@ -187,8 +242,17 @@ class FileStorage {
     options?: { conversationId?: string; mimeType?: string },
   ): Promise<FileMetadata> {
     const db = await this.getDB();
-    const mimeType = options?.mimeType || inferMimeType(name);
+    let mimeType = options?.mimeType || inferMimeType(name);
     const blob = typeof content === 'string' ? new Blob([content], { type: mimeType }) : content;
+
+    // Content sniffing: when extension-based detection falls back to
+    // octet-stream, probe the actual bytes to see if it's plain text.
+    if (mimeType === 'application/octet-stream') {
+      // String content is always text; for Blobs, sample leading bytes.
+      if (typeof content === 'string' || await isLikelyTextContent(blob)) {
+        mimeType = 'text/plain';
+      }
+    }
     const now = Date.now();
 
     // Check if file already exists to preserve createdAt
