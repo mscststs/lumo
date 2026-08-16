@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -10,8 +10,10 @@ import {
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatError } from '@/components/chat/ChatError';
 import { MAX_RETRIES } from '@/lib/retry-policy';
+import { storage } from '@/store/storage';
+import { useStorageWatch } from '@/store/useStorageWatch';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ChatMessage, Conversation } from '@/types';
+import type { ChatMessage, Conversation, UISettings, MessageToolbarSettings } from '@/types';
 
 interface ChatMessageListProps {
   currentConversation: Conversation | null;
@@ -43,6 +45,18 @@ export function ChatMessageList({
 }: ChatMessageListProps) {
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
+
+  // ─── Message toolbar visibility settings ─────────────────────────────────
+  const DEFAULT_TOOLBAR: MessageToolbarSettings = { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' };
+  const [toolbar, setToolbar] = useState<MessageToolbarSettings>(DEFAULT_TOOLBAR);
+
+  useEffect(() => {
+    storage.getUISettings().then((s) => setToolbar(s.messageToolbar ?? DEFAULT_TOOLBAR));
+  }, []);
+
+  useStorageWatch<UISettings>('uiSettings', (newVal) => {
+    if (newVal?.messageToolbar) setToolbar(newVal.messageToolbar);
+  });
 
   const persisted = currentConversation?.messages ?? [];
 
@@ -113,6 +127,7 @@ export function ChatMessageList({
             onSwitchVariant={onSwitchVariant}
             isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
             deleteCount={rendered.length - idx}
+            toolbar={toolbar}
           />
         ))}
         {isStreaming && !pending && !chatError && (

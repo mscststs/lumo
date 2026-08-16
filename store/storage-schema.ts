@@ -144,6 +144,12 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   sendKey: 'enter',
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
   maxSteps: DEFAULT_MAX_STEPS,
+  messageToolbar: {
+    copy: 'all',
+    regenerate: 'show',
+    delete: 'all',
+    usage: 'show',
+  },
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {

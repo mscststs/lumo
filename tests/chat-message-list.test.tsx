@@ -22,6 +22,25 @@ vi.mock('@/components/chat/ChatError', () => ({
   isRetryableError: () => false,
 }));
 
+vi.mock('@/store/storage', () => ({
+  storage: {
+    getUISettings: () => Promise.resolve({
+      language: 'auto',
+      theme: 'system',
+      fontSize: 14,
+      maxSplitPanels: 1,
+      sendKey: 'enter',
+      pasteThreshold: 0,
+      maxSteps: 0,
+      messageToolbar: { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' },
+    }),
+  },
+}));
+
+vi.mock('@/store/useStorageWatch', () => ({
+  useStorageWatch: () => {},
+}));
+
 let ChatMessageList: typeof import('@/components/chat/ChatMessageList').ChatMessageList;
 
 beforeAll(async () => {

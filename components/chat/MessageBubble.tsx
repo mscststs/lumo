@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { ChatMessage, ChatMessagePart, ChatMessageVariant, TextAttachment } from '@/types';
+import type { ChatMessage, ChatMessagePart, ChatMessageVariant, TextAttachment, MessageToolbarSettings } from '@/types';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -35,6 +35,8 @@ interface MessageBubbleProps {
   isLastAssistant?: boolean;
   /** Number of messages that will be removed (this one + all after it). */
   deleteCount?: number;
+  /** Per-action visibility from UISettings. */
+  toolbar?: MessageToolbarSettings;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -45,11 +47,22 @@ export const MessageBubble = memo(function MessageBubble({
   onSwitchVariant,
   isLastAssistant = false,
   deleteCount = 1,
+  toolbar,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const parts = normalizeMessage(message);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Toolbar visibility helpers
+  const showCopy = toolbar
+    ? (isUser ? (toolbar.copy === 'all' || toolbar.copy === 'user') : (toolbar.copy === 'all' || toolbar.copy === 'assistant'))
+    : true;
+  const showDelete = toolbar
+    ? (isUser ? (toolbar.delete === 'all' || toolbar.delete === 'user') : (toolbar.delete === 'all' || toolbar.delete === 'assistant'))
+    : true;
+  const showRegenerate = toolbar ? toolbar.regenerate === 'show' : true;
+  const showUsage = toolbar ? toolbar.usage === 'show' : true;
 
   // Resolve variant-aware metadata for the displayed version.
   const activeVariant =
@@ -98,15 +111,26 @@ export const MessageBubble = memo(function MessageBubble({
           {/* User text bubble */}
           <UserTextBubble parts={parts} textAttachments={message.textAttachments} />
 
-          {onDelete && (
+          {(showCopy || (onDelete && showDelete)) && (
             <MessageActions>
-              <MessageAction
-                label={t('sidebar.delete')}
-                tooltip={t('sidebar.delete')}
-                onClick={() => setConfirmOpen(true)}
-              >
-                <Trash2 className="size-3" />
-              </MessageAction>
+              {showCopy && (
+                <MessageAction
+                  label={t('sidebar.copy')}
+                  tooltip={t('sidebar.copy')}
+                  onClick={() => navigator.clipboard.writeText(extractText(parts))}
+                >
+                  <Copy className="size-3" />
+                </MessageAction>
+              )}
+              {onDelete && showDelete && (
+                <MessageAction
+                  label={t('sidebar.delete')}
+                  tooltip={t('sidebar.delete')}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  <Trash2 className="size-3" />
+                </MessageAction>
+              )}
             </MessageActions>
           )}
         </Message>
@@ -138,14 +162,16 @@ export const MessageBubble = memo(function MessageBubble({
                 onSwitch={onSwitchVariant}
               />
             )}
-            <MessageAction
-              label={t('sidebar.copy')}
-              tooltip={t('sidebar.copy')}
-              onClick={() => navigator.clipboard.writeText(extractText(parts))}
-            >
-              <Copy className="size-3" />
-            </MessageAction>
-            {isLastAssistant && onRegenerate && (
+            {showCopy && (
+              <MessageAction
+                label={t('sidebar.copy')}
+                tooltip={t('sidebar.copy')}
+                onClick={() => navigator.clipboard.writeText(extractText(parts))}
+              >
+                <Copy className="size-3" />
+              </MessageAction>
+            )}
+            {isLastAssistant && onRegenerate && showRegenerate && (
               <MessageAction
                 label={t('sidebar.regenerate')}
                 tooltip={t('sidebar.regenerate')}
@@ -154,7 +180,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <RefreshCw className="size-3" />
               </MessageAction>
             )}
-            {onDelete && (
+            {onDelete && showDelete && (
               <MessageAction
                 label={t('sidebar.delete')}
                 tooltip={t('sidebar.delete')}
@@ -163,7 +189,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <Trash2 className="size-3" />
               </MessageAction>
             )}
-            {activeUsage && (
+            {showUsage && activeUsage && (
               <TokenUsageTooltip usage={activeUsage} />
             )}
           </MessageActions>

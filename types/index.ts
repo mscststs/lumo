@@ -84,6 +84,30 @@ export type Theme = 'light' | 'dark' | 'midnight' | 'system';
  */
 export type ResolvedTheme = Exclude<Theme, 'system'>;
 
+/**
+ * Visibility options for message actions that can target a specific role.
+ * - `'all'` — show on both user and assistant messages.
+ * - `'assistant'` — show only on assistant messages.
+ * - `'user'` — show only on user messages.
+ * - `'hidden'` — never show.
+ */
+export type MessageActionVisibility = 'all' | 'assistant' | 'user' | 'hidden';
+
+/**
+ * Simple show/hide toggle for message actions that don't need role filtering.
+ */
+export type MessageActionToggle = 'show' | 'hidden';
+
+/**
+ * Per-action visibility settings for the message toolbar (actions below each message).
+ */
+export interface MessageToolbarSettings {
+  copy: MessageActionVisibility;
+  regenerate: MessageActionToggle;
+  delete: MessageActionVisibility;
+  usage: MessageActionToggle;
+}
+
 export interface UISettings {
   language: 'auto' | 'en' | 'zh';
   theme: Theme;
@@ -104,6 +128,8 @@ export interface UISettings {
    * cap (the default); a cap is at least 10. See `lib/max-steps.ts`.
    */
   maxSteps: number;
+  /** Per-action visibility for the message toolbar. */
+  messageToolbar: MessageToolbarSettings;
 }
 
 // Slash-command settings live in `lib/slash-commands.ts` and are re-exported

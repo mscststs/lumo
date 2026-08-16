@@ -19,7 +19,7 @@ import { MaxStepsField } from './components/MaxStepsField';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
-import type { SendKey, Theme, FontSize, UISettings } from '@/types';
+import type { SendKey, Theme, FontSize, UISettings, MessageToolbarSettings, MessageActionVisibility, MessageActionToggle } from '@/types';
 import { resolveLanguage } from '@/i18n';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -71,6 +71,12 @@ export function UISettingsPage() {
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const [maxSteps, setMaxSteps] = useState(DEFAULT_MAX_STEPS);
+  const [messageToolbar, setMessageToolbar] = useState<MessageToolbarSettings>({
+    copy: 'all',
+    regenerate: 'show',
+    delete: 'all',
+    usage: 'show',
+  });
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -80,6 +86,12 @@ export function UISettingsPage() {
       setSendKey(settings.sendKey ?? 'enter');
       setPasteThreshold(settings.pasteThreshold);
       setMaxSteps(settings.maxSteps);
+      setMessageToolbar(settings.messageToolbar ?? {
+        copy: 'all',
+        regenerate: 'show',
+        delete: 'all',
+        usage: 'show',
+      });
     });
   }, []);
 
@@ -126,6 +138,16 @@ export function UISettingsPage() {
     setMaxSteps(steps);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, maxSteps: steps });
+  };
+
+  const handleToolbarChange = async <K extends keyof MessageToolbarSettings>(
+    key: K,
+    value: MessageToolbarSettings[K],
+  ) => {
+    const next = { ...messageToolbar, [key]: value };
+    setMessageToolbar(next);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, messageToolbar: next });
   };
 
   return (
@@ -228,6 +250,73 @@ export function UISettingsPage() {
 
           <SettingRow label={t('options.ui.maxSteps')} description={t('options.ui.maxStepsDesc')}>
             <MaxStepsField value={maxSteps} onChange={handleMaxStepsChange} />
+          </SettingRow>
+        </SettingsGroup>
+
+        {/* Message toolbar action visibility. */}
+        <SettingsGroup title={t('options.ui.groupMessageToolbar')}>
+          <SettingRow label={t('options.ui.toolbarCopy')}>
+            <Select
+              value={messageToolbar.copy}
+              onValueChange={(val) => handleToolbarChange('copy', val as MessageActionVisibility)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.toolbarCopy')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('options.ui.visibilityAll')}</SelectItem>
+                <SelectItem value="assistant">{t('options.ui.visibilityAssistant')}</SelectItem>
+                <SelectItem value="user">{t('options.ui.visibilityUser')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.toolbarRegenerate')}>
+            <Select
+              value={messageToolbar.regenerate}
+              onValueChange={(val) => handleToolbarChange('regenerate', val as MessageActionToggle)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.toolbarRegenerate')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="show">{t('options.ui.visibilityShow')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.toolbarDelete')}>
+            <Select
+              value={messageToolbar.delete}
+              onValueChange={(val) => handleToolbarChange('delete', val as MessageActionVisibility)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.toolbarDelete')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('options.ui.visibilityAll')}</SelectItem>
+                <SelectItem value="assistant">{t('options.ui.visibilityAssistant')}</SelectItem>
+                <SelectItem value="user">{t('options.ui.visibilityUser')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.toolbarUsage')}>
+            <Select
+              value={messageToolbar.usage}
+              onValueChange={(val) => handleToolbarChange('usage', val as MessageActionToggle)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.toolbarUsage')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="show">{t('options.ui.visibilityShow')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
           </SettingRow>
         </SettingsGroup>
       </div>
