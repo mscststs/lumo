@@ -24,6 +24,8 @@ interface ChatMessageListProps {
   hasModels: boolean;
   onRetry: () => void;
   onDeleteMessage?: (messageId: string) => void;
+  onRegenerateMessage?: (messageId: string) => void;
+  onSwitchVariant?: (variantIndex: number) => void;
 }
 
 export function ChatMessageList({
@@ -36,6 +38,8 @@ export function ChatMessageList({
   hasModels,
   onRetry,
   onDeleteMessage,
+  onRegenerateMessage,
+  onSwitchVariant,
 }: ChatMessageListProps) {
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
@@ -105,6 +109,9 @@ export function ChatMessageList({
             message={msg}
             isStreaming={isStreaming && msg.id === pending?.id}
             onDelete={onDeleteMessage}
+            onRegenerate={onRegenerateMessage}
+            onSwitchVariant={onSwitchVariant}
+            isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
             deleteCount={rendered.length - idx}
           />
         ))}

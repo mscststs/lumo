@@ -1,7 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity } from 'lucide-react';
+import { Copy, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity, RefreshCw } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import { parseFileRefContent, setFileRefDragData } from '@/lib/file-drag';
@@ -23,12 +23,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { ChatMessage, ChatMessagePart, TextAttachment } from '@/types';
+import type { ChatMessage, ChatMessagePart, ChatMessageVariant, TextAttachment } from '@/types';
 
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
   onDelete?: (messageId: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  onSwitchVariant?: (variantIndex: number) => void;
+  /** Whether this is the last assistant message in the conversation. */
+  isLastAssistant?: boolean;
   /** Number of messages that will be removed (this one + all after it). */
   deleteCount?: number;
 }
@@ -37,12 +41,26 @@ export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming = false,
   onDelete,
+  onRegenerate,
+  onSwitchVariant,
+  isLastAssistant = false,
   deleteCount = 1,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const parts = normalizeMessage(message);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Resolve variant-aware metadata for the displayed version.
+  const activeVariant =
+    message.variants &&
+    message.activeVariantIndex !== undefined &&
+    message.activeVariantIndex < message.variants.length
+      ? message.variants[message.activeVariantIndex]
+      : undefined;
+  const activeInterrupted = activeVariant ? activeVariant.interrupted : message.interrupted;
+  const activeStopReason = activeVariant ? activeVariant.stopReason : message.stopReason;
+  const activeUsage = activeVariant ? activeVariant.usage : message.usage;
 
   const confirmDelete = useCallback(() => {
     setConfirmOpen(false);
@@ -106,12 +124,20 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Only meaningful once the turn has settled: while streaming, a reply
             being unfinished is the expected state, not something to flag. */}
-        {!isStreaming && message.interrupted && (
-          <InterruptedNotice stopReason={message.stopReason} />
+        {!isStreaming && activeInterrupted && (
+          <InterruptedNotice stopReason={activeStopReason} />
         )}
 
         {!isStreaming && (
           <MessageActions>
+            {/* Variant switcher — only on the last assistant message with variants */}
+            {isLastAssistant && message.variants && message.variants.length > 0 && onSwitchVariant && (
+              <VariantSwitcher
+                variants={message.variants}
+                activeVariantIndex={message.activeVariantIndex}
+                onSwitch={onSwitchVariant}
+              />
+            )}
             <MessageAction
               label={t('sidebar.copy')}
               tooltip={t('sidebar.copy')}
@@ -119,6 +145,15 @@ export const MessageBubble = memo(function MessageBubble({
             >
               <Copy className="size-3" />
             </MessageAction>
+            {isLastAssistant && onRegenerate && (
+              <MessageAction
+                label={t('sidebar.regenerate')}
+                tooltip={t('sidebar.regenerate')}
+                onClick={() => onRegenerate(message.id)}
+              >
+                <RefreshCw className="size-3" />
+              </MessageAction>
+            )}
             {onDelete && (
               <MessageAction
                 label={t('sidebar.delete')}
@@ -128,8 +163,8 @@ export const MessageBubble = memo(function MessageBubble({
                 <Trash2 className="size-3" />
               </MessageAction>
             )}
-            {message.usage && (
-              <TokenUsageTooltip usage={message.usage} />
+            {activeUsage && (
+              <TokenUsageTooltip usage={activeUsage} />
             )}
           </MessageActions>
         )}
@@ -138,6 +173,58 @@ export const MessageBubble = memo(function MessageBubble({
     </motion.div>
   );
 });
+
+// ─── VariantSwitcher ────────────────────────────────────────────────────────
+
+interface VariantSwitcherProps {
+  variants: ChatMessageVariant[];
+  activeVariantIndex?: number;
+  onSwitch: (index: number) => void;
+}
+
+/**
+ * Compact left/right navigation for switching between regeneration variants.
+ *
+ * Shows "2 / 3" with arrow buttons. The total count is `variants.length + 1`
+ * because the current message parts are the latest (un-archived) generation.
+ * `activeVariantIndex` points into `variants` when an older version is shown;
+ * `undefined` means the latest is active (displayed as the last slot).
+ */
+function VariantSwitcher({ variants, activeVariantIndex, onSwitch }: VariantSwitcherProps) {
+  const total = variants.length + 1;
+  // Active slot: undefined / >= variants.length → last slot (latest)
+  const currentSlot = activeVariantIndex !== undefined && activeVariantIndex < variants.length
+    ? activeVariantIndex
+    : variants.length;
+  const displayIndex = currentSlot + 1; // 1-based for display
+
+  const canPrev = currentSlot > 0;
+  const canNext = currentSlot < total - 1;
+
+  return (
+    <div className="flex items-center gap-0">
+      <button
+        className="h-6 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+        disabled={!canPrev}
+        onClick={() => canPrev && onSwitch(currentSlot - 1)}
+        aria-label="Previous variant"
+      >
+        <ChevronLeft className="size-3" />
+      </button>
+      <span className="text-xs tabular-nums text-muted-foreground select-none min-w-[2rem] text-center">
+        {displayIndex}/{total}
+      </span>
+      <button
+        className="h-6 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+        disabled={!canNext}
+        onClick={() => canNext && onSwitch(currentSlot + 1)}
+        aria-label="Next variant"
+      >
+        <ChevronRight className="size-3" />
+      </button>
+    </div>
+  );
+}
 
 /**
  * Marks a reply that stopped before the model was done — the user hit stop, the

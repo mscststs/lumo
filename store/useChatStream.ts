@@ -62,6 +62,8 @@ export interface UseChatStreamReturn {
   handleSelectConversation: (id: string) => Promise<void>;
   handleDeleteConversation: (id: string) => Promise<void>;
   handleDeleteMessage: (messageId: string) => Promise<void>;
+  handleRegenerateMessage: (messageId: string, getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
+  handleSwitchVariant: (variantIndex: number) => Promise<void>;
   handleClearAllConversations: () => Promise<void>;
 }
 
@@ -139,6 +141,12 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   const lastCheckpointAtRef = useRef(0);
   /** Guards against overlapping checkpoint writes to the same record. */
   const checkpointInFlightRef = useRef(false);
+  /**
+   * Variants from a regeneration in progress. Attached to the new assistant
+   * message when it is persisted, then cleared. Held in a ref so it survives
+   * across the async gap between starting the stream and finishing it.
+   */
+  const regenerateVariantsRef = useRef<import('@/types').ChatMessageVariant[] | null>(null);
 
   /**
    * Persists the in-flight turn as an interrupted message, if there is one worth
@@ -350,6 +358,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         { interrupted, stopReason, usage }: { interrupted: boolean; stopReason?: 'step-limit'; usage?: TokenUsageStats },
       ): Conversation | null => {
         if (!hasRenderableParts(parts)) return null;
+        const variants = regenerateVariantsRef.current ?? undefined;
         return {
           ...convWithUserMessage,
           messages: [
@@ -364,6 +373,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
               ...(interrupted ? { interrupted: true } : {}),
               ...(stopReason ? { stopReason } : {}),
               ...(usage ? { usage } : {}),
+              ...(variants ? { variants } : {}),
             } satisfies ChatMessage,
           ],
           updatedAt: Date.now(),
@@ -437,6 +447,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
           setChatError(null);
           setIsRetrying(false);
           setRetryAttempt(0);
+          regenerateVariantsRef.current = null;
         }
 
         if (!updatedConv) return;
@@ -781,6 +792,134 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     [currentConversation, isStreaming, saveConversation, openConversation, removeConversation],
   );
 
+  /**
+   * Regenerate from a specific assistant message: removes that message (and
+   * everything after it), keeps the preceding user message, and re-sends the
+   * request to the model. This is the "Regenerate" affordance — the user is
+   * unhappy with this particular response and wants the model to try again.
+   */
+  const handleRegenerateMessage = useCallback(
+    (messageId: string, getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => {
+      if (!currentConversation || isStreaming) return;
+      const idx = currentConversation.messages.findIndex((m) => m.id === messageId);
+      if (idx < 0) return;
+
+      const message = currentConversation.messages[idx]!;
+      // Only the last assistant message can be regenerated.
+      if (message.role !== 'assistant') return;
+      if (idx !== currentConversation.messages.length - 1) return;
+
+      const provider = getProvider();
+      const model = getModel();
+      if (!provider || !model) return;
+
+      // Archive the current response as a variant.
+      const existingVariants: import('@/types').ChatMessageVariant[] = message.variants ?? [];
+      const currentVariant: import('@/types').ChatMessageVariant = {
+        id: message.id,
+        parts: message.parts ?? [],
+        timestamp: message.timestamp,
+        ...(message.interrupted ? { interrupted: true } : {}),
+        ...(message.stopReason ? { stopReason: message.stopReason } : {}),
+        ...(message.usage ? { usage: message.usage } : {}),
+      };
+      // If we are currently viewing an archived variant, archive the shown
+      // content back into its slot rather than duplicating it.
+      const archivedVariants =
+        message.activeVariantIndex !== undefined &&
+        message.activeVariantIndex < existingVariants.length
+          ? existingVariants // Already archived; just append current parts as new
+          : existingVariants;
+      const allVariants = [...archivedVariants, currentVariant];
+
+      // Remove the assistant message, keep everything before it.
+      const updatedMessages = currentConversation.messages.slice(0, idx);
+      if (updatedMessages.length === 0) return;
+
+      const conv: Conversation = {
+        ...currentConversation,
+        messages: updatedMessages,
+        updatedAt: Date.now(),
+      };
+
+      // Reset streaming state and fire the request.
+      setIsStreaming(true);
+      setStreamingParts([]);
+      setChatError(null);
+      setIsRetrying(false);
+      setRetryAttempt(0);
+      resumeStateRef.current = null;
+      streamingTurnRef.current = null;
+      setStreamingTurn(null);
+      checkpointRef.current = null;
+      livePartsRef.current = [];
+
+      // Stash the variants so the persist callback can attach them.
+      regenerateVariantsRef.current = allVariants;
+
+      // Show the trimmed conversation immediately.
+      void openConversation(conv).catch(() => {});
+
+      // Persist the trimmed conversation, then execute the stream.
+      void saveConversation(conv).then(() => {
+        return executeStream(conv, provider, model, 0);
+      }).catch((error) => {
+        setIsStreaming(false);
+        setStreamingParts([]);
+        setStreamingTurn(null);
+        setIsRetrying(false);
+        setChatError(classifyError(toError(error)));
+        regenerateVariantsRef.current = null;
+      });
+    },
+    [currentConversation, isStreaming, saveConversation, openConversation, executeStream],
+  );
+
+  /**
+   * Switch the displayed variant on the last assistant message.
+   *
+   * `variantIndex` is the index into the combined slots [variants..., current],
+   * where the last slot (index === variants.length) represents the latest
+   * generation (the message's own `parts`). Only changes `activeVariantIndex`;
+   * the actual parts/variants arrays are never mutated here.
+   */
+  const handleSwitchVariant = useCallback(
+    async (variantIndex: number) => {
+      if (!currentConversation || isStreaming) return;
+      const messages = currentConversation.messages;
+      if (messages.length === 0) return;
+
+      const lastIdx = messages.length - 1;
+      const lastMsg = messages[lastIdx]!;
+      if (lastMsg.role !== 'assistant') return;
+
+      const variants = lastMsg.variants ?? [];
+      const totalSlots = variants.length + 1;
+      if (variantIndex < 0 || variantIndex >= totalSlots) return;
+
+      // If already showing this slot, no-op.
+      const currentActive = lastMsg.activeVariantIndex ?? variants.length;
+      if (variantIndex === currentActive) return;
+
+      const isLatestSlot = variantIndex === variants.length;
+      const updatedMsg: ChatMessage = {
+        ...lastMsg,
+        activeVariantIndex: isLatestSlot ? undefined : variantIndex,
+      };
+
+      const updatedMessages = [...messages.slice(0, lastIdx), updatedMsg];
+      const updated: Conversation = {
+        ...currentConversation,
+        messages: updatedMessages,
+        updatedAt: Date.now(),
+      };
+
+      await saveConversation(updated);
+      await openConversation(updated);
+    },
+    [currentConversation, isStreaming, saveConversation, openConversation],
+  );
+
   return {
     conversations,
     currentConversation,
@@ -798,6 +937,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     handleSelectConversation,
     handleDeleteConversation,
     handleDeleteMessage,
+    handleRegenerateMessage,
+    handleSwitchVariant,
     handleClearAllConversations,
   };
 }

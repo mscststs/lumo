@@ -19,6 +19,15 @@ export type ToolPart = Extract<ChatMessagePart, { toolCallId: string }>;
  * without a destructive storage migration.
  */
 export function normalizeMessage(message: ChatMessage): ChatMessagePart[] {
+  // When a variant is active, show its parts instead of the message's own.
+  if (
+    message.variants &&
+    message.activeVariantIndex !== undefined &&
+    message.activeVariantIndex < message.variants.length
+  ) {
+    return message.variants[message.activeVariantIndex]!.parts;
+  }
+
   if (message.parts && message.parts.length > 0) return message.parts;
 
   const parts: ChatMessagePart[] = [];

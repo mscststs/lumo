@@ -251,6 +251,36 @@ export interface ChatMessage {
    */
   usage?: TokenUsageStats;
   timestamp: number;
+  /**
+   * Alternative generation variants for this assistant message.
+   *
+   * When the user regenerates a response, the current reply is archived into
+   * this array and a fresh request is made. The latest generation is always the
+   * message's own `parts`; older attempts live here in chronological order.
+   *
+   * Only meaningful on the last assistant message in the conversation — switching
+   * variants replaces the conversational context for subsequent turns.
+   */
+  variants?: ChatMessageVariant[];
+  /**
+   * Which variant is currently active. `undefined` or equal to the total
+   * variant count means the latest (current `parts`). A number < variants.length
+   * means one of the archived versions is being shown.
+   */
+  activeVariantIndex?: number;
+}
+
+/**
+ * A single archived generation variant — a snapshot of what an assistant turn
+ * produced before the user chose to regenerate.
+ */
+export interface ChatMessageVariant {
+  id: string;
+  parts: ChatMessagePart[];
+  timestamp: number;
+  interrupted?: boolean;
+  stopReason?: 'step-limit';
+  usage?: TokenUsageStats;
 }
 
 export interface Conversation {

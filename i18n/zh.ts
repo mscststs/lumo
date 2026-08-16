@@ -33,6 +33,7 @@ export const zh: TranslationSchema = {
     dropHere: '拖放到此处以附加',
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
+    regenerate: '重新生成',
     delete: '删除',
     deleteConfirmTitle: '删除消息',
     deleteConfirmDesc: '将永久移除从此处开始的 {{count}} 条消息。',

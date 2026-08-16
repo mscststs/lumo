@@ -31,6 +31,7 @@ export const en = {
     dropHere: 'Drop here to attach',
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
+    regenerate: 'Regenerate',
     delete: 'Delete',
     deleteConfirmTitle: 'Delete messages',
     deleteConfirmDesc: 'This will permanently remove {{count}} message(s) from this point onward.',

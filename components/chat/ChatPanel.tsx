@@ -129,6 +129,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     handleSelectConversation,
     handleDeleteConversation,
     handleDeleteMessage,
+    handleRegenerateMessage,
+    handleSwitchVariant,
     handleClearAllConversations,
   } = useChatStream({ panelId: panelIndex, occupiedSessionIds });
 
@@ -359,6 +361,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const onRetry = () => {
     handleRetry(getSelectedProvider, getSelectedModel);
   };
+
+  const onRegenerate = useCallback(
+    (messageId: string) => {
+      handleRegenerateMessage(messageId, getSelectedProvider, getSelectedModel);
+    },
+    [handleRegenerateMessage, getSelectedProvider, getSelectedModel],
+  );
 
   /**
    * Filter conversations that are occupied by other panels
@@ -625,6 +634,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         hasModels={allModels.length > 0}
         onRetry={onRetry}
         onDeleteMessage={handleDeleteMessage}
+        onRegenerateMessage={onRegenerate}
+        onSwitchVariant={handleSwitchVariant}
       />
 
       <ConversationFiles
