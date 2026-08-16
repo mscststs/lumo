@@ -89,11 +89,11 @@ export const MessageBubble = memo(function MessageBubble({
             {t('sidebar.deleteConfirmDesc', { count: deleteCount })}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)}>
             {t('common.cancel')}
           </Button>
-          <Button variant="destructive" size="sm" onClick={confirmDelete}>
+          <Button variant="default" size="sm" onClick={confirmDelete}>
             {t('sidebar.delete')}
           </Button>
         </DialogFooter>

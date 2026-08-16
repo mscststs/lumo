@@ -43,7 +43,12 @@ export function ConversationHistoryItem({
         className="w-full text-left px-2.5 py-2 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
       >
         {/* pr leaves room for the hover actions so long titles never sit under them */}
-        <div className="flex items-baseline justify-between gap-2 pr-7">
+        <div
+          className={cn(
+            'flex items-baseline justify-between gap-2 transition-[padding] duration-200',
+            isConfirming ? 'pr-14' : 'pr-7',
+          )}
+        >
           <span className="text-xs font-medium truncate min-w-0">
             {conversationTitle(conversation.title, t)}
           </span>
@@ -52,7 +57,14 @@ export function ConversationHistoryItem({
           </span>
         </div>
         {preview && (
-          <p className="text-[11px] text-muted-foreground truncate mt-0.5 pr-7">{preview}</p>
+          <p
+            className={cn(
+              'text-[11px] text-muted-foreground truncate mt-0.5 transition-[padding] duration-200',
+              isConfirming ? 'pr-14' : 'pr-7',
+            )}
+          >
+            {preview}
+          </p>
         )}
       </button>
 
