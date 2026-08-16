@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity } from 'lucide-react';
@@ -14,22 +14,61 @@ import {
 import { TokenUsageTooltip } from './TokenUsageTooltip';
 import { MessagePartList } from './MessagePartList';
 import { extractText, normalizeMessage } from '@/lib/message-parts';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import type { ChatMessage, ChatMessagePart, TextAttachment } from '@/types';
 
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
   onDelete?: (messageId: string) => void;
+  /** Number of messages that will be removed (this one + all after it). */
+  deleteCount?: number;
 }
 
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming = false,
   onDelete,
+  deleteCount = 1,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const parts = normalizeMessage(message);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const confirmDelete = useCallback(() => {
+    setConfirmOpen(false);
+    onDelete?.(message.id);
+  }, [onDelete, message.id]);
+
+  const deleteDialog = onDelete && (
+    <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle>{t('sidebar.deleteConfirmTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('sidebar.deleteConfirmDesc', { count: deleteCount })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={confirmDelete}>
+            {t('sidebar.delete')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   if (isUser) {
     return (
@@ -46,13 +85,14 @@ export const MessageBubble = memo(function MessageBubble({
               <MessageAction
                 label={t('sidebar.delete')}
                 tooltip={t('sidebar.delete')}
-                onClick={() => onDelete(message.id)}
+                onClick={() => setConfirmOpen(true)}
               >
                 <Trash2 className="size-3" />
               </MessageAction>
             </MessageActions>
           )}
         </Message>
+        {deleteDialog}
       </motion.div>
     );
   }
@@ -83,7 +123,7 @@ export const MessageBubble = memo(function MessageBubble({
               <MessageAction
                 label={t('sidebar.delete')}
                 tooltip={t('sidebar.delete')}
-                onClick={() => onDelete(message.id)}
+                onClick={() => setConfirmOpen(true)}
               >
                 <Trash2 className="size-3" />
               </MessageAction>
@@ -94,6 +134,7 @@ export const MessageBubble = memo(function MessageBubble({
           </MessageActions>
         )}
       </Message>
+      {deleteDialog}
     </motion.div>
   );
 });

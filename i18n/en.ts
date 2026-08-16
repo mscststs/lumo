@@ -32,6 +32,8 @@ export const en = {
     noModels: 'No models configured. Please go to Settings to add one.',
     copy: 'Copy',
     delete: 'Delete',
+    deleteConfirmTitle: 'Delete messages',
+    deleteConfirmDesc: 'This will permanently remove {{count}} message(s) from this point onward.',
     tokenUsage: 'Token Usage',
     tokenInput: 'Input',
     tokenOutput: 'Output',

@@ -761,7 +761,10 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   const handleDeleteMessage = useCallback(
     async (messageId: string) => {
       if (!currentConversation || isStreaming) return;
-      const updatedMessages = currentConversation.messages.filter((m) => m.id !== messageId);
+      const idx = currentConversation.messages.findIndex((m) => m.id === messageId);
+      if (idx < 0) return;
+      // Remove this message and everything after it.
+      const updatedMessages = currentConversation.messages.slice(0, idx);
       // If all messages are deleted, remove the conversation entirely.
       if (updatedMessages.length === 0) {
         await removeConversation(currentConversation.id);

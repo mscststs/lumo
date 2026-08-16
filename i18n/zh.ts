@@ -34,6 +34,8 @@ export const zh: TranslationSchema = {
     noModels: '未配置模型，请前往设置页面添加。',
     copy: '复制',
     delete: '删除',
+    deleteConfirmTitle: '删除消息',
+    deleteConfirmDesc: '将永久移除从此处开始的 {{count}} 条消息。',
     tokenUsage: 'Token 用量',
     tokenInput: '输入',
     tokenOutput: '输出',

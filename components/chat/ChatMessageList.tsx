@@ -99,12 +99,13 @@ export function ChatMessageList({
             {t('sidebar.noModels')}
           </div>
         )}
-        {rendered.map((msg) => (
+        {rendered.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
             message={msg}
             isStreaming={isStreaming && msg.id === pending?.id}
             onDelete={onDeleteMessage}
+            deleteCount={rendered.length - idx}
           />
         ))}
         {isStreaming && !pending && !chatError && (
