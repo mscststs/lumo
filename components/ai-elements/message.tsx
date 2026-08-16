@@ -65,6 +65,8 @@ export function MessageContent({ className, children, ...props }: MessageContent
  */
 const STREAMDOWN_PLUGINS = { code, math, cjk };
 
+const STREAMDOWN_ANIMATE_OPTIONS = { animation: "fadeIn" as const, duration: 80, stagger: 20, sep: "word" as const };
+
 interface MessageResponseProps extends React.HTMLAttributes<HTMLDivElement> {
   children: string;
   isStreaming?: boolean;
@@ -79,7 +81,7 @@ export const MessageResponse = React.memo(function MessageResponse({
   return (
     <div className={cn('sd-message-response break-words overflow-hidden', className)} {...props}>
       <Streamdown
-        animated
+        animated={STREAMDOWN_ANIMATE_OPTIONS}
         plugins={STREAMDOWN_PLUGINS}
         isAnimating={isStreaming}
       >
