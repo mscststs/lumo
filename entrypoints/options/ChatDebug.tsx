@@ -24,7 +24,7 @@ import { conversationTitle } from '@/lib/conversation-title';
 import { safeStringify } from '@/lib/tool-output';
 import { storage } from '@/store/storage';
 import type { PanelLayout } from '@/lib/panel-order';
-import type { Conversation, ChatMessage, ChatMessagePart } from '@/types';
+import type { Conversation, ChatMessage, ChatMessagePart, TokenUsageStats } from '@/types';
 import { SettingsHeader } from './components/SettingsHeader';
 import type { ToolPart } from '@/lib/message-parts';
 
@@ -44,6 +44,8 @@ interface DebugEntry {
   /** For file parts */
   fileUrl?: string;
   fileMediaType?: string;
+  /** Token usage for this assistant turn (only on the first text entry of a turn). */
+  usage?: TokenUsageStats;
 }
 
 /**
@@ -91,15 +93,22 @@ function buildTimeline(conversation: Conversation): DebugEntry[] {
       let pendingReasoning = '';
       let textIdx = 0;
       let reasoningIdx = 0;
+      // Attach usage to the first text entry of this assistant turn.
+      let usageAttached = false;
 
       const flushText = () => {
         if (pendingText) {
-          entries.push({
+          const entry: DebugEntry = {
             id: `${message.id}-text-${textIdx}`,
             timestamp: message.timestamp,
             type: 'assistant-text',
             content: pendingText,
-          });
+          };
+          if (!usageAttached && message.usage) {
+            entry.usage = message.usage;
+            usageAttached = true;
+          }
+          entries.push(entry);
           pendingText = '';
           textIdx++;
         }
@@ -327,6 +336,36 @@ export function ChatDebugPage() {
     [conversation],
   );
 
+  /** Aggregate token usage across all assistant messages in the conversation. */
+  const conversationUsage = useMemo<TokenUsageStats | null>(() => {
+    if (!conversation) return null;
+    let input = 0;
+    let output = 0;
+    let cacheRead = 0;
+    let cacheWrite = 0;
+    let reasoning = 0;
+    let hasAny = false;
+    for (const msg of conversation.messages) {
+      if (msg.role === 'assistant' && msg.usage) {
+        hasAny = true;
+        input += msg.usage.inputTokens;
+        output += msg.usage.outputTokens;
+        cacheRead += msg.usage.cacheReadTokens ?? 0;
+        cacheWrite += msg.usage.cacheWriteTokens ?? 0;
+        reasoning += msg.usage.reasoningTokens ?? 0;
+      }
+    }
+    if (!hasAny) return null;
+    return {
+      inputTokens: input,
+      outputTokens: output,
+      totalTokens: input + output,
+      ...(cacheRead > 0 ? { cacheReadTokens: cacheRead } : {}),
+      ...(cacheWrite > 0 ? { cacheWriteTokens: cacheWrite } : {}),
+      ...(reasoning > 0 ? { reasoningTokens: reasoning } : {}),
+    };
+  }, [conversation]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -388,6 +427,14 @@ export function ChatDebugPage() {
             </div>
             <p className="text-xs text-muted-foreground/70">{t('options.chatDebug.refreshHint')}</p>
           </div>
+
+          {/* Token Usage Summary */}
+          {conversationUsage && (
+            <TokenUsageBadge
+              usage={conversationUsage}
+              label={t('options.chatDebug.conversationTotal')}
+            />
+          )}
 
           {/* Timeline */}
           <div className="space-y-2">
@@ -489,6 +536,11 @@ function DebugCard({ entry }: { entry: DebugEntry }) {
         ) : (
           <TextContent content={previewContent} expanded={expanded} needsExpand={needsExpand} />
         )}
+        {entry.usage && (
+          <div className="mt-2">
+            <TokenUsageBadge usage={entry.usage} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -587,6 +639,109 @@ function ToolCallContent({ part, expanded }: { part: ToolPart; expanded: boolean
               )}>
                 {part.state}
               </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Token Usage Badge ──────────────────────────────────────────────────────
+
+function TokenUsageBadge({ usage, label }: { usage: TokenUsageStats; label?: string }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const hasSteps = usage.steps && usage.steps.length > 1;
+
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 space-y-1">
+      {/* Header row */}
+      <button
+        className="w-full flex items-center gap-2 text-left"
+        onClick={() => hasSteps && setExpanded(!expanded)}
+        disabled={!hasSteps}
+      >
+        {label && (
+          <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground/70">
+            {label}
+          </span>
+        )}
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[0.625rem] font-mono tabular-nums text-muted-foreground">
+          <span>
+            <span className="text-muted-foreground/60">{t('options.chatDebug.inputTokens')}:</span>{' '}
+            <span className="text-foreground/80">{usage.inputTokens.toLocaleString()}</span>
+          </span>
+          <span>
+            <span className="text-muted-foreground/60">{t('options.chatDebug.outputTokens')}:</span>{' '}
+            <span className="text-foreground/80">{usage.outputTokens.toLocaleString()}</span>
+          </span>
+          {(usage.cacheReadTokens ?? 0) > 0 && (
+            <span>
+              <span className="text-muted-foreground/60">{t('options.chatDebug.cacheRead')}:</span>{' '}
+              <span className="text-green-600 dark:text-green-400">{usage.cacheReadTokens!.toLocaleString()}</span>
+            </span>
+          )}
+          {(usage.cacheWriteTokens ?? 0) > 0 && (
+            <span>
+              <span className="text-muted-foreground/60">{t('options.chatDebug.cacheWrite')}:</span>{' '}
+              <span className="text-amber-600 dark:text-amber-400">{usage.cacheWriteTokens!.toLocaleString()}</span>
+            </span>
+          )}
+          {(usage.reasoningTokens ?? 0) > 0 && (
+            <span>
+              <span className="text-muted-foreground/60">{t('options.chatDebug.reasoningTokens')}:</span>{' '}
+              <span className="text-purple-600 dark:text-purple-400">{usage.reasoningTokens!.toLocaleString()}</span>
+            </span>
+          )}
+          <span>
+            <span className="text-muted-foreground/60">{t('options.chatDebug.totalTokens')}:</span>{' '}
+            <span className="text-foreground/80 font-medium">{usage.totalTokens.toLocaleString()}</span>
+          </span>
+        </div>
+        {hasSteps && (
+          <ChevronDown
+            className={cn(
+              'ml-auto h-3 w-3 text-muted-foreground/60 transition-transform shrink-0',
+              expanded && 'rotate-180',
+            )}
+          />
+        )}
+      </button>
+
+      {/* Per-step breakdown */}
+      <AnimatePresence>
+        {expanded && hasSteps && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-1 space-y-0.5 border-t border-border/40">
+              {usage.steps!.map((step) => (
+                <div
+                  key={step.step}
+                  className="flex flex-wrap gap-x-3 gap-y-0.5 text-[0.6rem] font-mono tabular-nums text-muted-foreground/80"
+                >
+                  <span className="text-muted-foreground/50 w-12 shrink-0">
+                    {t('options.chatDebug.stepLabel', { step: step.step + 1 })}
+                  </span>
+                  <span>↑{step.inputTokens.toLocaleString()}</span>
+                  <span>↓{step.outputTokens.toLocaleString()}</span>
+                  {(step.cacheReadTokens ?? 0) > 0 && (
+                    <span className="text-green-600 dark:text-green-400">⚡{step.cacheReadTokens!.toLocaleString()}</span>
+                  )}
+                  {(step.cacheWriteTokens ?? 0) > 0 && (
+                    <span className="text-amber-600 dark:text-amber-400">✎{step.cacheWriteTokens!.toLocaleString()}</span>
+                  )}
+                  {(step.reasoningTokens ?? 0) > 0 && (
+                    <span className="text-purple-600 dark:text-purple-400">🧠{step.reasoningTokens!.toLocaleString()}</span>
+                  )}
+                  <span>Σ{step.totalTokens.toLocaleString()}</span>
+                </div>
+              ))}
             </div>
           </motion.div>
         )}

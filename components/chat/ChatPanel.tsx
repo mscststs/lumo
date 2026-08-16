@@ -128,6 +128,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     handleNewChat,
     handleSelectConversation,
     handleDeleteConversation,
+    handleDeleteMessage,
     handleClearAllConversations,
   } = useChatStream({ panelId: panelIndex, occupiedSessionIds });
 
@@ -623,6 +624,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         retryAttempt={retryAttempt}
         hasModels={allModels.length > 0}
         onRetry={onRetry}
+        onDeleteMessage={handleDeleteMessage}
       />
 
       <ConversationFiles

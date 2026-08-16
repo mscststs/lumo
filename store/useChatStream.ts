@@ -13,7 +13,7 @@ import { classifyError, isRetryableError } from '@/components/chat/ChatError';
 import { toError } from '@/lib/provider-error';
 import type { ConversationMeta } from '@/lib/conversation-store';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment } from '@/types';
+import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment, TokenUsageStats } from '@/types';
 
 /**
  * Minimum gap between mid-stream checkpoints of the in-flight assistant turn.
@@ -61,6 +61,7 @@ export interface UseChatStreamReturn {
   handleNewChat: () => void;
   handleSelectConversation: (id: string) => Promise<void>;
   handleDeleteConversation: (id: string) => Promise<void>;
+  handleDeleteMessage: (messageId: string) => Promise<void>;
   handleClearAllConversations: () => Promise<void>;
 }
 
@@ -346,7 +347,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
        */
       const withAssistantTurn = (
         parts: ChatMessagePart[],
-        { interrupted, stopReason }: { interrupted: boolean; stopReason?: 'step-limit' },
+        { interrupted, stopReason, usage }: { interrupted: boolean; stopReason?: 'step-limit'; usage?: TokenUsageStats },
       ): Conversation | null => {
         if (!hasRenderableParts(parts)) return null;
         return {
@@ -362,6 +363,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
               parts,
               ...(interrupted ? { interrupted: true } : {}),
               ...(stopReason ? { stopReason } : {}),
+              ...(usage ? { usage } : {}),
             } satisfies ChatMessage,
           ],
           updatedAt: Date.now(),
@@ -386,7 +388,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       // Seeded so the first chunk of a fresh turn is not checkpointed instantly.
       lastCheckpointAtRef.current = Date.now();
 
-      const persist = async (parts: ChatMessagePart[], stoppedReason: StopReason) => {
+      const persist = async (parts: ChatMessagePart[], stoppedReason: StopReason, usage?: TokenUsageStats) => {
         const stale = isStale();
         // Running out of steps leaves tool calls pending, so it is every bit as
         // truncated as an abort — it just arrives through the success path. Left
@@ -399,6 +401,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
           // cap did.
           interrupted: controller.signal.aborted || hitStepLimit,
           ...(hitStepLimit ? { stopReason: 'step-limit' as const } : {}),
+          usage,
         });
 
         if (!stale) {
@@ -755,6 +758,26 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     };
   }, [streamingTurn, streamingParts]);
 
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!currentConversation || isStreaming) return;
+      const updatedMessages = currentConversation.messages.filter((m) => m.id !== messageId);
+      // If all messages are deleted, remove the conversation entirely.
+      if (updatedMessages.length === 0) {
+        await removeConversation(currentConversation.id);
+        return;
+      }
+      const updated: Conversation = {
+        ...currentConversation,
+        messages: updatedMessages,
+        updatedAt: Date.now(),
+      };
+      await saveConversation(updated);
+      await openConversation(updated);
+    },
+    [currentConversation, isStreaming, saveConversation, openConversation, removeConversation],
+  );
+
   return {
     conversations,
     currentConversation,
@@ -771,6 +794,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     handleNewChat,
     handleSelectConversation,
     handleDeleteConversation,
+    handleDeleteMessage,
     handleClearAllConversations,
   };
 }

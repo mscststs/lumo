@@ -167,6 +167,41 @@ export interface SystemPromptSettings {
  */
 export type ChatMessagePart = UIMessagePart<UIDataTypes, UITools>;
 
+/**
+ * Token usage statistics for a single assistant turn.
+ *
+ * Each field aggregates across all agent-loop steps that comprised the turn.
+ * `steps` optionally holds per-step breakdowns for the debug view.
+ */
+export interface TokenUsageStats {
+  /** Total input (prompt) tokens sent to the model. */
+  inputTokens: number;
+  /** Total output (completion) tokens received from the model. */
+  outputTokens: number;
+  /** Total tokens (input + output). */
+  totalTokens: number;
+  /** Input tokens served from the provider's prompt cache. */
+  cacheReadTokens?: number;
+  /** Input tokens written into the provider's prompt cache. */
+  cacheWriteTokens?: number;
+  /** Output tokens used for reasoning (thinking). */
+  reasoningTokens?: number;
+  /** Per-step breakdown (one entry per agent-loop iteration). */
+  steps?: TokenUsageStep[];
+}
+
+/** Token usage for a single agent-loop step. */
+export interface TokenUsageStep {
+  /** Zero-based step index. */
+  step: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -210,6 +245,11 @@ export interface ChatMessage {
    * never happened. See `lib/max-steps.ts`.
    */
   stopReason?: 'step-limit';
+  /**
+   * Token usage statistics for this assistant turn. Only present on assistant
+   * messages that completed at least one model call.
+   */
+  usage?: TokenUsageStats;
   timestamp: number;
 }
 

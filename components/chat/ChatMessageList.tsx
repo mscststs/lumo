@@ -23,6 +23,7 @@ interface ChatMessageListProps {
   retryAttempt: number;
   hasModels: boolean;
   onRetry: () => void;
+  onDeleteMessage?: (messageId: string) => void;
 }
 
 export function ChatMessageList({
@@ -34,6 +35,7 @@ export function ChatMessageList({
   retryAttempt,
   hasModels,
   onRetry,
+  onDeleteMessage,
 }: ChatMessageListProps) {
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
@@ -102,6 +104,7 @@ export function ChatMessageList({
             key={msg.id}
             message={msg}
             isStreaming={isStreaming && msg.id === pending?.id}
+            onDelete={onDeleteMessage}
           />
         ))}
         {isStreaming && !pending && !chatError && (

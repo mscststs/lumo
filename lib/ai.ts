@@ -12,7 +12,7 @@ import {
   type ToolSet,
   type UIMessage,
 } from 'ai';
-import type { ProviderConfig, ProviderType, ModelConfig, ChatMessagePart } from '@/types';
+import type { ProviderConfig, ProviderType, ModelConfig, ChatMessagePart, TokenUsageStats, TokenUsageStep } from '@/types';
 import { normalizeProviderType } from '@/lib/provider-type';
 import {
   isUnifiedEffort,
@@ -398,7 +398,7 @@ export interface ChatStreamOptions {
    * model produced them.
    */
   onUpdate: (parts: ChatMessagePart[]) => void;
-  onFinish: (parts: ChatMessagePart[], stoppedReason: StopReason) => void;
+  onFinish: (parts: ChatMessagePart[], stoppedReason: StopReason, usage?: TokenUsageStats) => void;
   onError: (error: Error) => void;
   signal?: AbortSignal;
   /** Whether to include MCP tools in this request */
@@ -418,6 +418,8 @@ export interface ChatStreamOptions {
   resume?: ResumeState;
   /** Emits a resume checkpoint after every completed step. */
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
+  /** Called after each step with the cumulative token usage so far. */
+  onUsage?: (usage: TokenUsageStats) => void;
 }
 
 export async function chatStream({
@@ -434,6 +436,7 @@ export async function chatStream({
   maxSteps = DEFAULT_MAX_STEPS,
   resume,
   onStepComplete,
+  onUsage,
 }: ChatStreamOptions) {
   // Seed with the resumed parts so an abort or a second failure still reports
   // everything streamed across attempts, not just the current one.
@@ -443,10 +446,10 @@ export async function chatStream({
   // exactly one of onFinish/onError runs (otherwise the message is saved twice).
   let settled = false;
 
-  const finishOnce = (parts: ChatMessagePart[], stoppedReason: StopReason) => {
+  const finishOnce = (parts: ChatMessagePart[], stoppedReason: StopReason, usage?: TokenUsageStats) => {
     if (settled) return;
     settled = true;
-    onFinish(parts, stoppedReason);
+    onFinish(parts, stoppedReason, usage);
   };
 
   const failOnce = (error: unknown) => {
@@ -477,7 +480,7 @@ export async function chatStream({
           }),
         );
 
-    const { parts, stoppedReason } = await runAgentLoop({
+    const { parts, stoppedReason, usage } = await runAgentLoop({
       model: aiModel,
       providerOptions,
       reasoning,
@@ -493,10 +496,11 @@ export async function chatStream({
       },
       onError: failOnce,
       onStepComplete,
+      onUsage,
     });
     latestParts = parts;
 
-    finishOnce(latestParts, stoppedReason);
+    finishOnce(latestParts, stoppedReason, usage);
   } catch (error) {
     if (isAbort(error)) {
       // Keep whatever was streamed before the user hit stop.
@@ -536,6 +540,11 @@ export interface RunAgentLoopOptions {
    * replaying it reproduces the loop state without re-running the step.
    */
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
+  /**
+   * Called after each step with the cumulative token usage so far.
+   * Lets callers track costs in real time without awaiting the full result.
+   */
+  onUsage?: (usage: TokenUsageStats) => void;
 }
 
 /** Outcome of a `runAgentLoop` run: what it produced, and why it stopped. */
@@ -543,6 +552,8 @@ export interface AgentLoopResult {
   parts: ChatMessagePart[];
   /** Never `'aborted'` — an abort unwinds as a thrown error, not a return. */
   stoppedReason: Exclude<StopReason, 'aborted'>;
+  /** Cumulative token usage across all steps in this run. */
+  usage: TokenUsageStats;
 }
 
 /** Snapshot of the agent loop between two steps. */
@@ -580,6 +591,7 @@ export async function runAgentLoop({
   onUpdate,
   onError,
   onStepComplete,
+  onUsage,
 }: RunAgentLoopOptions): Promise<AgentLoopResult> {
   const hasTools = Object.keys(tools).length > 0;
   const trimmedSystem = system?.trim();
@@ -587,6 +599,25 @@ export async function runAgentLoop({
   // Seeding with the parts already streamed lets a resumed run keep appending
   // instead of restarting the part list, so the UI never loses earlier steps.
   let latestParts: ChatMessagePart[] = initialParts ? [...initialParts] : [];
+
+  // Cumulative token usage across all steps.
+  const usageSteps: TokenUsageStep[] = [];
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
+  let totalReasoning = 0;
+
+  /** Build a cumulative usage snapshot from the running totals. */
+  const buildUsage = (): TokenUsageStats => ({
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    totalTokens: totalInput + totalOutput,
+    ...(totalCacheRead > 0 ? { cacheReadTokens: totalCacheRead } : {}),
+    ...(totalCacheWrite > 0 ? { cacheWriteTokens: totalCacheWrite } : {}),
+    ...(totalReasoning > 0 ? { reasoningTokens: totalReasoning } : {}),
+    steps: [...usageSteps],
+  });
 
   for (let step = 0; stepAllowed(step, maxSteps); step++) {
     // `readUIMessageStream` reports stream errors via `onError` and then closes
@@ -639,7 +670,33 @@ export async function runAgentLoop({
       onUpdate?.(latestParts);
     }
 
-    if (errored) return { parts: latestParts, stoppedReason: 'error' };
+    if (errored) return { parts: latestParts, stoppedReason: 'error', usage: buildUsage() };
+
+    // Collect token usage for this step.
+    const stepUsage = await result.usage;
+    const stepCacheRead = stepUsage.inputTokenDetails?.cacheReadTokens ?? 0;
+    const stepCacheWrite = stepUsage.inputTokenDetails?.cacheWriteTokens ?? 0;
+    const stepReasoningTokens = stepUsage.outputTokenDetails?.reasoningTokens ?? 0;
+    const stepInputTokens = stepUsage.inputTokens ?? 0;
+    const stepOutputTokens = stepUsage.outputTokens ?? 0;
+
+    totalInput += stepInputTokens;
+    totalOutput += stepOutputTokens;
+    totalCacheRead += stepCacheRead;
+    totalCacheWrite += stepCacheWrite;
+    totalReasoning += stepReasoningTokens;
+
+    usageSteps.push({
+      step,
+      inputTokens: stepInputTokens,
+      outputTokens: stepOutputTokens,
+      totalTokens: stepInputTokens + stepOutputTokens,
+      ...(stepCacheRead > 0 ? { cacheReadTokens: stepCacheRead } : {}),
+      ...(stepCacheWrite > 0 ? { cacheWriteTokens: stepCacheWrite } : {}),
+      ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
+    });
+
+    onUsage?.(buildUsage());
 
     const responseMeta = await result.response;
     const stepMessages = responseMeta.messages;
@@ -661,7 +718,7 @@ export async function runAgentLoop({
         Array.isArray(message.content) &&
         message.content.some((part) => part.type === 'tool-call'),
     );
-    if (!hasPendingToolCalls) return { parts: latestParts, stoppedReason: 'finished' };
+    if (!hasPendingToolCalls) return { parts: latestParts, stoppedReason: 'finished', usage: buildUsage() };
 
     // Checkpoint *after* image injection, so the snapshot is byte-for-byte the
     // prompt the next iteration is about to send. Emitted only when the loop
@@ -675,7 +732,7 @@ export async function runAgentLoop({
   // Falling out of the loop means the cap ran out with tool calls still pending.
   // Every other way to leave it returns from inside, so this cannot be reached
   // by a turn the model actually finished.
-  return { parts: latestParts, stoppedReason: 'step-limit' };
+  return { parts: latestParts, stoppedReason: 'step-limit', usage: buildUsage() };
 }
 
 function isAbort(error: unknown): boolean {

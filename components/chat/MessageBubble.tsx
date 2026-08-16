@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash } from 'lucide-react';
+import { Copy, FileText, ChevronDown, ChevronUp, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
 import { parseFileRefContent, setFileRefDragData } from '@/lib/file-drag';
@@ -11,6 +11,7 @@ import {
   MessageActions,
   MessageAction,
 } from '@/components/ai-elements/message';
+import { TokenUsageTooltip } from './TokenUsageTooltip';
 import { MessagePartList } from './MessagePartList';
 import { extractText, normalizeMessage } from '@/lib/message-parts';
 import type { ChatMessage, ChatMessagePart, TextAttachment } from '@/types';
@@ -18,11 +19,13 @@ import type { ChatMessage, ChatMessagePart, TextAttachment } from '@/types';
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
+  onDelete?: (messageId: string) => void;
 }
 
 export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming = false,
+  onDelete,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
@@ -37,6 +40,18 @@ export const MessageBubble = memo(function MessageBubble({
 
           {/* User text bubble */}
           <UserTextBubble parts={parts} textAttachments={message.textAttachments} />
+
+          {onDelete && (
+            <MessageActions>
+              <MessageAction
+                label={t('sidebar.delete')}
+                tooltip={t('sidebar.delete')}
+                onClick={() => onDelete(message.id)}
+              >
+                <Trash2 className="size-3" />
+              </MessageAction>
+            </MessageActions>
+          )}
         </Message>
       </motion.div>
     );
@@ -64,6 +79,18 @@ export const MessageBubble = memo(function MessageBubble({
             >
               <Copy className="size-3" />
             </MessageAction>
+            {onDelete && (
+              <MessageAction
+                label={t('sidebar.delete')}
+                tooltip={t('sidebar.delete')}
+                onClick={() => onDelete(message.id)}
+              >
+                <Trash2 className="size-3" />
+              </MessageAction>
+            )}
+            {message.usage && (
+              <TokenUsageTooltip usage={message.usage} />
+            )}
           </MessageActions>
         )}
       </Message>
