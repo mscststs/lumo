@@ -376,6 +376,8 @@ export const en = {
       totalTokens: 'Total',
       stepLabel: 'Step {{step}}',
       conversationTotal: 'Conversation Total',
+      windowSelect: 'Window',
+      windowLabel: 'Window {{index}}',
     },
     mcp: {
       title: 'MCP',

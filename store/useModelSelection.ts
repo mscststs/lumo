@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { storage } from '@/store/storage';
 import { useStorageWatchMultiple } from '@/store/useStorageWatch';
-import { panelModelKey } from '@/lib/panel-storage';
+import { panelModelKey, windowModelKey, sessionPanelStorage } from '@/lib/panel-storage';
+import { useWindowId } from '@/lib/window-id';
 import type { ProviderConfig, ModelConfig } from '@/types';
 
 export interface ModelOption {
@@ -40,20 +41,33 @@ interface UseModelSelectionOptions {
 
 /**
  * Hook that manages provider/model selection state and persistence.
- * Each panel (identified by panelId) persists its model choice independently.
- * Panel 0 uses the canonical `selectedModel` key for backward compatibility;
- * panels 1/2 use `selectedModel_1` / `selectedModel_2`.
+ *
+ * ## Window isolation
+ *
+ * Each window maintains its own model selection in `chrome.storage.session`,
+ * keyed by `w${windowId}_selectedModel_${slot}`. This prevents switching a model
+ * in one window from affecting another.
+ *
+ * On every change, the selection is also written back to `chrome.storage.local`
+ * under the canonical key (`selectedModel` / `selectedModel_N`), so a newly
+ * opened window inherits the most recent choice as its default.
+ *
+ * On initialization:
+ * 1. Try to read from session storage (this window's key) — handles side panel
+ *    re-open within the same browser session.
+ * 2. Fall back to the local default — handles a brand new window.
  */
 export function useModelSelection(options?: UseModelSelectionOptions): UseModelSelectionReturn {
   const panelId = options?.panelId ?? 0;
-  const storageKey = panelModelKey(panelId);
+  const windowId = useWindowId();
+  const localKey = panelModelKey(panelId);
 
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Watch for provider changes from options page (applies to all panels)
+  // Watch for provider changes from options page (applies to all panels/windows)
   useStorageWatchMultiple(
     ['providers'],
     useCallback((key, newValue) => {
@@ -64,15 +78,18 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
     }, []),
   );
 
-  // Watch for model selection changes for THIS panel's storage key
+  // Watch for model selection changes for THIS window+panel's session key
   useEffect(() => {
+    if (windowId == null) return;
+    const sessionKey = windowModelKey(windowId, panelId);
+
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },
       areaName: string,
     ) => {
-      if (areaName !== 'local') return;
-      if (storageKey in changes) {
-        const model = changes[storageKey]?.newValue as { providerId: string; modelId: string } | null | undefined;
+      if (areaName !== 'session') return;
+      if (sessionKey in changes) {
+        const model = changes[sessionKey]?.newValue as { providerId: string; modelId: string } | null | undefined;
         if (model) {
           setSelectedProviderId(model.providerId);
           setSelectedModelId(model.modelId);
@@ -82,16 +99,28 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
 
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);
-  }, [storageKey]);
+  }, [windowId, panelId]);
 
   const loadData = useCallback(async () => {
     try {
       const provs = await storage.getProviders();
       setProviders(provs);
 
-      // Load this panel's saved model
-      const result = await chrome.storage.local.get(storageKey);
-      const selectedModel = result[storageKey] as { providerId: string; modelId: string } | null | undefined;
+      type ModelSelection = { providerId: string; modelId: string } | null | undefined;
+      let selectedModel: ModelSelection = null;
+
+      // 1. Try session storage (window-scoped) if windowId is available
+      if (windowId != null) {
+        const sessionKey = windowModelKey(windowId, panelId);
+        const sessionResult = await chrome.storage.session.get(sessionKey);
+        selectedModel = sessionResult[sessionKey] as ModelSelection;
+      }
+
+      // 2. Fall back to local storage (global default)
+      if (!selectedModel) {
+        const localResult = await chrome.storage.local.get(localKey);
+        selectedModel = localResult[localKey] as ModelSelection;
+      }
 
       if (selectedModel) {
         setSelectedProviderId(selectedModel.providerId);
@@ -104,11 +133,9 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
         }
       }
     } finally {
-      // Set even when the read throws: a caller awaiting readiness must be
-      // released and allowed to fail loudly, rather than hanging forever.
       setIsLoaded(true);
     }
-  }, [storageKey]);
+  }, [windowId, panelId, localKey]);
 
   const getSelectedProvider = useCallback((): ProviderConfig | undefined => {
     return providers.find((p) => p.id === selectedProviderId);
@@ -130,9 +157,18 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
     const modelId = parts[1] ?? '';
     setSelectedProviderId(providerId);
     setSelectedModelId(modelId);
-    // Persist to this panel's own storage key
-    await chrome.storage.local.set({ [storageKey]: { providerId, modelId } });
-  }, [storageKey]);
+
+    const selection = { providerId, modelId };
+
+    // Write to session storage (window-scoped) if windowId is known
+    if (windowId != null) {
+      const sessionKey = windowModelKey(windowId, panelId);
+      await sessionPanelStorage.set({ [sessionKey]: selection });
+    }
+
+    // Always write back to local as the global default for new windows
+    await chrome.storage.local.set({ [localKey]: selection });
+  }, [windowId, panelId, localKey]);
 
   const allModels: ModelOption[] = providers.flatMap((p) =>
     p.models.map((m) => ({

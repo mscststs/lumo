@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ThemeInit } from '@/lib/theme';
 import { FontSizeInit } from '@/lib/font-size';
 import { emitEvent } from '@/lib/event-bus';
+import { WindowIdContext, useWindowIdInit } from '@/lib/window-id';
 import { SplitView } from '@/components/chat/SplitView';
 
 /**
@@ -17,6 +18,8 @@ import { SplitView } from '@/components/chat/SplitView';
  * fired the moment the panel opens.
  */
 export default function App() {
+  const windowId = useWindowIdInit();
+
   useEffect(() => {
     let closed = false;
     emitEvent('sidepanel:opened', {});
@@ -37,10 +40,12 @@ export default function App() {
   }, []);
 
   return (
-    <div className="h-screen w-full bg-background overflow-hidden">
-      <ThemeInit />
-      <FontSizeInit />
-      <SplitView />
-    </div>
+    <WindowIdContext.Provider value={windowId}>
+      <div className="h-screen w-full bg-background overflow-hidden">
+        <ThemeInit />
+        <FontSizeInit />
+        <SplitView />
+      </div>
+    </WindowIdContext.Provider>
   );
 }

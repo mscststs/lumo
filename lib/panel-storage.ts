@@ -16,26 +16,64 @@
  * contiguous; that forced the shifted panels to remount and aborted their
  * streams. Slots are now allowed to be sparse (`{0, 2}` is fine), so closing a
  * panel touches only its own keys.
+ *
+ * ## Window isolation
+ *
+ * Runtime per-panel state (current conversation, model selection) is scoped per
+ * window via a `w${windowId}_` prefix and stored in `chrome.storage.session`.
+ * This prevents one window's side panel from clobbering another's selections.
+ *
+ * The `local` keys (unsuffixed) remain as the **global default**: whenever a
+ * panel changes its model, it also writes back to local so the next new window
+ * inherits the most recent choice. Conversation pointers are NOT written back —
+ * a new window always starts with a blank chat.
  */
 
 import { MAX_SLOT_ID } from '@/lib/panel-order';
 
-/** Minimal slice of `chrome.storage.local` these helpers need. */
+/** Minimal slice of a chrome.storage area these helpers need. */
 export interface PanelStorageArea {
   get(keys: string | string[]): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
 }
 
-/** Storage key holding the conversation a panel currently has open. */
+// ─── Key generation ─────────────────────────────────────────────────────────
+
+/** Storage key holding the conversation a panel currently has open (global/default). */
 export function panelConversationKey(slot: number): string {
   return slot === 0 ? 'currentConversationId' : `currentConversationId_${slot}`;
 }
 
-/** Storage key holding a panel's selected provider/model pair. */
+/** Storage key holding a panel's selected provider/model pair (global/default). */
 export function panelModelKey(slot: number): string {
   return slot === 0 ? 'selectedModel' : `selectedModel_${slot}`;
 }
+
+/**
+ * Window-scoped conversation key for session storage.
+ * Format: `w${windowId}_currentConversationId` or `w${windowId}_currentConversationId_${slot}`
+ */
+export function windowConversationKey(windowId: number, slot: number): string {
+  return `w${windowId}_${panelConversationKey(slot)}`;
+}
+
+/**
+ * Window-scoped model selection key for session storage.
+ * Format: `w${windowId}_selectedModel` or `w${windowId}_selectedModel_${slot}`
+ */
+export function windowModelKey(windowId: number, slot: number): string {
+  return `w${windowId}_${panelModelKey(slot)}`;
+}
+
+/**
+ * Window-scoped splitViewVisible key for session storage.
+ */
+export function windowVisibleLayoutKey(windowId: number): string {
+  return `w${windowId}_splitViewVisible`;
+}
+
+// ─── Storage area accessors ─────────────────────────────────────────────────
 
 /**
  * `chrome.storage.local`, narrowed to the surface these helpers use.
@@ -51,6 +89,17 @@ export const localPanelStorage: PanelStorageArea = {
 };
 
 /**
+ * `chrome.storage.session`, for window-scoped runtime state.
+ */
+export const sessionPanelStorage: PanelStorageArea = {
+  get: (keys) => chrome.storage.session.get(keys),
+  set: (items) => chrome.storage.session.set(items),
+  remove: (keys) => chrome.storage.session.remove(keys),
+};
+
+// ─── Panel lifecycle ────────────────────────────────────────────────────────
+
+/**
  * Opens a panel in `slot` on a blank conversation.
  *
  * The slot's model choice is deliberately left untouched, so re-opening a panel
@@ -60,8 +109,13 @@ export const localPanelStorage: PanelStorageArea = {
 export async function openPanelSlot(
   storageArea: PanelStorageArea,
   slot: number,
+  windowId?: number,
 ): Promise<void> {
-  await storageArea.set({ [panelConversationKey(slot)]: null });
+  if (windowId != null) {
+    await sessionPanelStorage.set({ [windowConversationKey(windowId, slot)]: null });
+  } else {
+    await storageArea.set({ [panelConversationKey(slot)]: null });
+  }
 }
 
 /**
@@ -74,8 +128,13 @@ export async function openPanelSlot(
 export async function releasePanelSlot(
   storageArea: PanelStorageArea,
   slot: number,
+  windowId?: number,
 ): Promise<void> {
-  await storageArea.remove(panelConversationKey(slot));
+  if (windowId != null) {
+    await sessionPanelStorage.remove(windowConversationKey(windowId, slot));
+  } else {
+    await storageArea.remove(panelConversationKey(slot));
+  }
 }
 
 /**
@@ -86,11 +145,9 @@ export async function releasePanelSlot(
  * and the next panel to restore one would come up on a conversation the user
  * just deleted.
  *
- * Only keys that are *already present* are rewritten. Presence is what marks a
- * slot as taken (see `openPanelSlot` / `releasePanelSlot`), so writing `null`
- * into an absent key would claim slots for panels that are not open.
+ * Resets both the session-scoped keys (all windows) and the local defaults.
  *
- * @returns The keys that were reset, for logging/tests.
+ * @returns The local keys that were reset, for logging/tests.
  */
 export async function resetPanelConversations(
   storageArea: PanelStorageArea,
@@ -104,6 +161,21 @@ export async function resetPanelConversations(
   if (occupied.length > 0) {
     await storageArea.set(Object.fromEntries(occupied.map((key) => [key, null])));
   }
+
+  // Also clear any session-scoped conversation keys across all windows.
+  // Session storage keys are prefixed `w${id}_`, so we fetch all and filter.
+  try {
+    const allSession = await chrome.storage.session.get(null);
+    const sessionConvKeys = Object.keys(allSession).filter((k) =>
+      /^w\d+_currentConversationId/.test(k),
+    );
+    if (sessionConvKeys.length > 0) {
+      await chrome.storage.session.remove(sessionConvKeys);
+    }
+  } catch {
+    // Session storage may not be available in all contexts (e.g. tests).
+  }
+
   return occupied;
 }
 
@@ -129,6 +201,8 @@ interface PanelModelSelection {
  * model when the key is absent, and it is the single place that policy should
  * live.
  *
+ * Also clears stale selections from session storage across all windows.
+ *
  * @param providers The provider list *after* the deletion.
  * @returns The panel keys that were cleared, for logging/tests.
  */
@@ -147,5 +221,25 @@ export async function pruneStaleModelSelections(
   });
 
   if (stale.length > 0) await storageArea.remove(stale);
+
+  // Also prune session storage
+  try {
+    const allSession = await chrome.storage.session.get(null);
+    const sessionModelKeys = Object.keys(allSession).filter((k) =>
+      /^w\d+_selectedModel/.test(k),
+    );
+    const staleSession = sessionModelKeys.filter((key) => {
+      const selection = allSession[key] as PanelModelSelection | null | undefined;
+      if (!selection) return false;
+      const provider = providers.find((p) => p.id === selection.providerId);
+      return !provider?.models.some((m) => m.id === selection.modelId);
+    });
+    if (staleSession.length > 0) {
+      await chrome.storage.session.remove(staleSession);
+    }
+  } catch {
+    // Session storage may not be available in all contexts.
+  }
+
   return stale;
 }

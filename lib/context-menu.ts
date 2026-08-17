@@ -53,6 +53,11 @@ export interface ContextMenuPendingData {
   prompt?: string;
   /** Whether the panel may dispatch this without waiting for the user. */
   autoSend: boolean;
+  /**
+   * The window the action originated from. Side panels in other windows
+   * should ignore this pending action.
+   */
+  targetWindowId?: number;
   /** Timestamp to avoid processing stale entries */
   timestamp: number;
 }
@@ -196,6 +201,7 @@ async function storePendingAction(
     // An action with no prompt has nothing to send, so it can never auto-send
     // regardless of how the registry entry is flagged.
     autoSend: action.autoSend && Boolean(prompt),
+    targetWindowId: tab?.windowId,
     timestamp: Date.now(),
   };
 

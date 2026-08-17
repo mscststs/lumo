@@ -368,6 +368,8 @@ export const zh: TranslationSchema = {
       totalTokens: '总计',
       stepLabel: '步骤 {{step}}',
       conversationTotal: '会话总计',
+      windowSelect: '窗口',
+      windowLabel: '窗口 {{index}}',
     },
     mcp: {
       title: 'MCP',

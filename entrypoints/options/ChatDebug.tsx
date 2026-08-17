@@ -160,64 +160,26 @@ export function ChatDebugPage() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   /**
+   * Active side panel window IDs, discovered via `chrome.runtime.getContexts`.
+   * Empty means no side panel is open (or we couldn't query).
+   */
+  const [activeWindows, setActiveWindows] = useState<number[]>([]);
+  /**
+   * The window we are currently inspecting. Defaults to the window this options
+   * page lives in (if it has a side panel), otherwise the first active one.
+   */
+  const [targetWindowId, setTargetWindowId] = useState<number | null>(null);
+  /**
    * The panels on screen in the side panel, left to right.
-   *
-   * Read as an order rather than a count because panels can be reordered: a
-   * count would only say how many there are, and this view has to name each one
-   * by the position the user actually sees it in.
-   *
-   * Empty until the published layout has been read, which is what gates the
-   * conversation lookup below — see `selectedPanel`.
    */
   const [visibleOrder, setVisibleOrder] = useState<number[]>([]);
-  /**
-   * The panel this view has attached itself to, or `null` before the first
-   * layout read.
-   *
-   * Tracked by *slot* — the panel's identity — and deliberately not re-derived
-   * from the layout on every change. Position and slot are independent: a drag
-   * reorder rewrites the order and moves no storage, so a selection that always
-   * pointed at the rightmost slot swapped the view onto a different panel's chat
-   * the moment the user reordered. What that looked like was the page flashing
-   * through its loading state and coming back on someone else's conversation —
-   * or on the empty state, if the panel dragged rightmost had no chat yet.
-   *
-   * Seeded from the published layout rather than guessed, and re-seeded when the
-   * tracked panel leaves it, which is what keeps it off a slot that no longer
-   * exists — see `applyLayout`.
-   */
   const [trackedSlot, setTrackedSlot] = useState<number | null>(null);
 
-  /**
-   * The slot actually being inspected: the tracked panel while it is still on
-   * screen, otherwise the primary (rightmost) one.
-   *
-   * The fallback is what stops the selection and the layout from disagreeing.
-   * Seeded with `0` and left to itself, it silently did: slots became sparse when
-   * reordering landed, so dragging a panel rightwards and closing the one now on
-   * the left can leave a single panel in slot 1 or 2 with no slot 0 at all. This
-   * view then read `currentConversationId` — a key that no longer exists — and
-   * reported "no active conversation" for a sidebar that plainly had one, with
-   * the switcher hidden (one panel) so there was no way to correct it by hand.
-   *
-   * `undefined` until the layout is known, so the first lookup cannot fire
-   * against a guessed slot and race the read that would have corrected it.
-   */
   const selectedPanel =
     trackedSlot !== null && visibleOrder.includes(trackedSlot)
       ? trackedSlot
       : primarySlot(visibleOrder);
 
-  /**
-   * Adopts a published layout.
-   *
-   * The tracked panel is kept whenever it is still on screen, so a reorder is a
-   * no-op here: `selectedPanel` does not change, the conversation is not
-   * re-read, and the view does not flash. Only a panel that has actually gone —
-   * closed, or hidden by a narrowing side panel — hands the view to the primary
-   * panel, and it is re-seeded rather than left dangling so a slot reused by a
-   * later split cannot pull the view back onto an unrelated chat.
-   */
   const applyLayout = useCallback((order: number[]) => {
     setVisibleOrder(order);
     setTrackedSlot((prev) =>
@@ -225,36 +187,161 @@ export function ChatDebugPage() {
     );
   }, []);
 
-  // Load the visible layout on mount
+  // Discover active side panel windows and select the default target
   useEffect(() => {
-    void storage.getSplitViewVisible().then((layout) => {
-      applyLayout(layout.order);
-    });
-  }, [applyLayout]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Find all active side panel contexts
+        const runtime = chrome.runtime;
+        let sidePanelWindowIds: number[] = [];
+        if (runtime?.getContexts) {
+          const contexts = await runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
+          sidePanelWindowIds = contexts
+            .map((ctx) => ctx.windowId)
+            .filter((id): id is number => id != null && id >= 0);
+          // Deduplicate
+          sidePanelWindowIds = [...new Set(sidePanelWindowIds)];
+        }
+        if (cancelled) return;
+        setActiveWindows(sidePanelWindowIds);
 
-  // Watch for layout changes (a split, close, reorder, or width-driven collapse).
+        // Determine which window to inspect by default
+        const currentWindow = await chrome.windows.getCurrent();
+        const myWindowId = currentWindow.id;
+        if (cancelled) return;
+
+        if (myWindowId != null && sidePanelWindowIds.includes(myWindowId)) {
+          setTargetWindowId(myWindowId);
+        } else if (sidePanelWindowIds.length > 0) {
+          setTargetWindowId(sidePanelWindowIds[0]!);
+        } else {
+          // No side panels open — fall back to local storage (legacy behavior)
+          setTargetWindowId(null);
+        }
+      } catch {
+        // getContexts not available or failed — fall back
+        setTargetWindowId(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Refresh active windows when side panel opens/closes
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const runtime = chrome.runtime;
+        if (!runtime?.getContexts) return;
+        const contexts = await runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
+        const ids = [...new Set(
+          contexts
+            .map((ctx) => ctx.windowId)
+            .filter((id): id is number => id != null && id >= 0),
+        )];
+        setActiveWindows(ids);
+        // If our target window's panel closed, switch to another
+        setTargetWindowId((prev) => {
+          if (prev != null && ids.includes(prev)) return prev;
+          return ids.length > 0 ? ids[0]! : null;
+        });
+      } catch { /* ignore */ }
+    };
+
+    // Listen for any storage changes that might indicate panel state change
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'session') return;
+      // If any window-scoped visible layout key changed, refresh
+      const hasLayoutChange = Object.keys(changes).some((k) =>
+        /^w\d+_splitViewVisible$/.test(k),
+      );
+      if (hasLayoutChange) void refresh();
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, []);
+
+  // Load visible layout for the target window
+  useEffect(() => {
+    if (targetWindowId == null) {
+      // Fallback: read from local storage (legacy / no active panel)
+      void storage.getSplitViewVisible().then((layout) => {
+        applyLayout(layout.order);
+      });
+      return;
+    }
+    const key = `w${targetWindowId}_splitViewVisible`;
+    void chrome.storage.session.get(key).then((result) => {
+      const layout = result[key] as PanelLayout | undefined;
+      if (layout?.order) {
+        applyLayout(layout.order);
+      } else {
+        // Fallback to local
+        void storage.getSplitViewVisible().then((l) => applyLayout(l.order));
+      }
+    }).catch(() => {
+      void storage.getSplitViewVisible().then((l) => applyLayout(l.order));
+    });
+  }, [targetWindowId, applyLayout]);
+
+  // Watch for layout changes from the target window
+  useEffect(() => {
+    if (targetWindowId == null) return;
+    const key = `w${targetWindowId}_splitViewVisible`;
+    const listener = (
+      changes: { [k: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'session') return;
+      if (!(key in changes)) return;
+      const newLayout = changes[key]?.newValue as PanelLayout | undefined;
+      if (newLayout?.order && newLayout.order.length > 0) {
+        applyLayout(newLayout.order);
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [targetWindowId, applyLayout]);
+
+  // Also keep the legacy local watcher for backward compat
   useStorageWatch<PanelLayout>(
     'splitViewVisible',
     useCallback((newValue) => {
+      // Only use local watcher when no target window (fallback mode)
+      if (targetWindowId != null) return;
       const order = newValue?.order;
       if (!order || order.length === 0) return;
       applyLayout(order);
-    }, [applyLayout]),
+    }, [applyLayout, targetWindowId]),
   );
 
   /**
    * Resolve the conversation the selected panel currently has open.
-   *
-   * Shared by the initial load and both change watchers below, which previously
-   * each reimplemented it against the old single-key layout.
+   * Reads from session storage (window-scoped) first, falls back to local.
    */
   const loadPanelConversation = useCallback(async (panelId: number) => {
-    const convKey = panelConversationKey(panelId);
-    const result = await chrome.storage.local.get(convKey);
-    const currentId = result[convKey] as string | null | undefined;
+    let currentId: string | null | undefined = null;
+
+    if (targetWindowId != null) {
+      // Read from session storage for the target window
+      const sessionKey = `w${targetWindowId}_${panelConversationKey(panelId)}`;
+      const sessionResult = await chrome.storage.session.get(sessionKey);
+      currentId = sessionResult[sessionKey] as string | null | undefined;
+    }
+
+    // Fallback to local storage
+    if (!currentId) {
+      const convKey = panelConversationKey(panelId);
+      const result = await chrome.storage.local.get(convKey);
+      currentId = result[convKey] as string | null | undefined;
+    }
+
     if (!currentId) return null;
     return getConversation(currentId);
-  }, []);
+  }, [targetWindowId]);
 
   // Load conversation when selected panel changes
   useEffect(() => {
@@ -294,26 +381,43 @@ export function ChatDebugPage() {
   // Watch for the selected panel's currentConversationId changes
   useEffect(() => {
     if (selectedPanel === undefined) return;
-    const convKey = panelConversationKey(selectedPanel);
+    // Listen on both session (window-scoped) and local (legacy) for changes
+    const sessionKey = targetWindowId != null
+      ? `w${targetWindowId}_${panelConversationKey(selectedPanel)}`
+      : null;
+    const localKey = panelConversationKey(selectedPanel);
+
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },
       areaName: string,
     ) => {
-      if (areaName !== 'local') return;
-      if (!(convKey in changes)) return;
-
-      const newId = changes[convKey]?.newValue as string | null | undefined;
-      if (!newId) {
-        setConversation(null);
+      // Check session storage for window-scoped key
+      if (areaName === 'session' && sessionKey && sessionKey in changes) {
+        const newId = changes[sessionKey]?.newValue as string | null | undefined;
+        if (!newId) {
+          setConversation(null);
+          return;
+        }
+        void getConversation(newId)
+          .then(setConversation)
+          .catch(() => {});
         return;
       }
-      void getConversation(newId)
-        .then(setConversation)
-        .catch(() => { /* the panel will re-read on the next revision bump */ });
+      // Fallback: check local storage
+      if (areaName === 'local' && localKey in changes) {
+        const newId = changes[localKey]?.newValue as string | null | undefined;
+        if (!newId) {
+          setConversation(null);
+          return;
+        }
+        void getConversation(newId)
+          .then(setConversation)
+          .catch(() => {});
+      }
     };
     chrome.storage.onChanged.addListener(listener);
     return () => chrome.storage.onChanged.removeListener(listener);
-  }, [selectedPanel]);
+  }, [selectedPanel, targetWindowId]);
 
   /**
    * Names a panel by where it sits, not by which storage slot it uses.
@@ -381,6 +485,26 @@ export function ChatDebugPage() {
         description={t('options.chatDebug.description')}
         className="mb-0"
       />
+
+      {/* Window switcher (only show when multiple windows have side panels) */}
+      {activeWindows.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground shrink-0">{t('options.chatDebug.windowSelect')}</span>
+          <div className="flex gap-1">
+            {activeWindows.map((wId, index) => (
+              <Button
+                key={wId}
+                variant={targetWindowId === wId ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs px-3"
+                onClick={() => setTargetWindowId(wId)}
+              >
+                {t('options.chatDebug.windowLabel', { index: index + 1 })}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Panel switcher (only show when multiple panels visible) */}
       {visibleOrder.length > 1 && (

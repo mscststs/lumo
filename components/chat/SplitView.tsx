@@ -4,7 +4,7 @@ import { ChatPanel, type ChatPanelHandle } from '@/components/chat/ChatPanel';
 import { useStorageWatch } from '@/store/useStorageWatch';
 import { useContextMenuPending } from '@/store/useContextMenuPending';
 import { storage } from '@/store/storage';
-import { openPanelSlot, releasePanelSlot } from '@/lib/panel-storage';
+import { openPanelSlot, releasePanelSlot, windowVisibleLayoutKey, sessionPanelStorage } from '@/lib/panel-storage';
 import {
   addPanel,
   equalRatios,
@@ -17,6 +17,7 @@ import {
 } from '@/lib/panel-order';
 import { routeQuickAction, type PanelRoutingState } from '@/lib/quick-action-routing';
 import { usePanelDrag } from '@/components/chat/usePanelDrag';
+import { useWindowId } from '@/lib/window-id';
 import type { UISettings } from '@/types';
 
 /** Minimum width for each panel in pixels */
@@ -95,6 +96,7 @@ function computeMaxPanels(containerWidth: number, userMax: 1 | 2 | 3): number {
  * - Divider drag bypasses transitions for real-time feedback.
  */
 export function SplitView() {
+  const windowId = useWindowId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [maxSplitPanels, setMaxSplitPanels] = useState<1 | 2 | 3>(1);
@@ -354,11 +356,15 @@ export function SplitView() {
   }, [visibleCount, visibleOrder, triggerWidthTransition]);
 
   // Publish the visible layout so other pages (e.g. ChatDebug) can name a panel
-  // by the position the user sees.
+  // by the position the user sees. Written to session storage under a window-scoped
+  // key so each window's layout is independently queryable.
   useEffect(() => {
-    if (!isLayoutRestored) return;
+    if (!isLayoutRestored || windowId == null) return;
+    const key = windowVisibleLayoutKey(windowId);
+    void sessionPanelStorage.set({ [key]: { order: visibleOrder } });
+    // Also write to local for backward compat / single-window case
     void storage.setSplitViewVisible({ order: visibleOrder });
-  }, [visibleOrder, isLayoutRestored]);
+  }, [visibleOrder, isLayoutRestored, windowId]);
 
   // Ensure panels respect minimum width
   const availableWidth = containerWidth - (visibleCount - 1) * DIVIDER_WIDTH;
@@ -391,7 +397,7 @@ export function SplitView() {
     if (current.length >= maxSplitPanels) return;
     const added = addPanel(current);
     if (!added) return;
-    void openPanelSlot(chrome.storage.local, added.slot);
+    void openPanelSlot(chrome.storage.local, added.slot, windowId ?? undefined);
     setRatios((prev) => ratiosForOrder(prev, added.order));
     persistOrder(added.order);
   }, [maxSplitPanels, persistOrder]);
@@ -428,7 +434,7 @@ export function SplitView() {
     if (isSameOrder(current, next)) return;
 
     const discarded = current.filter((id) => !next.includes(id));
-    await Promise.all(discarded.map((id) => releasePanelSlot(chrome.storage.local, id)));
+    await Promise.all(discarded.map((id) => releasePanelSlot(chrome.storage.local, id, windowId ?? undefined)));
 
     setSessionIds((prev) => {
       const rest = { ...prev };

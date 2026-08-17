@@ -13,6 +13,7 @@
 
 import { useEffect, useRef } from 'react';
 import { CONTEXT_MENU_PENDING_KEY, type ContextMenuPendingData } from '@/lib/context-menu';
+import { useWindowId } from '@/lib/window-id';
 
 /**
  * How long a pending action stays valid. A payload older than this was left by a
@@ -41,6 +42,7 @@ export function useContextMenuPending(
   options?: UseContextMenuPendingOptions,
 ) {
   const isReady = options?.isReady ?? true;
+  const windowId = useWindowId();
 
   // Held in a ref so a changing callback identity cannot re-run the effect and
   // re-consume a payload.
@@ -52,6 +54,8 @@ export function useContextMenuPending(
   const heldRef = useRef<ContextMenuPendingData | null>(null);
   const isReadyRef = useRef(isReady);
   isReadyRef.current = isReady;
+  const windowIdRef = useRef(windowId);
+  windowIdRef.current = windowId;
 
   useEffect(() => {
     const deliver = (pending: ContextMenuPendingData) => {
@@ -62,7 +66,17 @@ export function useContextMenuPending(
       void chrome.storage.session.remove(CONTEXT_MENU_PENDING_KEY);
     };
 
+    /** Check if this pending action targets this window. */
+    const isForThisWindow = (pending: ContextMenuPendingData): boolean => {
+      // If no targetWindowId, accept it (backward compat / single window)
+      if (pending.targetWindowId == null) return true;
+      // If our windowId is not known yet, accept it (will be the only panel open)
+      if (windowIdRef.current == null) return true;
+      return pending.targetWindowId === windowIdRef.current;
+    };
+
     const consume = (pending: ContextMenuPendingData) => {
+      if (!isForThisWindow(pending)) return;
       if (!isReadyRef.current) {
         // Last one wins; a newer click supersedes a held one.
         heldRef.current = pending;
