@@ -33,7 +33,7 @@ vi.mock('@/store/useStorageWatch', () => ({
 
 const baseProps = {
   isStreaming: false,
-  isVisionModel: false,
+  canAcceptImages: false,
   onSend: vi.fn(),
   onStop: vi.fn(),
   onCommand: vi.fn(),

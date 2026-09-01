@@ -30,7 +30,9 @@ import type {
   ProviderConfig,
   UISettings,
   SystemPromptSettings,
+  OcrSettings,
 } from '@/types';
+import { DEFAULT_OCR_SETTINGS } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
@@ -71,6 +73,8 @@ export interface StorageSchema {
   selectedModel: { providerId: string; modelId: string } | null;
   mcpSettings: McpSettings;
   systemPrompt: SystemPromptSettings;
+  /** OCR image-to-text settings for non-vision models. */
+  ocrSettings: OcrSettings;
   /** Slash commands the composer recognises. See `lib/slash-commands.ts`. */
   commandSettings: CommandSettings;
   /** @ mention settings. See `lib/mention-commands.ts`. */
@@ -223,6 +227,11 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
   mcpSettings: {
     key: 'mcpSettings',
     defaultValue: DEFAULT_MCP_SETTINGS,
+    exportable: true,
+  },
+  ocrSettings: {
+    key: 'ocrSettings',
+    defaultValue: DEFAULT_OCR_SETTINGS,
     exportable: true,
   },
   selectedModel: {

@@ -1,3 +1,4 @@
+import { createOpenResponses } from '@ai-sdk/open-responses';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import {
@@ -24,6 +25,7 @@ import { toError } from '@/lib/provider-error';
 import { repairToolCall } from '@/lib/tool-call-repair';
 import { mcpRegistry } from '@/lib/mcp';
 import { DEFAULT_MAX_STEPS, stepAllowed } from '@/lib/max-steps';
+import { projectImagesForNonVision, buildImageFallbackMessage, filterToolsByVision, isOcrAvailable } from '@/lib/image-projection';
 
 /** Placeholder used when image payloads are stripped from the model prompt. */
 const IMAGE_OMITTED = '[image data omitted for model context]';
@@ -258,7 +260,9 @@ function providerOnlyReasoning(
 ): ProviderMetadata {
   return type === 'anthropic'
     ? { anthropic: { effort, thinking: { type: 'adaptive', display: 'summarized' } } }
-    : { openai: { reasoningEffort: effort } };
+    : type === 'openai-responses'
+      ? { 'open-responses': { reasoningEffort: effort } }
+      : { openai: { reasoningEffort: effort } };
 }
 
 export function createProvider(
@@ -291,21 +295,21 @@ export function createProvider(
   });
 
   if (type === 'openai-responses') {
-    // `openai(id)` is the Responses model in @ai-sdk/openai v4.
+    const openResponses = createOpenResponses({
+      name: 'open-responses',
+      url: `${provider.baseUrl || 'https://api.openai.com/v1'}/responses`,
+      apiKey: provider.apiKey,
+    });
     return {
-      model: openai.responses(model.modelId),
+      model: openResponses(model.modelId),
       ...reasoning,
       providerOptions: {
         openai: {
-          // Stateless: never emit `item_reference` for replayed history.
           store: false,
-          // `reasoningSummary` is deliberately not set: @ai-sdk/openai derives
-          // it from the resolved reasoning effort, and injecting it triggers a
-          // warning ("reasoningSummary is not supported for non-reasoning
-          // models") on models that do not reason.
-          // Merged into the same bag rather than replacing it: dropping
-          // `store: false` here would send replayed history as `item_reference`.
-          ...reasoningOptions?.openai,
+          ...(reasoningOptions?.['open-responses'] as { reasoningEffort?: string } | undefined),
+        },
+        'open-responses': {
+          ...reasoningOptions?.['open-responses'],
         },
       },
     };
@@ -333,18 +337,28 @@ export interface ResumeState extends AgentLoopCheckpoint {
   fingerprint: string;
 }
 
-/** Identity a `ResumeState` must match to be safely replayed. */
+/**
+ * Identity a `ResumeState` must match to be safely replayed.
+ */
 export function resumeFingerprint({
   conversationId,
   provider,
   model,
   messageCount,
+  ocrAvailable = false,
 }: {
   conversationId: string;
   provider: ProviderConfig;
   model: ModelConfig;
   /** Guards against replaying onto a conversation that has since grown. */
   messageCount: number;
+  /**
+   * Whether OCR is available (enabled + configured). Part of the identity for
+   * the same reason vision is: it decides whether image-producing tools such as
+   * `page_screenshot` are in the tool set, so a checkpoint taken with OCR on
+   * must not be resumed after it is turned off (and vice versa).
+   */
+  ocrAvailable?: boolean;
 }): string {
   return [
     conversationId,
@@ -357,6 +371,13 @@ export function resumeFingerprint({
     // decides whether thinking blocks are present at all — so a snapshot taken
     // under one level must not be resumed under another.
     resolveReasoningEffort(model.reasoningEffort) ?? '',
+    // Vision capability changes how images are projected into the prompt, so a
+    // checkpoint taken under a vision model must not be resumed under a non-vision
+    // one (which would carry raw image data the model cannot parse).
+    model.isVision ? 'v1' : 'v0',
+    // OCR availability changes which tools are exposed, so a checkpoint taken
+    // under one OCR state must not be replayed under another.
+    ocrAvailable ? 'ocr1' : 'ocr0',
     messageCount,
   ].join('\u0000');
 }
@@ -384,6 +405,8 @@ export type StopReason =
 export interface ChatStreamOptions {
   provider: ProviderConfig;
   model: ModelConfig;
+  /** Whether the model supports vision (image inputs). */
+  isVision?: boolean;
   /**
    * Conversation history as UI messages. Converted to the model prompt inside
    * `chatStream` so the exact same tool set drives both the conversion and the
@@ -432,6 +455,7 @@ export async function chatStream({
   onError,
   signal,
   enableTools = true,
+  isVision = true,
   conversationId,
   maxSteps = DEFAULT_MAX_STEPS,
   resume,
@@ -461,16 +485,21 @@ export async function chatStream({
   try {
     const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model);
 
-    // Gather tools from all connected MCP servers (with stream-specific context)
+    // Gather tools from all connected MCP servers (with stream-specific context).
+    // A non-vision model still gets image-producing tools (e.g. page_screenshot)
+    // when OCR is enabled: the loop OCRs their output before it reaches the model.
     const tools: ToolSet = enableTools
-      ? mcpRegistry.getAllAITools({ conversationId })
+      ? filterToolsByVision(
+          mcpRegistry.getAllAITools({ conversationId }),
+          isVision || (await isOcrAvailable()),
+        )
       : {};
     const trimmedSystem = system?.trim();
 
     // Resuming replays the checkpoint verbatim: it is already a model prompt
     // with sanitized tool results, so re-deriving it from history would both
     // waste work and lose the synthetic image messages the loop injected.
-    const modelMessages = resume
+    let modelMessages = resume
       ? resume.modelMessages
       : sanitizeToolResultImages(
           await convertToModelMessages(messages, {
@@ -479,6 +508,11 @@ export async function chatStream({
             ignoreIncompleteToolCalls: true,
           }),
         );
+
+    // For non-vision models, project images to text (OCR or placeholder).
+    if (!isVision && !resume) {
+      modelMessages = await projectImagesForNonVision(modelMessages, signal);
+    }
 
     const { parts, stoppedReason, usage } = await runAgentLoop({
       model: aiModel,
@@ -489,6 +523,7 @@ export async function chatStream({
       messages: modelMessages,
       initialParts: resume?.parts,
       maxSteps,
+      isVision,
       signal,
       onUpdate: (updatedParts) => {
         latestParts = updatedParts;
@@ -525,6 +560,8 @@ export interface RunAgentLoopOptions {
   system?: string;
   messages: ModelMessage[];
   signal?: AbortSignal;
+  /** Whether the model supports vision. Controls image re-injection. */
+  isVision?: boolean;
   /** Parts already streamed by earlier steps, when resuming a failed run. */
   initialParts?: ChatMessagePart[];
   /** Cap on iterations. `0` (the default) means no cap. See `lib/max-steps.ts`. */
@@ -586,6 +623,7 @@ export async function runAgentLoop({
   system,
   messages,
   signal,
+  isVision = true,
   initialParts,
   maxSteps = DEFAULT_MAX_STEPS,
   onUpdate,
@@ -707,7 +745,13 @@ export async function runAgentLoop({
     // Re-inject tool-produced images as a synthetic user message.
     const images = extractImagesFromParts(latestParts.slice(stepStartIndex));
     if (images.length > 0) {
-      modelMessages.push(buildImageUserMessage(images));
+      if (isVision) {
+        modelMessages.push(buildImageUserMessage(images));
+      } else {
+        // Non-vision model: OCR or placeholder for tool-produced images.
+        const fallback = await buildImageFallbackMessage(images, signal);
+        modelMessages.push(fallback);
+      }
     }
 
     // `isLoopFinished()` semantics: keep looping while the model still issues

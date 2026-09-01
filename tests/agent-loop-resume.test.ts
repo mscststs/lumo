@@ -513,4 +513,12 @@ describe('resumeFingerprint', () => {
       resumeFingerprint(base),
     );
   });
+
+  it('changes when OCR availability changes', () => {
+    // OCR decides whether image-producing tools are in the tool set, so a
+    // checkpoint taken under one OCR state must not be replayed under another.
+    expect(resumeFingerprint({ ...base, ocrAvailable: true })).not.toBe(
+      resumeFingerprint(base),
+    );
+  });
 });

@@ -53,13 +53,13 @@ export function MentionSettingsPage() {
       </div>
 
       {/* Sub-toggles */}
-      <section className="space-y-4">
+      <section className="space-y-5">
         <h3 className="mb-3 text-sm font-medium text-muted-foreground">
           {t('options.mentions.sourcesSection')}
         </h3>
 
         {/* Tabs toggle */}
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card p-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <Label className="text-sm">{t('options.mentions.tabs')}</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -76,7 +76,7 @@ export function MentionSettingsPage() {
         </div>
 
         {/* Files toggle */}
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card p-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <Label className="text-sm">{t('options.mentions.files')}</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">

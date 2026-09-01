@@ -2,6 +2,7 @@ import type {
   ProviderConfig,
   UISettings,
   SystemPromptSettings,
+  OcrSettings,
 } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
 import type { CommandSettings } from '@/lib/slash-commands';
@@ -195,6 +196,14 @@ export const storage = {
   },
   async setMcpSettings(settings: McpSettings): Promise<void> {
     await setField('mcpSettings', settings);
+  },
+
+  // ----- OCR Settings -----
+  async getOcrSettings(): Promise<OcrSettings> {
+    return getField('ocrSettings');
+  },
+  async setOcrSettings(settings: OcrSettings): Promise<void> {
+    await setField('ocrSettings', settings);
   },
 
   // ----- System Prompt -----

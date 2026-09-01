@@ -170,6 +170,14 @@ export function ChatDebugPage() {
    */
   const [targetWindowId, setTargetWindowId] = useState<number | null>(null);
   /**
+   * Whether the async discovery of side panel windows has finished. Until it
+   * has, `targetWindowId` is still `null` from its initial value rather than
+   * from a definite "no side panel open" answer, so fallback paths that read
+   * from local storage must wait — otherwise they run against empty local keys
+   * (conversation pointers live in session storage since window isolation).
+   */
+  const [windowResolved, setWindowResolved] = useState(false);
+  /**
    * The panels on screen in the side panel, left to right.
    */
   const [visibleOrder, setVisibleOrder] = useState<number[]>([]);
@@ -192,17 +200,37 @@ export function ChatDebugPage() {
     let cancelled = false;
     void (async () => {
       try {
-        // Find all active side panel contexts
         const runtime = chrome.runtime;
         let sidePanelWindowIds: number[] = [];
+
+        // Primary: ask the browser which side panels are alive.
         if (runtime?.getContexts) {
           const contexts = await runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
-          sidePanelWindowIds = contexts
-            .map((ctx) => ctx.windowId)
-            .filter((id): id is number => id != null && id >= 0);
-          // Deduplicate
-          sidePanelWindowIds = [...new Set(sidePanelWindowIds)];
+          sidePanelWindowIds = [
+            ...new Set(
+              contexts
+                .map((ctx) => ctx.windowId)
+                .filter((id): id is number => id != null && id >= 0),
+            ),
+          ];
         }
+
+        // Fallback: `getContexts` may return [] in some Chrome builds or
+        // during dev mode. Scan session storage for window-scoped layout
+        // keys (`w<id>_splitViewVisible`) — if a side panel wrote one, its
+        // window is (or recently was) active.
+        if (sidePanelWindowIds.length === 0) {
+          try {
+            const allSession = await chrome.storage.session.get(null);
+            const windowIds = new Set<number>();
+            for (const key of Object.keys(allSession)) {
+              const m = /^w(\d+)_/.exec(key);
+              if (m) windowIds.add(Number(m[1]));
+            }
+            sidePanelWindowIds = [...windowIds];
+          } catch { /* session scan failed; proceed with empty list */ }
+        }
+
         if (cancelled) return;
         setActiveWindows(sidePanelWindowIds);
 
@@ -222,6 +250,8 @@ export function ChatDebugPage() {
       } catch {
         // getContexts not available or failed — fall back
         setTargetWindowId(null);
+      } finally {
+        if (!cancelled) setWindowResolved(true);
       }
     })();
     return () => { cancelled = true; };
@@ -232,15 +262,33 @@ export function ChatDebugPage() {
     const refresh = async () => {
       try {
         const runtime = chrome.runtime;
-        if (!runtime?.getContexts) return;
-        const contexts = await runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
-        const ids = [...new Set(
-          contexts
-            .map((ctx) => ctx.windowId)
-            .filter((id): id is number => id != null && id >= 0),
-        )];
+        let ids: number[] = [];
+
+        if (runtime?.getContexts) {
+          const contexts = await runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
+          ids = [
+            ...new Set(
+              contexts
+                .map((ctx) => ctx.windowId)
+                .filter((id): id is number => id != null && id >= 0),
+            ),
+          ];
+        }
+
+        // Same session-scan fallback as the initial discovery.
+        if (ids.length === 0) {
+          try {
+            const allSession = await chrome.storage.session.get(null);
+            const windowIds = new Set<number>();
+            for (const key of Object.keys(allSession)) {
+              const m = /^w(\d+)_/.exec(key);
+              if (m) windowIds.add(Number(m[1]));
+            }
+            ids = [...windowIds];
+          } catch { /* ignore */ }
+        }
+
         setActiveWindows(ids);
-        // If our target window's panel closed, switch to another
         setTargetWindowId((prev) => {
           if (prev != null && ids.includes(prev)) return prev;
           return ids.length > 0 ? ids[0]! : null;
@@ -285,7 +333,7 @@ export function ChatDebugPage() {
     }).catch(() => {
       void storage.getSplitViewVisible().then((l) => applyLayout(l.order));
     });
-  }, [targetWindowId, applyLayout]);
+  }, [windowResolved, targetWindowId, applyLayout]);
 
   // Watch for layout changes from the target window
   useEffect(() => {
@@ -311,11 +359,11 @@ export function ChatDebugPage() {
     'splitViewVisible',
     useCallback((newValue) => {
       // Only use local watcher when no target window (fallback mode)
-      if (targetWindowId != null) return;
+      if (!windowResolved || targetWindowId != null) return;
       const order = newValue?.order;
       if (!order || order.length === 0) return;
       applyLayout(order);
-    }, [applyLayout, targetWindowId]),
+    }, [applyLayout, windowResolved, targetWindowId]),
   );
 
   /**

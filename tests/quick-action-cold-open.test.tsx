@@ -45,6 +45,7 @@ vi.mock('@/store/storage', () => ({
     getUISettings: async () => ({ language: 'en', theme: 'light', maxSplitPanels: 1, sendKey: 'enter' }),
     getCommandSettings: async () => ({ enabled: true, userCommands: [], disabledBuiltins: [] }),
     getMentionSettings: async () => ({ enabled: true, tabsEnabled: true, filesEnabled: true }),
+    getOcrSettings: async () => ({ enabled: false, providerId: '', modelId: '', prompt: '' }),
   },
 }));
 

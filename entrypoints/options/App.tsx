@@ -10,12 +10,14 @@ import {
   Bug,
   FolderOpen,
   Info,
+  ScanEye,
 } from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
 import { FontSizeInit } from '@/lib/font-size';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
 import { McpSettings } from './McpSettings';
+import { OcrSettingsPage } from './OcrSettings';
 import { SystemPromptSettingsPage } from './SystemPromptSettings';
 import { CommandSettingsPage } from './CommandSettings';
 import { MentionSettingsPage } from './MentionSettings';
@@ -25,6 +27,7 @@ import { AboutPage } from './About';
 
 const NAV_ITEMS = [
   'models',
+  'ocr',
   'systemPrompt',
   'commands',
   'mentions',
@@ -39,7 +42,7 @@ type NavItem = (typeof NAV_ITEMS)[number];
 const NAV_GROUPS: { titleKey?: string; items: NavItem[] }[] = [
   {
     titleKey: 'options.navGroups.core',
-    items: ['models', 'mcp', 'files'],
+    items: ['models', 'ocr', 'mcp', 'files'],
   },
   {
     titleKey: 'options.navGroups.customization',
@@ -52,6 +55,7 @@ const NAV_GROUPS: { titleKey?: string; items: NavItem[] }[] = [
 
 const NAV_ICONS: Record<NavItem, React.ReactNode> = {
   models: <Cpu className="h-4 w-4" />,
+  ocr: <ScanEye className="h-4 w-4" />,
   systemPrompt: <MessageSquareCode className="h-4 w-4" />,
   commands: <Terminal className="h-4 w-4" />,
   mentions: <AtSign className="h-4 w-4" />,
@@ -135,6 +139,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 overflow-auto scrollbar-lumo p-6">
         {activeNav === 'models' && <ModelSettings />}
+        {activeNav === 'ocr' && <OcrSettingsPage />}
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
         {activeNav === 'commands' && <CommandSettingsPage />}
         {activeNav === 'mentions' && <MentionSettingsPage />}

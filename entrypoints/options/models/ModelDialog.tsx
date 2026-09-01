@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { isOpenAIProvider } from '@/lib/provider-type';
 import type { ModelConfig, ProviderType } from '@/types';
 import {
   isWireEffort,
@@ -38,13 +40,11 @@ interface ModelDialogProps {
   draft: ModelConfig | null;
   /** Whether `draft` already exists, which selects the title copy. */
   isExisting: boolean;
-  /** Name of the owning provider, shown so the user knows where it lands. */
   providerName: string;
-  /**
-   * Wire protocol of the owning provider. Decides which reasoning levels are on
-   * offer — each provider publishes its own enum, so the list is not the app's to
-   * choose. See `lib/reasoning-effort.ts`.
-   */
+  /** API base URL and key of the owning provider. */
+  providerBaseUrl: string;
+  providerApiKey: string;
+  /** Wire protocol of the owning provider. */
   providerType: ProviderType;
   /** Models already on this provider, for the duplicate-id check. */
   siblings: ModelConfig[];
@@ -56,6 +56,8 @@ export function ModelDialog({
   draft,
   isExisting,
   providerName,
+  providerBaseUrl,
+  providerApiKey,
   providerType,
   siblings,
   onSave,
@@ -65,11 +67,51 @@ export function ModelDialog({
   const [value, setValue] = useState<ModelConfig | null>(draft);
   const [errors, setErrors] = useState<ValidationErrors<ModelField>>({});
   const [saving, setSaving] = useState(false);
+  const [modelOptions, setModelOptions] = useState<string[] | null>(null);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     setValue(draft);
     setErrors({});
   }, [draft]);
+
+  useEffect(() => {
+    setModelOptions(null);
+    setFetchError(null);
+  }, [providerType, providerBaseUrl]);
+
+  const fetchModels = async () => {
+    const base = providerBaseUrl.trim().replace(/\/+$/, '');
+    if (!base || !providerApiKey.trim()) {
+      setFetchError(t('options.models.fetchModelsConfigError'));
+      return;
+    }
+    setFetchingModels(true);
+    setFetchError(null);
+    try {
+      const response = await fetch(base.endsWith('/models') ? base : `${base}/models`, {
+        headers: { Authorization: `Bearer ${providerApiKey.trim()}` },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload: unknown = await response.json();
+      const data = payload && typeof payload === 'object' && 'data' in payload
+        ? (payload as { data?: unknown }).data : undefined;
+      const models = Array.isArray(data)
+        ? data.map((item) => typeof item === 'string' ? item : item && typeof item === 'object' && 'id' in item
+          ? (item as { id?: unknown }).id : item && typeof item === 'object' && 'model_name' in item
+            ? (item as { model_name?: unknown }).model_name : undefined)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+      if (!models.length) throw new Error('empty model list');
+      setModelOptions([...new Set(models)].sort());
+    } catch {
+      setFetchError(t('options.models.fetchModelsError'));
+      setModelOptions(null);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   if (!value) return null;
 
@@ -120,27 +162,34 @@ export function ModelDialog({
             required
           >
             {(props) => (
-              <Input
-                {...props}
-                value={value.modelId}
-                onChange={(e) => {
-                  const modelId = e.target.value;
-                  // Mirror the id into an empty display name: for most models
-                  // the id *is* the label the user wants, and this removes the
-                  // most common reason a save was rejected.
-                  const shouldMirror = !value.displayName || value.displayName === value.modelId;
-                  patch(
-                    shouldMirror ? { modelId, displayName: modelId } : { modelId },
-                    'modelId',
-                  );
-                  if (shouldMirror && errors.displayName) {
-                    setErrors((prev) => ({ ...prev, displayName: undefined }));
-                  }
-                }}
-                placeholder={t('options.models.modelIdPlaceholder')}
-                spellCheck={false}
-                className="font-mono text-xs"
-              />
+              <div className="flex gap-2">
+                {modelOptions ? (
+                  <Select value={value.modelId} onValueChange={(modelId) => patch({ modelId, displayName: (!value.displayName || value.displayName === value.modelId) ? modelId : value.displayName }, 'modelId')}>
+                    <SelectTrigger {...props} className="font-mono text-xs"><SelectValue placeholder={t('options.models.modelIdPlaceholder')} /></SelectTrigger>
+                    <SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model} className="font-mono text-xs">{model}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    {...props}
+                    value={value.modelId}
+                    onChange={(e) => {
+                      const modelId = e.target.value;
+                      const shouldMirror = !value.displayName || value.displayName === value.modelId;
+                      patch(shouldMirror ? { modelId, displayName: modelId } : { modelId }, 'modelId');
+                      if (shouldMirror && errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
+                    }}
+                    placeholder={t('options.models.modelIdPlaceholder')}
+                    spellCheck={false}
+                    className="font-mono text-xs"
+                  />
+                )}
+                {isOpenAIProvider(providerType) && (
+                  <Button type="button" variant="outline" size="default" onClick={() => void fetchModels()} disabled={fetchingModels} className="h-10 shrink-0 gap-1.5 px-3">
+                    {fetchingModels ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {t('options.models.fetchModels')}
+                  </Button>
+                )}
+              </div>
             )}
           </Field>
 

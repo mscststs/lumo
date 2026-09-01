@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { storage } from '@/store/storage';
-import { useStorageWatchMultiple } from '@/store/useStorageWatch';
+import { useStorageWatch, useStorageWatchMultiple } from '@/store/useStorageWatch';
 import { panelModelKey, windowModelKey, sessionPanelStorage } from '@/lib/panel-storage';
 import { useWindowId } from '@/lib/window-id';
-import type { ProviderConfig, ModelConfig } from '@/types';
+import type { ProviderConfig, ModelConfig, OcrSettings } from '@/types';
 
 export interface ModelOption {
   value: string;
@@ -27,6 +27,17 @@ export interface UseModelSelectionReturn {
   getSelectedProvider: () => ProviderConfig | undefined;
   getSelectedModel: () => ModelConfig | undefined;
   isVisionModel: () => boolean;
+  /**
+   * Whether the current panel can accept image inputs from the user.
+   *
+   * `true` when either:
+   * - the selected model natively supports vision, **or**
+   * - OCR is enabled (a vision model will convert images to text on the fly).
+   *
+   * This drives all front-end gates (upload button, paste, drag-and-drop) so
+   * non-vision models paired with OCR can still receive images.
+   */
+  canAcceptImages: () => boolean;
   handleModelChange: (value: string) => Promise<void>;
   loadData: () => Promise<void>;
 }
@@ -66,6 +77,17 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
+
+  // Seed OCR state from storage on mount.
+  useEffect(() => {
+    void storage.getOcrSettings().then((s) => setOcrEnabled(s.enabled));
+  }, []);
+
+  // React live to OCR setting changes from the options page.
+  useStorageWatch<OcrSettings>('ocrSettings', (newVal) => {
+    setOcrEnabled(newVal?.enabled ?? false);
+  });
 
   // Watch for provider changes from options page (applies to all panels/windows)
   useStorageWatchMultiple(
@@ -150,6 +172,10 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
     return getSelectedModel()?.isVision ?? false;
   }, [getSelectedModel]);
 
+  const canAcceptImages = useCallback((): boolean => {
+    return isVisionModel() || ocrEnabled;
+  }, [isVisionModel, ocrEnabled]);
+
   const handleModelChange = useCallback(async (value: string) => {
     // value format: providerId::modelId
     const parts = value.split('::');
@@ -190,6 +216,7 @@ export function useModelSelection(options?: UseModelSelectionOptions): UseModelS
     getSelectedProvider,
     getSelectedModel,
     isVisionModel,
+    canAcceptImages,
     handleModelChange,
     loadData,
   };

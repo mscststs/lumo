@@ -106,6 +106,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     getSelectedProvider,
     getSelectedModel,
     isVisionModel,
+    canAcceptImages,
     handleModelChange,
     loadData,
     selectedProviderId,
@@ -264,7 +265,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     async (
       imageUrl: string,
     ): Promise<{ images: string[]; textAttachments: TextAttachment[] }> => {
-      if (isVisionModel()) {
+      if (canAcceptImages()) {
         const dataUrl = await resolveImageSrc(imageUrl);
         if (dataUrl) return { images: [dataUrl], textAttachments: [] };
       }
@@ -275,7 +276,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         textAttachments: [createTextAttachment(imageUrl, 'text/plain')],
       };
     },
-    [isVisionModel, resolveImageSrc],
+    [canAcceptImages, resolveImageSrc],
   );
 
   const runQuickAction = useCallback(
@@ -464,7 +465,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const handleOsFileDrop = useCallback((files: FileList) => {
     const dropped = Array.from(files);
 
-    if (isVisionModel()) {
+    if (canAcceptImages()) {
       const images = dropped.filter((file) => classifyDroppedFile(file) === 'image');
       if (images.length > 0) {
         addImagesFromFiles(images);
@@ -476,7 +477,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         addFileReference(name);
       }
     });
-  }, [isVisionModel, currentConversation?.id, addFileReference]);
+  }, [canAcceptImages, currentConversation?.id, addFileReference]);
 
   const handlePanelDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -486,7 +487,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     if (isInternalDrag) return;
 
     const dataTransfer = e.dataTransfer;
-    const visionEnabled = isVisionModel();
+    const imageAccepted = canAcceptImages();
 
     /**
      * A file row dragged out of the options page (`options.html#files`) lands
@@ -533,7 +534,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
       case 'image': {
         // Pure image selection: extract all image sources.
-        if (!visionEnabled || !classified.images?.length) {
+        if (!imageAccepted || !classified.images?.length) {
           // Vision disabled: fall back to an HTML attachment to avoid data loss.
           if (classified.html?.trim()) {
             addTextAttachmentFromDrop(classified.html, 'text/html');
@@ -552,7 +553,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         return;
       }
     }
-  }, [isVisionModel, isInternalDrag, resolveImageSrc, addFileReference, handleOsFileDrop]);
+  }, [canAcceptImages, isInternalDrag, resolveImageSrc, addFileReference, handleOsFileDrop]);
 
   // ─── Internal drops (transcript chip → input) ─────────────────────────────
 
@@ -646,7 +647,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       <ChatInput
         ref={chatInputRef}
         isStreaming={isStreaming}
-        isVisionModel={isVisionModel()}
+        canAcceptImages={canAcceptImages()}
         onSend={onSend}
         onStop={handleStop}
         onCommand={onCommand}

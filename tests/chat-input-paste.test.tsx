@@ -40,7 +40,7 @@ vi.mock('@/store/useStorageWatch', () => ({
 
 const baseProps = {
   isStreaming: false,
-  isVisionModel: false,
+  canAcceptImages: false,
   onSend: vi.fn(),
   onStop: vi.fn(),
   isInternalDrag: false,
@@ -122,7 +122,7 @@ describe('paste as attachment', () => {
       getAsFile: () => null,
     } as unknown as DataTransferItem;
 
-    const { textarea, container } = await renderInput({ isVisionModel: true });
+    const { textarea, container } = await renderInput({ canAcceptImages: true });
 
     fireEvent.paste(textarea, pasteEvent('some alt text', [imageItem]));
 

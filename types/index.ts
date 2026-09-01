@@ -144,6 +144,10 @@ export type {
 // Mention settings re-exported for the same reason.
 export type { MentionSettings } from '@/lib/mention-commands';
 
+// OCR settings re-exported so storage, options and the AI layer share one path.
+export type { OcrSettings } from '@/lib/ocr-types';
+export { DEFAULT_OCR_SETTINGS, DEFAULT_OCR_PROMPT } from '@/lib/ocr-types';
+
 /**
  * A text attachment dragged from external sources (web pages, etc.).
  * Can be plain text, HTML, or a file reference. Sent as a separate text content part.

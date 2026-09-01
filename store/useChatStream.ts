@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { chatStream, resumeFingerprint } from '@/lib/ai';
 import type { ResumeState, StopReason } from '@/lib/ai';
+import { isOcrAvailable } from '@/lib/image-projection';
 import { storage } from '@/store/storage';
 import { useConversations } from '@/store/useConversations';
 import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
@@ -314,11 +315,16 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       // options page applies to the next message instead of the next reload.
       const { maxSteps } = await storage.getUISettings();
 
+      // OCR availability decides whether image-producing tools are exposed, so
+      // it belongs in the resume fingerprint alongside vision capability.
+      const ocrAvailable = await isOcrAvailable();
+
       const fingerprint = resumeFingerprint({
         conversationId: convWithUserMessage.id,
         provider,
         model,
         messageCount: convWithUserMessage.messages.length,
+        ocrAvailable,
       });
       const resumeFrom =
         resume && resume.fingerprint === fingerprint ? resume : undefined;
@@ -471,6 +477,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         system,
         signal: controller.signal,
         conversationId: convWithUserMessage.id,
+        isVision: model.isVision,
         maxSteps,
         resume: resumeFrom,
         onStepComplete: (checkpoint) => {

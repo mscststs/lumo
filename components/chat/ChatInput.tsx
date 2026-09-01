@@ -66,7 +66,12 @@ export interface ChatInputHandle {
  
 interface ChatInputProps {
   isStreaming: boolean;
-  isVisionModel: boolean;
+  /**
+   * Whether this panel can accept image inputs — `true` when the model is a
+   * vision model **or** OCR is enabled.  Controls the upload button, paste
+   * handler, and drag-and-drop acceptance.
+   */
+  canAcceptImages: boolean;
   onSend: (input: string, images: string[], textAttachments: TextAttachment[]) => void;
   onStop: () => void;
   /**
@@ -84,7 +89,7 @@ interface ChatInputProps {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { isStreaming, isVisionModel, onSend, onStop, onCommand, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
+  { isStreaming, canAcceptImages, onSend, onStop, onCommand, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
   ref,
 ) {
   const { t } = useTranslation();
@@ -183,7 +188,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
    */
   const handlePaste = (e: React.ClipboardEvent) => {
     let handledImage = false;
-    if (isVisionModel) {
+    if (canAcceptImages) {
       for (const item of e.clipboardData.items) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
@@ -523,9 +528,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     const hasImage = types.includes(LUMO_IMAGE_DRAG_MIME);
     // An image can only be accepted by a vision panel; otherwise degrade to a
     // copy so the source chip does not vanish without landing anywhere.
-    const degradeToCopy = hasImage && !isVisionModel;
+    const degradeToCopy = hasImage && !canAcceptImages;
     e.dataTransfer.dropEffect = isInputChip && !degradeToCopy ? 'move' : 'copy';
-  }, [isInternalDrag, isVisionModel]);
+  }, [isInternalDrag, canAcceptImages]);
 
   /** Removes the source chip once a move-drop has been accepted by a target. */
   const handleChipDragEnd = useCallback((e: React.DragEvent, onRemove: () => void) => {
@@ -542,7 +547,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     // Check for image drag (from chat history image attachments) first
     const imageDataUrl = e.dataTransfer.getData(LUMO_IMAGE_DRAG_MIME);
     if (imageDataUrl) {
-      if (isVisionModel) {
+      if (canAcceptImages) {
         setImages((prev) => [...prev, imageDataUrl]);
       }
       return;
@@ -576,7 +581,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (text?.trim() && onInternalTextDrop) {
       onInternalTextDrop(text.trim());
     }
-  }, [isInternalDrag, isVisionModel, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop]);
+  }, [isInternalDrag, canAcceptImages, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop]);
  
   return (
     <div
@@ -695,7 +700,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         {/* Footer toolbar */}
         <div className="flex items-center justify-between px-2 pb-2">
           <div className="flex items-center gap-0.5">
-            {isVisionModel && (
+            {canAcceptImages && (
               <Button
                 variant="ghost"
                 size="icon"
