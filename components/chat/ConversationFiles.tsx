@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { fileStorage, type FileMetadata, getPreviewCategory } from '@/lib/mcp';
 import { useEvent } from '@/lib/event-bus';
 import { setFileRefDragData } from '@/lib/file-drag';
+import { openFilePreview } from '@/lib/file-preview-tab';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,22 +82,11 @@ export function ConversationFiles({ conversationId, onReference }: ConversationF
   }, [conversationId]);
 
   const handlePreview = async (name: string) => {
-    const url = chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`);
-    // Find existing preview tab for this file and focus it instead of opening a new one
     try {
-      const tabs = await chrome.tabs.query({ url });
-      const existing = tabs[0];
-      if (existing?.id != null) {
-        await chrome.tabs.update(existing.id, { active: true });
-        if (existing.windowId != null) {
-          await chrome.windows.update(existing.windowId, { focused: true });
-        }
-        return;
-      }
+      await openFilePreview(name);
     } catch {
-      // Fallback to creating a new tab if query fails
+      // Keep the compact file list quiet if the browser tab API is unavailable.
     }
-    chrome.tabs.create({ url });
   };
 
   const handleDownload = async (name: string) => {

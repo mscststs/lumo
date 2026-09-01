@@ -24,6 +24,7 @@ import { useEvent } from '@/lib/event-bus';
 import { listConversationMeta, type ConversationMeta } from '@/lib/conversation-store';
 import { downloadAsZip } from '@/lib/zip-download';
 import { formatBytes } from '@/lib/utils';
+import { openFilePreview } from '@/lib/file-preview-tab';
 import { SettingsHeader } from './components/SettingsHeader';
 
 /**
@@ -243,8 +244,9 @@ export function FileManager() {
   };
 
   const handlePreview = (name: string) => {
-    const url = chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`);
-    window.open(url, '_blank');
+    void openFilePreview(name).catch((error) => {
+      console.error('Failed to open file preview:', error);
+    });
   };
 
   /**

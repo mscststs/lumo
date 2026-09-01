@@ -12,6 +12,7 @@ import { fileStorage, getPreviewCategory, isLikelyTextContent } from './file-sto
 import { downloadAsZip } from '@/lib/zip-download';
 import { applyEdits, applyUnifiedDiff } from './file-edit';
 import { applyOutputLimit, DEFAULT_MAX_CHARS } from '@/lib/page/output-limit';
+import { openFilePreview } from '@/lib/file-preview-tab';
 
 /**
  * Render a tool's zod schema as JSON Schema for the settings UI.
@@ -327,14 +328,14 @@ export class FileMcpServer implements IMcpServer {
             };
           }
 
-          // Open the preview page with the file name as query parameter
-          const previewUrl = chrome.runtime.getURL(`/preview.html?file=${encodeURIComponent(name)}`);
-          await chrome.tabs.create({ url: previewUrl, active: true });
+          // Reuse an existing preview tab for this file, or create one when
+          // there is no matching tab.
+          const preview = await openFilePreview(name);
 
           return {
             success: true,
-            message: `Opened preview for "${name}"`,
-            url: previewUrl,
+            message: `${preview.reused ? 'Focused existing preview' : 'Opened preview'} for "${name}"`,
+            url: preview.url,
           };
         },
       }),
