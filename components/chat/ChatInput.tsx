@@ -36,16 +36,19 @@ const MENTION_TRIGGER = { char: MENTION_PREFIX, placement: 'anywhere' as const }
 /**
  * How tall the composer may grow before it scrolls instead, in lines.
  *
- * The pixel cap it produces is applied as an inline `maxHeight` rather than a
- * Tailwind `max-h-[…]` class. The auto-grow effect below already has to compute
- * the bound in JS to size the element, and a class would state the same number a
- * second time somewhere that effect cannot read — so raising the line count
- * would visibly do nothing until someone noticed the stale class.
+ * Only the line count is stated here; the pixel bound is derived at measure
+ * time (see the auto-grow effect) because both of its inputs are dynamic. The
+ * line height follows the user's font-size setting — `lib/font-size.ts` writes
+ * `html { font-size }` and the composer is `text-sm`, so a hardcoded 20px gave
+ * five lines at the default 16px but only 4.4 at 18px. The window height
+ * follows the sidepanel being dragged, so a 10-line cap on a very short panel
+ * would crowd out the messages.
  */
-const MAX_INPUT_LINES = 5;
-/** `text-sm` line-height (1.25rem) in px. */
-const LINE_HEIGHT = 20;
-const MAX_INPUT_HEIGHT = MAX_INPUT_LINES * LINE_HEIGHT;
+const MAX_INPUT_LINES = 10;
+/** Ceiling on the growth above, as a fraction of the window height. */
+const MAX_INPUT_VIEWPORT_FRACTION = 0.4;
+/** Used only if the browser reports `line-height: normal` instead of a length. */
+const FALLBACK_LINE_HEIGHT = 20;
 
 export interface ChatInputHandle {
   focus: () => void;
@@ -102,6 +105,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const internalDragCounterRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Re-measures the composer from outside the auto-grow effect, for the changes
+  // that effect cannot observe: a font-size setting that re-scales the line
+  // height while the draft is untouched.
+  const resizeRef = useRef<(() => void) | null>(null);
   const commands = useEnabledCommands();
   const { settings: commandSettings } = useCommandSettings();
   const { settings: mentionSettings } = useMentionSettings();
@@ -124,6 +131,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (!newVal) return;
     setSendKey(newVal.sendKey ?? 'enter');
     setPasteThreshold(newVal.pasteThreshold);
+    // A font-size change moves the line height, and with it the cap, even
+    // though the draft did not change.
+    resizeRef.current?.();
   });
 
   // Auto-grow the textarea to fit content, up to MAX_INPUT_LINES rows, after
@@ -133,12 +143,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     if (!el) return;
 
     const resize = () => {
+      // Measured, never assumed: the composer is `text-sm`, so its line height
+      // scales with the font-size setting and the cap has to move with it.
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || FALLBACK_LINE_HEIGHT;
+      const cap = Math.min(
+        MAX_INPUT_LINES * lineHeight,
+        window.innerHeight * MAX_INPUT_VIEWPORT_FRACTION,
+      );
+
+      el.style.maxHeight = `${cap}px`;
       el.style.height = 'auto';
-      const next = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT);
+      const next = Math.min(el.scrollHeight, cap);
       if (el.clientHeight !== next) {
         el.style.height = `${next}px`;
       }
     };
+    resizeRef.current = resize;
 
     // Re-measure whenever the content (input) changes.
     resize();
@@ -150,7 +170,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     // the text re-wraps.
     const observer = new ResizeObserver(resize);
     observer.observe(el);
-    return () => observer.disconnect();
+    // The viewport can get shorter without the textarea's own width changing
+    // (dragging the sidepanel's bottom edge), which the observer would not see.
+    window.addEventListener('resize', resize);
+    return () => {
+      resizeRef.current = null;
+      observer.disconnect();
+      window.removeEventListener('resize', resize);
+    };
   }, [input]);
  
   // The handle closes over `input`/`images`/`textAttachments`, so it must be
@@ -692,7 +719,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onPaste={handlePaste}
             placeholder={t('sidebar.placeholder')}
             className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 scrollbar-lumo"
-            style={{ maxHeight: MAX_INPUT_HEIGHT }}
             rows={1}
           />
         </div>
