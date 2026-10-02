@@ -128,6 +128,13 @@ export interface UISettings {
    * cap (the default); a cap is at least 10. See `lib/max-steps.ts`.
    */
   maxSteps: number;
+  /**
+   * Collapse a reasoning (chain-of-thought) block once it stops streaming,
+   * instead of leaving it expanded for the lifetime of the message.
+   * Off preserves the historical behaviour: live reasoning stays open after it
+   * finishes. See `components/ai-elements/reasoning.tsx`.
+   */
+  autoCollapseReasoning: boolean;
   /** Per-action visibility for the message toolbar. */
   messageToolbar: MessageToolbarSettings;
 }

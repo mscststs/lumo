@@ -49,13 +49,18 @@ export function ChatMessageList({
   // ─── Message toolbar visibility settings ─────────────────────────────────
   const DEFAULT_TOOLBAR: MessageToolbarSettings = { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' };
   const [toolbar, setToolbar] = useState<MessageToolbarSettings>(DEFAULT_TOOLBAR);
+  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(false);
 
   useEffect(() => {
-    storage.getUISettings().then((s) => setToolbar(s.messageToolbar ?? DEFAULT_TOOLBAR));
+    storage.getUISettings().then((s) => {
+      setToolbar(s.messageToolbar ?? DEFAULT_TOOLBAR);
+      setAutoCollapseReasoning(s.autoCollapseReasoning);
+    });
   }, []);
 
   useStorageWatch<UISettings>('uiSettings', (newVal) => {
     if (newVal?.messageToolbar) setToolbar(newVal.messageToolbar);
+    setAutoCollapseReasoning(newVal?.autoCollapseReasoning === true);
   });
 
   const persisted = currentConversation?.messages ?? [];
@@ -128,6 +133,7 @@ export function ChatMessageList({
             isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
             deleteCount={rendered.length - idx}
             toolbar={toolbar}
+            autoCollapseReasoning={autoCollapseReasoning}
           />
         ))}
         {isStreaming && !pending && !chatError && (

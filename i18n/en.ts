@@ -334,6 +334,9 @@ export const en = {
       maxStepsNever: 'Never pause',
       maxStepsCount: '{{steps}} steps',
       maxStepsCustom: 'Custom',
+      autoCollapseReasoning: 'Auto-collapse Thinking',
+      autoCollapseReasoningDesc:
+        'Collapse a reasoning block once it finishes streaming, instead of leaving it open.',
       groupMessageToolbar: 'Message Toolbar',
       toolbarCopy: 'Copy',
       toolbarRegenerate: 'Regenerate',

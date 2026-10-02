@@ -148,6 +148,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   sendKey: 'enter',
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
   maxSteps: DEFAULT_MAX_STEPS,
+  autoCollapseReasoning: false,
   messageToolbar: {
     copy: 'all',
     regenerate: 'show',
@@ -198,6 +199,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // must land on "no cap" rather than on `0`-as-a-count, which would allow
       // zero steps and make every turn produce nothing.
       maxSteps: normalizeMaxSteps(raw.maxSteps),
+      // An existing install's `uiSettings` predates this field entirely, and a
+      // hand-edited export may carry a non-boolean. Anything but an explicit
+      // `true` means the historical expand-and-stay-open behaviour.
+      autoCollapseReasoning: raw.autoCollapseReasoning === true,
     }),
   },
   systemPrompt: {

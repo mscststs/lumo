@@ -9,13 +9,19 @@ interface MessagePartListProps {
   parts: ChatMessagePart[];
   /** True while this message is still being streamed. */
   isStreaming?: boolean;
+  /** Collapse each reasoning block once it stops streaming. See `UISettings`. */
+  autoCollapseReasoning?: boolean;
 }
 
 /**
  * Renders message parts in their original order, so text output and tool
  * invocations appear interleaved exactly as the model produced them.
  */
-export function MessagePartList({ parts, isStreaming = false }: MessagePartListProps) {
+export function MessagePartList({
+  parts,
+  isStreaming = false,
+  autoCollapseReasoning = false,
+}: MessagePartListProps) {
   return (
     <>
       {parts.map((part, index) => {
@@ -53,6 +59,7 @@ export function MessagePartList({ parts, isStreaming = false }: MessagePartListP
                 key={key}
                 text={part.text}
                 isStreaming={isStreaming && part.state === 'streaming'}
+                autoCollapse={autoCollapseReasoning}
               />
             );
 

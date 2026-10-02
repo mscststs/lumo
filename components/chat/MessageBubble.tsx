@@ -37,6 +37,8 @@ interface MessageBubbleProps {
   deleteCount?: number;
   /** Per-action visibility from UISettings. */
   toolbar?: MessageToolbarSettings;
+  /** Collapse finished reasoning blocks. From UISettings. */
+  autoCollapseReasoning?: boolean;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -48,6 +50,7 @@ export const MessageBubble = memo(function MessageBubble({
   isLastAssistant = false,
   deleteCount = 1,
   toolbar,
+  autoCollapseReasoning = false,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
@@ -143,7 +146,11 @@ export const MessageBubble = memo(function MessageBubble({
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <Message from="assistant">
         <MessageContent>
-          <MessagePartList parts={parts} isStreaming={isStreaming} />
+          <MessagePartList
+            parts={parts}
+            isStreaming={isStreaming}
+            autoCollapseReasoning={autoCollapseReasoning}
+          />
         </MessageContent>
 
         {/* Only meaningful once the turn has settled: while streaming, a reply

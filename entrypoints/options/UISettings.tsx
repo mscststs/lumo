@@ -13,6 +13,7 @@ import { DEFAULT_FONT_SIZE, FONT_SIZE_OPTIONS } from '@/lib/font-size';
 import { DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import { cn, isMacPlatform } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
 import { PasteThresholdField } from './components/PasteThresholdField';
 import { MaxStepsField } from './components/MaxStepsField';
@@ -71,6 +72,7 @@ export function UISettingsPage() {
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const [maxSteps, setMaxSteps] = useState(DEFAULT_MAX_STEPS);
+  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(false);
   const [messageToolbar, setMessageToolbar] = useState<MessageToolbarSettings>({
     copy: 'all',
     regenerate: 'show',
@@ -86,6 +88,7 @@ export function UISettingsPage() {
       setSendKey(settings.sendKey ?? 'enter');
       setPasteThreshold(settings.pasteThreshold);
       setMaxSteps(settings.maxSteps);
+      setAutoCollapseReasoning(settings.autoCollapseReasoning);
       setMessageToolbar(settings.messageToolbar ?? {
         copy: 'all',
         regenerate: 'show',
@@ -138,6 +141,12 @@ export function UISettingsPage() {
     setMaxSteps(steps);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, maxSteps: steps });
+  };
+
+  const handleAutoCollapseReasoningChange = async (checked: boolean) => {
+    setAutoCollapseReasoning(checked);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, autoCollapseReasoning: checked });
   };
 
   const handleToolbarChange = async <K extends keyof MessageToolbarSettings>(
@@ -250,6 +259,17 @@ export function UISettingsPage() {
 
           <SettingRow label={t('options.ui.maxSteps')} description={t('options.ui.maxStepsDesc')}>
             <MaxStepsField value={maxSteps} onChange={handleMaxStepsChange} />
+          </SettingRow>
+
+          <SettingRow
+            label={t('options.ui.autoCollapseReasoning')}
+            description={t('options.ui.autoCollapseReasoningDesc')}
+          >
+            <Switch
+              checked={autoCollapseReasoning}
+              onCheckedChange={handleAutoCollapseReasoningChange}
+              aria-label={t('options.ui.autoCollapseReasoning')}
+            />
           </SettingRow>
         </SettingsGroup>
 

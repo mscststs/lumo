@@ -326,6 +326,8 @@ export const zh: TranslationSchema = {
       maxStepsNever: '永不暂停',
       maxStepsCount: '{{steps}} 步',
       maxStepsCustom: '自定义',
+      autoCollapseReasoning: '自动折叠思考过程',
+      autoCollapseReasoningDesc: '思考输出结束后自动收起推理内容，而不是一直展开。',
       groupMessageToolbar: '消息工具栏',
       toolbarCopy: '复制',
       toolbarRegenerate: '重新生成',
