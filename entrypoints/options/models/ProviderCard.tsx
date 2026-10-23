@@ -24,7 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { PROVIDER_TYPE_I18N_KEY } from '@/lib/provider-type';
+import { PROVIDER_TYPE_I18N_KEY, PROVIDER_VENDOR_I18N_KEY } from '@/lib/provider-type';
 import type { ModelConfig, ProviderConfig } from '@/types';
 import { ConfirmDeleteBar } from './ConfirmDeleteBar';
 import { ModelRow } from './ModelRow';
@@ -95,6 +95,12 @@ export function ProviderCard({
   const typeLabel = t(
     `options.models.providerTypes.${PROVIDER_TYPE_I18N_KEY[provider.type]}.label`,
   );
+  // Shown only for a real vendor: tagging every provider "Custom" would put a
+  // badge with no distinguishing power on the default case.
+  const vendorLabel =
+    provider.vendor === 'opencode'
+      ? t(`options.models.vendors.${PROVIDER_VENDOR_I18N_KEY.opencode}.label`)
+      : null;
 
   return (
     <Collapsible
@@ -118,6 +124,7 @@ export function ProviderCard({
                 window drops these onto a second line instead of hiding them. */}
             <span className="flex flex-wrap items-center gap-1.5">
               <Badge variant="outline">{typeLabel}</Badge>
+              {vendorLabel && <Badge variant="accent">{vendorLabel}</Badge>}
               <Badge variant={provider.models.length > 0 ? 'default' : 'outline'}>
                 {provider.models.length > 0
                   ? t('options.models.modelCount', { count: provider.models.length })

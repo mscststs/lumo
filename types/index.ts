@@ -40,10 +40,30 @@ export interface ModelConfig {
   reasoningEffort?: ReasoningEffort;
 }
 
+/**
+ * Who is behind the endpoint, as opposed to which wire protocol it speaks.
+ *
+ * Orthogonal to {@link ProviderType}: OpenCode serves the same three protocols
+ * from protocol-specific paths, but additionally requires its own request
+ * headers (client identity + session) and exposes its model list at a path that
+ * is *not* a sibling of the protocol URL. Modelling that as a vendor keeps the
+ * protocol abstraction intact instead of adding a fourth pseudo-protocol that
+ * would have to lie about which endpoint it calls.
+ */
+export type ProviderVendor = 'custom' | 'opencode';
+
 export interface ProviderConfig {
   id: string;
   name: string;
   type: ProviderType;
+  /**
+   * The endpoint's vendor, defaulting to `'custom'` when absent.
+   *
+   * Optional so configs persisted before this existed keep working; a missing
+   * value *means* `'custom'`, the same shape `type` has for legacy values (see
+   * `normalizeProvider`).
+   */
+  vendor?: ProviderVendor;
   baseUrl?: string;
   apiKey: string;
   models: ModelConfig[];

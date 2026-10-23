@@ -1,8 +1,15 @@
-import type { ModelConfig, ProviderConfig, ProviderType, StoredProviderType } from '@/types';
+import type {
+  ModelConfig,
+  ProviderConfig,
+  ProviderType,
+  ProviderVendor,
+  StoredProviderType,
+} from '@/types';
 import {
   REASONING_EFFORT_DEFAULT,
   normalizeReasoningEffort,
 } from '@/lib/reasoning-effort';
+import { deriveOpenCodeSession, openCodeBaseUrl, openCodeModelsUrl } from '@/lib/opencode';
 
 /** i18n key suffix under `options.models.providerTypes` for each type. */
 export const PROVIDER_TYPE_I18N_KEY: Record<ProviderType, string> = {
@@ -18,12 +25,38 @@ export const PROVIDER_TYPES: ProviderType[] = [
   'anthropic',
 ];
 
+/** i18n key suffix under `options.models.vendors` for each vendor. */
+export const PROVIDER_VENDOR_I18N_KEY: Record<ProviderVendor, string> = {
+  custom: 'custom',
+  opencode: 'opencode',
+};
+
+/** Order shown in the vendor picker, the generic option first. */
+export const PROVIDER_VENDORS: ProviderVendor[] = ['custom', 'opencode'];
+
 /** Default base URL hint per provider type, used as an input placeholder. */
 export const PROVIDER_BASE_URL_PLACEHOLDER: Record<ProviderType, string> = {
   anthropic: 'https://api.anthropic.com',
   'openai-chat': 'https://api.openai.com/v1',
   'openai-responses': 'https://api.openai.com/v1',
 };
+
+/**
+ * Map a persisted vendor onto a current one.
+ *
+ * `undefined` is preserved rather than materialised to `'custom'`, for the same
+ * reason `reasoningEffort` is: an absent field already *means* "custom", so
+ * writing it back would rewrite every provider stored before this dimension
+ * existed and hand React a fresh identity for every row on each read.
+ * Anything unrecognised degrades to `'custom'` — a value from a build that
+ * knows a vendor this one doesn't must not be forwarded as if it were known.
+ */
+export function normalizeProviderVendor(
+  vendor: string | undefined,
+): ProviderVendor | undefined {
+  if (vendor === undefined) return undefined;
+  return vendor === 'opencode' ? 'opencode' : 'custom';
+}
 
 /**
  * Map a persisted provider type onto a current one.
@@ -56,15 +89,100 @@ function normalizeModel(model: ModelConfig): ModelConfig {
   return reasoningEffort === model.reasoningEffort ? model : { ...model, reasoningEffort };
 }
 
-/** Read a stored provider with its type and models migrated to current values. */
+/** Read a stored provider with its vendor, type and models migrated to current values. */
 export function normalizeProvider(provider: ProviderConfig): ProviderConfig {
   const type = normalizeProviderType(provider.type as StoredProviderType);
+  const vendor = normalizeProviderVendor(provider.vendor);
   // Tolerate a `models`-less object rather than throwing: this also runs on
   // imported config files, which are not guaranteed to be well-formed.
   const models = Array.isArray(provider.models) ? provider.models.map(normalizeModel) : undefined;
   const modelsChanged = models?.some((model, i) => model !== provider.models[i]) ?? false;
-  if (type === provider.type && !modelsChanged) return provider;
-  return { ...provider, type, ...(modelsChanged ? { models: models! } : {}) };
+  if (type === provider.type && vendor === provider.vendor && !modelsChanged) return provider;
+  return {
+    ...provider,
+    type,
+    ...(vendor !== provider.vendor ? { vendor } : {}),
+    ...(modelsChanged ? { models: models! } : {}),
+  };
+}
+
+/** Whether the provider is an OpenCode endpoint that needs its vendor extras. */
+export function isOpenCodeVendor(provider: ProviderConfig): boolean {
+  return provider.vendor === 'opencode';
+}
+
+/**
+ * The minimum a provider must expose for its endpoint to be resolved.
+ *
+ * Narrower than `ProviderConfig` on purpose: the model dialog holds these three
+ * fields on their own (there is no provider draft there), and a `ProviderConfig`
+ * satisfies this structurally.
+ */
+export interface ProviderEndpointInput {
+  vendor?: ProviderVendor;
+  type: ProviderType;
+  baseUrl?: string;
+}
+
+function inputIsOpenCode(input: ProviderEndpointInput): boolean {
+  return input.vendor === 'opencode';
+}
+
+/**
+ * The base URL a request should actually use, or `undefined` to let the SDK
+ * apply its own default.
+ *
+ * Derived rather than required for a known vendor: OpenCode's path differs per
+ * protocol, and asking the user to type it is how the wrong one gets saved.
+ * A URL the user did type always wins.
+ */
+export function resolveBaseUrl(input: ProviderEndpointInput): string | undefined {
+  if (input.baseUrl?.trim()) return input.baseUrl.trim();
+  if (inputIsOpenCode(input)) return openCodeBaseUrl(normalizeProviderType(input.type));
+  return undefined;
+}
+
+/**
+ * Where the provider's model list lives, or `undefined` when this provider has
+ * no derivable one (the fetch button is hidden then).
+ *
+ * Only OpenCode has an endpoint that is not `${baseUrl}/models`; for everything
+ * else the historical derivation is kept so existing gateways keep working.
+ */
+export function resolveModelsUrl(input: ProviderEndpointInput): string | undefined {
+  if (inputIsOpenCode(input)) {
+    // `resolveBaseUrl` always answers for OpenCode (it falls back to the
+    // official origin), so there is no "no URL configured" case here.
+    return openCodeModelsUrl(resolveBaseUrl(input)!);
+  }
+  const base = input.baseUrl?.trim().replace(/\/+$/, '');
+  return base ? (base.endsWith('/models') ? base : `${base}/models`) : undefined;
+}
+
+/** Placeholder for the provider's base URL field, aware of the vendor. */
+export function providerBaseUrlPlaceholder(
+  vendor: ProviderVendor | undefined,
+  type: ProviderType,
+): string {
+  return normalizeProviderVendor(vendor) === 'opencode'
+    ? openCodeBaseUrl(type)
+    : PROVIDER_BASE_URL_PLACEHOLDER[type];
+}
+
+/**
+ * Session identifier to present, when the vendor routes per conversation.
+ *
+ * Returns `undefined` for every other vendor, so the header is simply absent
+ * rather than empty. Without a conversation (OCR runs outside one) a stable
+ * per-provider id is used instead of nothing: a vendor that keys routing on the
+ * session should see one consistent identity, not a fresh one per request.
+ */
+export async function resolveProviderSessionId(
+  provider: ProviderConfig,
+  conversationId?: string,
+): Promise<string | undefined> {
+  if (!isOpenCodeVendor(provider)) return undefined;
+  return deriveOpenCodeSession(conversationId ?? `provider:${provider.id}`);
 }
 
 /** Whether the provider speaks one of the OpenAI wire protocols. */

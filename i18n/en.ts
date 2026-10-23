@@ -179,7 +179,18 @@ export const en = {
       editProvider: 'Edit Provider',
       providerName: 'Provider Name',
       providerNamePlaceholder: 'My Provider',
-      providerType: 'Provider Type',
+      providerVendor: 'Provider',
+      providerProtocol: 'Protocol',
+      vendors: {
+        custom: {
+          label: 'Custom',
+          hint: 'Any self-hosted or third-party endpoint, called directly with the protocol below.',
+        },
+        opencode: {
+          label: 'OpenCode',
+          hint: 'OpenCode (Zen / Console). Picks the official endpoint for the protocol and adds its required client and session headers.',
+        },
+      },
       providerTypes: {
         openaiChat: {
           label: 'OpenAI Compatible (Chat)',
@@ -196,6 +207,7 @@ export const en = {
       },
       baseUrl: 'Base URL',
       baseUrlHint: 'Leave empty to use the provider default.',
+      baseUrlHintOpencode: 'Leave empty to use the OpenCode endpoint for the selected protocol.',
       apiKey: 'API Key',
       apiKeyPlaceholder: 'sk-...',
       addModel: 'Add Model',

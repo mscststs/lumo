@@ -46,6 +46,7 @@ export function ModelSettings() {
       // The Chat protocol is what third-party gateways actually serve, so it is
       // the safe default (see `lib/provider-type`).
       type: 'openai-chat',
+      vendor: 'custom',
       baseUrl: '',
       apiKey: '',
       models: [],
@@ -130,6 +131,7 @@ export function ModelSettings() {
         providerType={
           draftProvider ? normalizeProviderType(draftProvider.type) : 'openai-chat'
         }
+        providerVendor={draftProvider?.vendor ?? 'custom'}
         siblings={draftProvider?.models ?? []}
         onSave={async (model) => {
           if (modelDraft) await upsertModel(modelDraft.providerId, model);

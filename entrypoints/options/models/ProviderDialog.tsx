@@ -20,11 +20,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  PROVIDER_BASE_URL_PLACEHOLDER,
   PROVIDER_TYPES,
   PROVIDER_TYPE_I18N_KEY,
+  PROVIDER_VENDORS,
+  PROVIDER_VENDOR_I18N_KEY,
+  providerBaseUrlPlaceholder,
 } from '@/lib/provider-type';
-import type { ProviderConfig, ProviderType } from '@/types';
+import type { ProviderConfig, ProviderType, ProviderVendor } from '@/types';
 import {
   hasErrors,
   normalizeProviderDraft,
@@ -91,6 +93,7 @@ export function ProviderDialog({
   };
 
   const typeKey = PROVIDER_TYPE_I18N_KEY[value.type];
+  const vendor = value.vendor ?? 'custom';
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -126,10 +129,35 @@ export function ProviderDialog({
             )}
           </Field>
 
+          {/* Vendor first: it decides which paths and request headers the
+              protocol choice below will actually be spoken to. */}
+          <Field
+            label={t('options.models.providerVendor')}
+            hint={t(`options.models.vendors.${PROVIDER_VENDOR_I18N_KEY[vendor]}.hint`)}
+          >
+            {({ id, 'aria-describedby': describedBy }) => (
+              <Select
+                value={vendor}
+                onValueChange={(next) => patch({ vendor: next as ProviderVendor })}
+              >
+                <SelectTrigger id={id} aria-describedby={describedBy}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_VENDORS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {t(`options.models.vendors.${PROVIDER_VENDOR_I18N_KEY[option]}.label`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+
           {/* The two OpenAI variants hit different endpoints, so the hint spells
               out which one a given gateway actually serves. */}
           <Field
-            label={t('options.models.providerType')}
+            label={t('options.models.providerProtocol')}
             hint={t(`options.models.providerTypes.${typeKey}.hint`)}
           >
             {({ id, 'aria-describedby': describedBy }) => (
@@ -153,7 +181,11 @@ export function ProviderDialog({
 
           <Field
             label={t('options.models.baseUrl')}
-            hint={t('options.models.baseUrlHint')}
+            hint={
+              vendor === 'opencode'
+                ? t('options.models.baseUrlHintOpencode')
+                : t('options.models.baseUrlHint')
+            }
             error={errors.baseUrl && t(errors.baseUrl)}
           >
             {(props) => (
@@ -161,7 +193,7 @@ export function ProviderDialog({
                 {...props}
                 value={value.baseUrl ?? ''}
                 onChange={(e) => patch({ baseUrl: e.target.value }, 'baseUrl')}
-                placeholder={PROVIDER_BASE_URL_PLACEHOLDER[value.type]}
+                placeholder={providerBaseUrlPlaceholder(vendor, value.type)}
                 spellCheck={false}
                 className="font-mono text-xs"
               />

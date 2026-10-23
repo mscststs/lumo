@@ -176,7 +176,18 @@ export const zh: TranslationSchema = {
       editProvider: '编辑提供商',
       providerName: '提供商名称',
       providerNamePlaceholder: '我的提供商',
-      providerType: '提供商类型',
+      providerVendor: '提供商类型',
+      providerProtocol: '协议类型',
+      vendors: {
+        custom: {
+          label: '自定义',
+          hint: '任意自建或第三方托管的接口，按下面的协议类型直接请求。',
+        },
+        opencode: {
+          label: 'OpenCode',
+          hint: 'OpenCode（Zen / Console）。按协议自动选用官方端点，并携带其要求的客户端与会话标识。',
+        },
+      },
       providerTypes: {
         openaiChat: {
           label: 'OpenAI 兼容（Chat）',
@@ -193,6 +204,7 @@ export const zh: TranslationSchema = {
       },
       baseUrl: '接口地址',
       baseUrlHint: '留空则使用该提供商的默认地址。',
+      baseUrlHintOpencode: '留空则按协议自动使用 OpenCode 官方地址。',
       apiKey: 'API 密钥',
       apiKeyPlaceholder: 'sk-...',
       addModel: '添加模型',

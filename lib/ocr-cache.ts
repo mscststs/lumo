@@ -6,6 +6,8 @@
  * entries when the OCR settings (provider, model, prompt) change.
  */
 
+import { sha256Hex } from '@/lib/hash';
+
 const DB_NAME = 'lumo-ocr-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'entries';
@@ -47,23 +49,14 @@ function getDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-/** Compute SHA-256 hex digest of a string. */
-async function sha256(data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const buffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
 /** Derive the image key from its base64 content. */
 export async function imageHash(base64Data: string): Promise<string> {
-  return sha256(base64Data);
+  return sha256Hex(base64Data);
 }
 
 /** Derive a config fingerprint so cache invalidates on settings change. */
 export async function ocrConfigHash(providerId: string, modelId: string, prompt: string): Promise<string> {
-  return sha256(`${providerId}\0${modelId}\0${prompt}`);
+  return sha256Hex(`${providerId}\0${modelId}\0${prompt}`);
 }
 
 /** Look up a cached OCR result. Returns `null` on miss or config mismatch. */

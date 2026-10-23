@@ -14,7 +14,8 @@ import {
   type UIMessage,
 } from 'ai';
 import type { ProviderConfig, ProviderType, ModelConfig, ChatMessagePart, TokenUsageStats, TokenUsageStep } from '@/types';
-import { normalizeProviderType } from '@/lib/provider-type';
+import { isOpenCodeVendor, normalizeProviderType, resolveBaseUrl, resolveProviderSessionId } from '@/lib/provider-type';
+import { openCodeHeaders } from '@/lib/opencode';
 import {
   isUnifiedEffort,
   resolveReasoningEffort,
@@ -268,6 +269,14 @@ function providerOnlyReasoning(
 export function createProvider(
   provider: ProviderConfig,
   model: ModelConfig,
+  /**
+   * Session identifier for vendors that route per conversation.
+   *
+   * Only OpenCode consumes it today, as the `x-opencode-session` header. Callers
+   * that are not tied to a conversation (OCR) may omit it, which leaves the
+   * header off rather than fabricating one.
+   */
+  options?: { sessionId?: string },
 ): ResolvedModel {
   const type = normalizeProviderType(provider.type);
   const effort = resolveReasoningEffort(model.reasoningEffort);
@@ -276,11 +285,17 @@ export function createProvider(
   const reasoning = effort && isUnifiedEffort(effort) ? { reasoning: effort } : {};
   const reasoningOptions =
     effort && !isUnifiedEffort(effort) ? providerOnlyReasoning(type, effort) : undefined;
+  const baseUrl = resolveBaseUrl(provider);
+  // Vendor extras are attached here rather than at each call site: every wire
+  // protocol OpenCode serves needs the same two headers, and forgetting one on
+  // a branch is exactly how the session header went missing before.
+  const headers = isOpenCodeVendor(provider) ? openCodeHeaders(options?.sessionId) : undefined;
 
   if (type === 'anthropic') {
     const anthropic = createAnthropic({
       apiKey: provider.apiKey,
-      ...(provider.baseUrl ? { baseURL: provider.baseUrl } : {}),
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+      ...(headers ? { headers } : {}),
     });
     return {
       model: anthropic(model.modelId),
@@ -291,14 +306,16 @@ export function createProvider(
 
   const openai = createOpenAI({
     apiKey: provider.apiKey,
-    baseURL: provider.baseUrl || 'https://api.openai.com/v1',
+    baseURL: baseUrl || 'https://api.openai.com/v1',
+    ...(headers ? { headers } : {}),
   });
 
   if (type === 'openai-responses') {
     const openResponses = createOpenResponses({
       name: 'open-responses',
-      url: `${provider.baseUrl || 'https://api.openai.com/v1'}/responses`,
+      url: `${baseUrl || 'https://api.openai.com/v1'}/responses`,
       apiKey: provider.apiKey,
+      ...(headers ? { headers } : {}),
     });
     return {
       model: openResponses(model.modelId),
@@ -364,7 +381,9 @@ export function resumeFingerprint({
     conversationId,
     provider.id,
     normalizeProviderType(provider.type),
-    provider.baseUrl ?? '',
+    // The *resolved* URL, so a vendor whose URL is derived (OpenCode) is still
+    // distinguishable from one left on its SDK default.
+    resolveBaseUrl(provider) ?? '',
     model.modelId,
     // Part of the identity for the same reason `modelId` is: the effort changes
     // the request a checkpoint would be replayed into, and on Anthropic it even
@@ -483,7 +502,12 @@ export async function chatStream({
   };
 
   try {
-    const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model);
+    // A session id the vendor can route on must be derived before the model is
+    // built, because it rides the transport headers rather than the body.
+    const sessionId = await resolveProviderSessionId(provider, conversationId);
+    const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model, {
+      sessionId,
+    });
 
     // Gather tools from all connected MCP servers (with stream-specific context).
     // A non-vision model still gets image-producing tools (e.g. page_screenshot)

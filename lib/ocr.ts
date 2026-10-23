@@ -11,6 +11,7 @@
 
 import { generateText } from 'ai';
 import { createProvider } from '@/lib/ai';
+import { resolveProviderSessionId } from '@/lib/provider-type';
 import { imageHash, ocrConfigHash, getOcrCache, setOcrCache } from '@/lib/ocr-cache';
 import type { OcrSettings, ProviderConfig, ModelConfig } from '@/types';
 
@@ -52,7 +53,10 @@ export async function ocrImage(
 
   // Call the vision model
   try {
-    const { model: aiModel } = createProvider(provider, model);
+    // OCR runs outside any conversation, so the provider session falls back to
+    // one derived from the provider itself (see `resolveProviderSessionId`).
+    const sessionId = await resolveProviderSessionId(provider);
+    const { model: aiModel } = createProvider(provider, model, { sessionId });
     const { text } = await generateText({
       model: aiModel,
       messages: [

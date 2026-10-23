@@ -19,8 +19,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { isOpenAIProvider } from '@/lib/provider-type';
-import type { ModelConfig, ProviderType } from '@/types';
+import { isOpenAIProvider, resolveModelsUrl } from '@/lib/provider-type';
+import type { ModelConfig, ProviderType, ProviderVendor } from '@/types';
 import {
   isWireEffort,
   normalizeReasoningEffort,
@@ -46,6 +46,8 @@ interface ModelDialogProps {
   providerApiKey: string;
   /** Wire protocol of the owning provider. */
   providerType: ProviderType;
+  /** Vendor of the owning provider, which decides the model-list endpoint. */
+  providerVendor: ProviderVendor;
   /** Models already on this provider, for the duplicate-id check. */
   siblings: ModelConfig[];
   onSave: (model: ModelConfig) => Promise<void>;
@@ -59,6 +61,7 @@ export function ModelDialog({
   providerBaseUrl,
   providerApiKey,
   providerType,
+  providerVendor,
   siblings,
   onSave,
   onClose,
@@ -79,18 +82,24 @@ export function ModelDialog({
   useEffect(() => {
     setModelOptions(null);
     setFetchError(null);
-  }, [providerType, providerBaseUrl]);
+  }, [providerType, providerVendor, providerBaseUrl]);
 
   const fetchModels = async () => {
-    const base = providerBaseUrl.trim().replace(/\/+$/, '');
-    if (!base || !providerApiKey.trim()) {
+    // Resolved rather than composed here: OpenCode serves its list outside the
+    // protocol path, so `${baseUrl}/models` would 404 for it.
+    const url = resolveModelsUrl({
+      vendor: providerVendor,
+      type: providerType,
+      baseUrl: providerBaseUrl,
+    });
+    if (!url || !providerApiKey.trim()) {
       setFetchError(t('options.models.fetchModelsConfigError'));
       return;
     }
     setFetchingModels(true);
     setFetchError(null);
     try {
-      const response = await fetch(base.endsWith('/models') ? base : `${base}/models`, {
+      const response = await fetch(url, {
         headers: { Authorization: `Bearer ${providerApiKey.trim()}` },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -183,7 +192,7 @@ export function ModelDialog({
                     className="font-mono text-xs"
                   />
                 )}
-                {isOpenAIProvider(providerType) && (
+                {(isOpenAIProvider(providerType) || providerVendor === 'opencode') && (
                   <Button type="button" variant="outline" size="default" onClick={() => void fetchModels()} disabled={fetchingModels} className="h-10 shrink-0 gap-1.5 px-3">
                     {fetchingModels ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     {t('options.models.fetchModels')}
