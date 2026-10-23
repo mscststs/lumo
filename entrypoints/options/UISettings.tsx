@@ -18,6 +18,11 @@ import {
   MAX_COMPACTION_TOKENS,
   MIN_KEEP_RECENT_TOKENS,
 } from '@/lib/compaction';
+import {
+  DEFAULT_TURN_NOTIFICATION,
+  TURN_NOTIFICATION_MODES,
+  type TurnNotificationMode,
+} from '@/lib/turn-notification';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
@@ -88,6 +93,9 @@ export function UISettingsPage() {
     usage: 'show',
   });
   const [compaction, setCompaction] = useState<CompactionSettings>(DEFAULT_COMPACTION_SETTINGS);
+  const [turnNotification, setTurnNotification] = useState<TurnNotificationMode>(
+    DEFAULT_TURN_NOTIFICATION,
+  );
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -105,6 +113,7 @@ export function UISettingsPage() {
         usage: 'show',
       });
       setCompaction(settings.compaction ?? DEFAULT_COMPACTION_SETTINGS);
+      setTurnNotification(settings.turnNotification ?? DEFAULT_TURN_NOTIFICATION);
     });
   }, []);
 
@@ -157,6 +166,13 @@ export function UISettingsPage() {
     setAutoCollapseReasoning(checked);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, autoCollapseReasoning: checked });
+  };
+
+  const handleTurnNotificationChange = async (val: string) => {
+    const mode = val as TurnNotificationMode;
+    setTurnNotification(mode);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, turnNotification: mode });
   };
 
   const updateCompaction = async (patch: Partial<CompactionSettings>) => {
@@ -287,6 +303,24 @@ export function UISettingsPage() {
               onCheckedChange={handleAutoCollapseReasoningChange}
               aria-label={t('options.ui.autoCollapseReasoning')}
             />
+          </SettingRow>
+
+          <SettingRow
+            label={t('options.ui.turnNotification')}
+            description={t('options.ui.turnNotificationDesc')}
+          >
+            <Select value={turnNotification} onValueChange={handleTurnNotificationChange}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.turnNotification')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TURN_NOTIFICATION_MODES.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {t(`options.ui.turnNotification_${mode}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </SettingRow>
         </SettingsGroup>
 

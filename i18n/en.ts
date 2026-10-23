@@ -145,7 +145,7 @@ export const en = {
   commands: {
     builtin: {
       new: 'Start a new conversation',
-      compact: 'Summarize older history to free up context',
+      compact: 'Compact conversation context',
       exit: 'Close the side panel',
     },
     badge: {
@@ -161,6 +161,15 @@ export const en = {
     label: {
       tab: 'Page',
       file: 'File',
+    },
+  },
+  notification: {
+    turnComplete: {
+      title: 'Lumo',
+      message: 'Reply ready',
+      messageWithTitle: 'Reply ready: {{title}}',
+      failedMessage: 'Reply failed',
+      failedMessageWithTitle: 'Reply failed: {{title}}',
     },
   },
   options: {
@@ -356,6 +365,13 @@ export const en = {
       autoCollapseReasoning: 'Auto-collapse Thinking',
       autoCollapseReasoningDesc:
         'Collapse a reasoning block once it finishes streaming, instead of leaving it open.',
+      turnNotification: 'Notify When Done',
+      turnNotificationDesc:
+        'Show a system notification when a reply finishes, so a long task can run in the background.',
+      turnNotification_never: 'Never',
+      turnNotification_away: 'When Away',
+      turnNotification_long: 'Over 3 Minutes',
+      turnNotification_always: 'Always',
       groupCompaction: 'Context Compaction',
       compactionEnabled: 'Automatic Compaction',
       compactionEnabledDesc:

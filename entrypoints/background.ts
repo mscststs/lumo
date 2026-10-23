@@ -1,7 +1,24 @@
 import { mcpRegistry, initBuiltinMcpServers, registerMcpCollectors } from '@/lib/mcp';
 import { initWebMcpManager } from '@/lib/mcp/webmcp-manager';
 import { registerContextMenus } from '@/lib/context-menu';
+import { TURN_NOTIFICATION_ID } from '@/lib/constants';
 import { dropLegacyConversationsKey, migrateLegacyPanelCount } from '@/store/storage';
+
+/**
+ * Brings the browser back to the front when the user acts on a completion
+ * notification. The panel itself is already open in that window — the turn could
+ * not have finished otherwise — so focusing is all that is needed.
+ */
+async function focusLastFocusedWindow(): Promise<void> {
+  try {
+    const window = await chrome.windows.getLastFocused();
+    if (typeof window.id === 'number') {
+      await chrome.windows.update(window.id, { focused: true });
+    }
+  } catch (error) {
+    console.error('[Lumo] Failed to focus the browser window:', error);
+  }
+}
 
 export default defineBackground(() => {
   // Release the abandoned chat-history key as early as possible.
@@ -48,6 +65,16 @@ export default defineBackground(() => {
 
   // Register right-click context menu items (synchronous listener registration)
   registerContextMenus();
+
+  // Bring the user back when they act on a completion notification.
+  //
+  // The notification is created by the side panel that owns the stream (see
+  // `lib/turn-notifier.ts`); only its click is handled here, because that
+  // listener has to be registered once rather than once per panel document.
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId !== TURN_NOTIFICATION_ID) return;
+    void focusLastFocusedWindow();
+  });
 
   // Open side panel when browser action icon is clicked
   chrome.sidePanel

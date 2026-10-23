@@ -41,3 +41,14 @@ export const LUMO_ATTACHMENT_MIME = 'application/x-lumo-attachment';
  * never disagree with the browser's compatibility check.
  */
 export const LUMO_INPUT_CHIP_MIME = 'application/x-lumo-input-chip';
+
+/**
+ * Identifier of the desktop notification shown when an assistant turn finishes.
+ *
+ * A fixed id so a second completion replaces the first instead of stacking
+ * banners, and so the background's `onClicked` handler can recognise its own
+ * notifications without a lookup table. Lives here rather than in
+ * `lib/turn-notification.ts` because the background only needs the id and must
+ * not pull i18next into the service worker bundle.
+ */
+export const TURN_NOTIFICATION_ID = 'lumo-turn-complete';

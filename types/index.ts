@@ -1,5 +1,6 @@
 import type { UIMessagePart, UIDataTypes, UITools } from 'ai';
 import type { ReasoningEffort } from '@/lib/reasoning-effort';
+import type { TurnNotificationMode } from '@/lib/turn-notification';
 
 /**
  * Which wire protocol to talk to the provider with.
@@ -232,6 +233,11 @@ export interface UISettings {
   messageToolbar: MessageToolbarSettings;
   /** Automatic context compaction. See `lib/compaction.ts`. */
   compaction: CompactionSettings;
+  /**
+   * Whether to show a desktop notification when a reply finishes.
+   * Default is `'never'`. See `lib/turn-notification.ts`.
+   */
+  turnNotification: TurnNotificationMode;
 }
 
 // Slash-command settings live in `lib/slash-commands.ts` and are re-exported
@@ -245,6 +251,9 @@ export type {
 
 // Mention settings re-exported for the same reason.
 export type { MentionSettings } from '@/lib/mention-commands';
+
+// Turn-completion notification mode, shared by storage, options and the stream.
+export type { TurnNotificationMode } from '@/lib/turn-notification';
 
 // OCR settings re-exported so storage, options and the AI layer share one path.
 export type { OcrSettings } from '@/lib/ocr-types';

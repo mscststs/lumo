@@ -59,6 +59,10 @@ import {
   normalizeOrder,
   type PanelLayout,
 } from '@/lib/panel-order';
+import {
+  DEFAULT_TURN_NOTIFICATION,
+  normalizeTurnNotification,
+} from '@/lib/turn-notification';
 
 // ---------------------------------------------------------------------------
 // 1. Schema: all possible storage keys and their value types
@@ -160,6 +164,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
     usage: 'show',
   },
   compaction: DEFAULT_COMPACTION_SETTINGS,
+  turnNotification: DEFAULT_TURN_NOTIFICATION,
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -213,6 +218,9 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // budget, land on the shipped defaults rather than on `0` — which would
       // make the checkpoint fire on every message.
       compaction: normalizeCompactionSettings(raw.compaction),
+      // A config that predates this setting must land on `'never'`, never on a
+      // mode the user did not choose.
+      turnNotification: normalizeTurnNotification(raw.turnNotification),
     }),
   },
   systemPrompt: {

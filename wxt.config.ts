@@ -29,6 +29,7 @@ export default defineConfig({
       'debugger',
       'tabGroups',
       'contextMenus',
+      'notifications',
     ],
     host_permissions: ['<all_urls>'],
     content_security_policy: {

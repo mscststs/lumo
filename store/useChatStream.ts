@@ -20,6 +20,7 @@ import {
 import { computeContextUsage } from '@/lib/context-usage';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
 import { toError } from '@/lib/provider-error';
+import { notifyTurnComplete } from '@/lib/turn-notifier';
 import type { ConversationMeta } from '@/lib/conversation-store';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
 import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, CompactionNotice, Conversation, TextAttachment, TokenUsageStats } from '@/types';
@@ -362,7 +363,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       // Read per turn rather than once per hook, so a cap or budget the user
       // changes in the options page applies to the next message instead of the
       // next reload.
-      const { maxSteps, compaction: compactionSettings } = await storage.getUISettings();
+      const { maxSteps, compaction: compactionSettings, turnNotification } =
+        await storage.getUISettings();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -569,6 +571,16 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
         if (!updatedConv) return;
 
+        // The turn settled as a reply. Only a settle the user was not there to
+        // watch earns a banner: an abort means they pressed stop themselves, and
+        // a stale request has already been superseded by a newer one.
+        if (!stale && !controller.signal.aborted) {
+          void notifyTurnComplete(turnNotification, {
+            title: convWithUserMessage.title,
+            elapsedMs: Date.now() - turn.timestamp,
+          });
+        }
+
         // Surfaced rather than swallowed: this used to reject into
         // `chatStream`'s already-settled `onFinish`, so a failed save left the
         // reply on screen but absent from disk — it vanished on reload with no
@@ -696,6 +708,14 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
             // it, which overwrites this snapshot under the same message id.
             void writeCheckpoint(latestParts).catch((persistError) => {
               console.error('[Lumo] Failed to persist the failed reply:', persistError);
+            });
+
+            // The retries are spent, so this turn is over. A user who is away is
+            // at least as likely to want to return for a failure as for a reply.
+            void notifyTurnComplete(turnNotification, {
+              title: convWithUserMessage.title,
+              failed: true,
+              elapsedMs: Date.now() - turn.timestamp,
             });
           }
         },

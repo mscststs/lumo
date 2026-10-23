@@ -142,7 +142,7 @@ export const zh: TranslationSchema = {
   commands: {
     builtin: {
       new: '开启新对话',
-      compact: '总结较早的历史以释放上下文',
+      compact: '压缩对话上下文',
       exit: '关闭侧边栏',
     },
     badge: {
@@ -158,6 +158,15 @@ export const zh: TranslationSchema = {
     label: {
       tab: '页面',
       file: '文件',
+    },
+  },
+  notification: {
+    turnComplete: {
+      title: 'Lumo',
+      message: '回复已就绪',
+      messageWithTitle: '回复已就绪：{{title}}',
+      failedMessage: '回复失败',
+      failedMessageWithTitle: '回复失败：{{title}}',
     },
   },
   options: {
@@ -347,6 +356,12 @@ export const zh: TranslationSchema = {
       maxStepsCustom: '自定义',
       autoCollapseReasoning: '自动折叠思考过程',
       autoCollapseReasoningDesc: '思考输出结束后自动收起推理内容，而不是一直展开。',
+      turnNotification: '完成时通知',
+      turnNotificationDesc: '回复结束时发送系统通知，便于长任务在后台运行时及时获知。',
+      turnNotification_never: '从不',
+      turnNotification_away: '离开时',
+      turnNotification_long: '大于 3 分钟时',
+      turnNotification_always: '总是',
       groupCompaction: '上下文压缩',
       compactionEnabled: '自动压缩',
       compactionEnabledDesc: '上下文接近上限时，自动将较早的历史总结为检查点，让长对话得以继续。',
