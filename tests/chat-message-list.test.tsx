@@ -16,6 +16,12 @@ vi.mock('@/components/chat/MessageBubble', () => ({
   ),
 }));
 
+vi.mock('@/components/chat/CompactionDivider', () => ({
+  CompactionDivider: ({ compaction }: { compaction: { summary: string } }) => (
+    <div data-compaction>{compaction.summary}</div>
+  ),
+}));
+
 vi.mock('@/components/chat/ChatError', () => ({
   ChatError: () => <div data-chat-error />,
   classifyError: () => ({ category: 'unknown', message: '' }),
@@ -176,5 +182,57 @@ describe.each([0, 1, 2])('ChatMessageList streaming hand-off (panel %i)', () => 
     const after = container.querySelector(`[data-msg-id="${assistantId}"]`) as HTMLElement;
     expect(after).toBe(before);
     expect(after.dataset.marker).toBe('original');
+  });
+});
+
+describe('ChatMessageList compaction seam', () => {
+  it('renders the checkpoint at the chronological trigger position', () => {
+    const boundary: ChatMessage = {
+      id: 'user-2',
+      role: 'user',
+      parts: [{ type: 'text', text: 'new question', state: 'done' }],
+      timestamp: 3,
+    };
+    const conv = conversation([userMessage, assistant('assistant-1', 'old answer'), boundary]);
+    conv.compaction = {
+      summary: 'COMPACTED SUMMARY',
+      // The prompt projection starts at the older assistant message...
+      firstKeptMessageId: 'assistant-1',
+      // ...but the seam is an event, drawn after the newest message at the time.
+      triggeredAtMessageId: 'user-2',
+      tokensBefore: 1234,
+      createdAt: 10,
+    };
+
+    const { container } = render(
+      <ChatMessageList
+        {...baseProps}
+        currentConversation={conv}
+        isStreaming={false}
+        streamingMessage={null}
+      />,
+    );
+
+    const divider = container.querySelector('[data-compaction]');
+    const anchorNode = container.querySelector('[data-msg-id="user-2"]');
+    expect(divider).not.toBeNull();
+    expect(divider!.textContent).toContain('COMPACTED SUMMARY');
+    expect(anchorNode).not.toBeNull();
+    // The seam comes *after* the trigger message (i.e. the trigger precedes it).
+    expect(
+      divider!.compareDocumentPosition(anchorNode!) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+  });
+
+  it('renders no seam without a checkpoint', () => {
+    const { container } = render(
+      <ChatMessageList
+        {...baseProps}
+        currentConversation={conversation([userMessage, assistant('assistant-1', 'reply')])}
+        isStreaming={false}
+        streamingMessage={null}
+      />,
+    );
+    expect(container.querySelector('[data-compaction]')).toBeNull();
   });
 });

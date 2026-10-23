@@ -3,17 +3,25 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import {
   streamText,
+  generateText,
   readUIMessageStream,
   isStepCount,
   isToolUIPart,
   convertToModelMessages,
   type LanguageModel,
+  type LanguageModelUsage,
   type ModelMessage,
   type ProviderMetadata,
   type ToolSet,
   type UIMessage,
 } from 'ai';
-import type { ProviderConfig, ProviderType, ModelConfig, ChatMessagePart, TokenUsageStats, TokenUsageStep } from '@/types';
+import type { ProviderConfig, ProviderType, ModelConfig, ChatMessage, ChatMessagePart, CompactionSettings, TokenUsageStats, TokenUsageStep } from '@/types';
+import {
+  COMPACTION_SUMMARY_PREFIX,
+  COMPACTION_SUMMARY_SUFFIX,
+  buildSummaryPrompt,
+  serializeConversationForSummary,
+} from '@/lib/compaction';
 import { isOpenCodeVendor, normalizeProviderType, resolveBaseUrl, resolveProviderSessionId } from '@/lib/provider-type';
 import { openCodeHeaders } from '@/lib/opencode';
 import {
@@ -363,6 +371,7 @@ export function resumeFingerprint({
   model,
   messageCount,
   ocrAvailable = false,
+  compaction,
 }: {
   conversationId: string;
   provider: ProviderConfig;
@@ -376,6 +385,13 @@ export function resumeFingerprint({
    * must not be resumed after it is turned off (and vice versa).
    */
   ocrAvailable?: boolean;
+  /**
+   * Durable compaction boundary, if one exists. A checkpoint's `modelMessages`
+   * were shaped by whether a summary was prepended and where the transcript was
+   * cut, so a boundary change must invalidate the snapshot even when the stored
+   * message count is unchanged.
+   */
+  compaction?: { firstKeptMessageId: string; createdAt: number };
 }): string {
   return [
     conversationId,
@@ -398,7 +414,303 @@ export function resumeFingerprint({
     // under one OCR state must not be replayed under another.
     ocrAvailable ? 'ocr1' : 'ocr0',
     messageCount,
+    compaction ? `c:${compaction.firstKeptMessageId}:${compaction.createdAt}` : 'c:none',
   ].join('\u0000');
+}
+
+// ---------------------------------------------------------------------------
+// Context compaction
+// ---------------------------------------------------------------------------
+
+/**
+ * Automatic compaction configuration for a single `chatStream` run.
+ *
+ * `priorSummary` / `summaryMessageCount` describe a durable checkpoint that is
+ * already part of `messages` (produced by `projectConversation`), so an
+ * in-loop compaction merges new history into it instead of re-summarizing it.
+ */
+export interface ChatCompactionOptions {
+  enabled: boolean;
+  reserveTokens: number;
+  keepRecentTokens: number;
+  /** Durable summary already prepended to `messages`, when one exists. */
+  priorSummary?: string;
+  /** Leading UI messages occupied by the injected summary (0 or 1). */
+  summaryMessageCount?: number;
+}
+
+export interface GenerateCompactionSummaryOptions {
+  provider: ProviderConfig;
+  model: ModelConfig;
+  messages: ChatMessage[];
+  previousSummary?: string;
+  customInstructions?: string;
+  /** Used to derive a distinct routing session for vendors that require one. */
+  conversationId?: string;
+  signal?: AbortSignal;
+}
+
+/** Map an AI SDK usage record onto lumo's normalized token stats. */
+function toTokenUsageStats(usage: LanguageModelUsage | undefined): TokenUsageStats | undefined {
+  if (!usage) return undefined;
+  const input = usage.inputTokens ?? 0;
+  const output = usage.outputTokens ?? 0;
+  if (input + output === 0) return undefined;
+  const cacheRead = usage.inputTokenDetails?.cacheReadTokens ?? 0;
+  const cacheWrite = usage.inputTokenDetails?.cacheWriteTokens ?? 0;
+  const reasoningTokens = usage.outputTokenDetails?.reasoningTokens ?? 0;
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    totalTokens: usage.totalTokens ?? input + output,
+    ...(cacheRead > 0 ? { cacheReadTokens: cacheRead } : {}),
+    ...(cacheWrite > 0 ? { cacheWriteTokens: cacheWrite } : {}),
+    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+  };
+}
+
+/**
+ * Summarize a slice of stored messages with the conversation's own model.
+ *
+ * Used by the pre-send (durable) path. The call is deliberately tool-free: the
+ * summarizer must only produce a checkpoint, never act on the page.
+ *
+ * Vendors such as OpenCode *require* a session header and reject the request
+ * outright without one. The summary therefore gets its own session, derived
+ * from the conversation but salted so it never collides with the live chat's
+ * session — the summary is a different request than the conversation it
+ * describes, and sharing the session would tie its routing and prompt-cache
+ * affinity to prompts it will never repeat. Mirrors pi's distinct routing id
+ * for one-off summaries, while staying routable on OpenCode.
+ */
+export async function generateCompactionSummary({
+  provider,
+  model,
+  messages,
+  previousSummary,
+  customInstructions,
+  conversationId,
+  signal,
+}: GenerateCompactionSummaryOptions): Promise<{ text: string; usage?: TokenUsageStats }> {
+  const sessionId = await resolveProviderSessionId(
+    provider,
+    conversationId ? `${conversationId}:compaction` : undefined,
+  );
+  const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model, { sessionId });
+  const { system, prompt } = buildSummaryPrompt(
+    serializeConversationForSummary(messages),
+    previousSummary,
+    customInstructions,
+  );
+  const result = await generateText({
+    model: aiModel,
+    system,
+    prompt,
+    abortSignal: signal,
+    ...(providerOptions ? { providerOptions } : {}),
+    ...(reasoning ? { reasoning } : {}),
+  });
+  const text = result.text.trim();
+  if (result.finishReason === 'length') {
+    throw new Error('Summarization hit the token cap and the checkpoint would be incomplete');
+  }
+  if (!text) throw new Error('Summarization returned an empty response');
+  return { text, usage: toTokenUsageStats(result.usage) };
+}
+
+/** A permissive view of a wire content part, for the summary serializer. */
+interface WireContentPart {
+  type?: string;
+  text?: string;
+  toolName?: string;
+  input?: unknown;
+  output?: unknown;
+}
+
+function wireContentParts(message: ModelMessage): WireContentPart[] {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') return [{ type: 'text', text: content }];
+  return Array.isArray(content) ? (content as WireContentPart[]) : [];
+}
+
+/** Worst-case chars/4 estimate for a wire message (images are stripped upstream). */
+function estimateWireMessageChars(message: ModelMessage): number {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') return content.length;
+  try {
+    return JSON.stringify(content ?? '').length;
+  } catch {
+    return 0;
+  }
+}
+
+function estimateWireMessagesChars(messages: readonly ModelMessage[]): number {
+  let chars = 0;
+  for (const message of messages) chars += estimateWireMessageChars(message);
+  return chars;
+}
+
+const WIRE_TOOL_RESULT_MAX_CHARS = 2000;
+const WIRE_TOOL_ARGS_MAX_CHARS = 500;
+
+function truncateWire(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`;
+}
+
+/**
+ * Flatten wire messages to text so the summarizer continues nothing.
+ * Mirrors the stored-message serializer in `lib/compaction.ts`.
+ */
+function serializeWireForSummary(messages: readonly ModelMessage[]): string {
+  const blocks: string[] = [];
+  for (const message of messages) {
+    if (message.role === 'system') continue;
+    if (message.role === 'user') {
+      const text = wireContentParts(message)
+        .map((part) => (part.type === 'text' ? part.text ?? '' : '[image]'))
+        .join('');
+      if (text) blocks.push(`[User]: ${text}`);
+      continue;
+    }
+    if (message.role === 'assistant') {
+      const parts = wireContentParts(message);
+      const text = parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text ?? '')
+        .join('');
+      if (text) blocks.push(`[Assistant]: ${text}`);
+      const calls = parts
+        .filter((part) => part.type === 'tool-call')
+        .map((part) => {
+          let args = '';
+          try {
+            args = part.input === undefined ? '' : JSON.stringify(part.input);
+          } catch {
+            args = String(part.input);
+          }
+          return `${part.toolName ?? 'tool'}(${truncateWire(args, WIRE_TOOL_ARGS_MAX_CHARS)})`;
+        });
+      if (calls.length > 0) blocks.push(`[Assistant tool calls]: ${calls.join('; ')}`);
+      continue;
+    }
+    // Tool role: render each tool result, truncated.
+    for (const part of wireContentParts(message)) {
+      if (part.type !== 'tool-result') continue;
+      let rendered = '';
+      const output = part.output as { type?: string; value?: unknown } | undefined;
+      if (output && typeof output === 'object') {
+        if (output.type === 'text') rendered = String(output.value ?? '');
+        else if (typeof output.value === 'string') rendered = output.value;
+        else {
+          try {
+            rendered = JSON.stringify(output.value);
+          } catch {
+            rendered = String(output.value);
+          }
+        }
+      } else if (typeof part.output === 'string') {
+        rendered = part.output;
+      }
+      if (rendered) blocks.push(`[Tool result]: ${truncateWire(rendered, WIRE_TOOL_RESULT_MAX_CHARS)}`);
+    }
+  }
+  return blocks.join('\n\n');
+}
+
+/**
+ * Where to cut the wire prompt so roughly `keepRecentTokens` stay verbatim.
+ *
+ * Prefers the nearest message at or after the budget point that is not a tool
+ * result, so a tool result is never orphaned from its tool call. When the
+ * trailing tool results alone exceed the budget, it falls back to the owning
+ * assistant message (at or before that point) — mirroring pi, which keeps the
+ * call and its results together rather than dropping the call.
+ */
+function findWireCutIndex(
+  messages: readonly ModelMessage[],
+  startIndex: number,
+  keepRecentTokens: number,
+): number {
+  let accumulated = 0;
+  for (let i = messages.length - 1; i >= startIndex; i--) {
+    accumulated += Math.ceil(estimateWireMessageChars(messages[i]!) / 4);
+    if (accumulated < keepRecentTokens) continue;
+    for (let candidate = i; candidate < messages.length; candidate++) {
+      if (messages[candidate]!.role !== 'tool') return candidate;
+    }
+    for (let candidate = i; candidate >= startIndex; candidate--) {
+      if (messages[candidate]!.role !== 'tool') return candidate;
+    }
+    return -1;
+  }
+  return -1;
+}
+
+interface WireCompactionConfig {
+  contextWindow: number;
+  reserveTokens: number;
+  keepRecentTokens: number;
+  priorSummary?: string;
+  summaryMessageCount: number;
+}
+
+interface WireCompactionState {
+  messages: ModelMessage[];
+  summary: string;
+}
+
+/**
+ * Fold the leading wire prompt into a summary when the context is over budget.
+ *
+ * Runs entirely in memory: the durable checkpoint is written by the caller on
+ * the next turn boundary, so a long tool loop can finish inside the window
+ * without touching persisted state mid-run.
+ */
+async function compactWireMessages(input: {
+  messages: ModelMessage[];
+  model: LanguageModel;
+  providerOptions?: ProviderMetadata;
+  reasoning?: UnifiedReasoningEffort;
+  signal?: AbortSignal;
+  config: WireCompactionConfig;
+  /** Committed context tokens from the last completed step (includes schemas). */
+  anchorTokens: number;
+  /** Wire messages appended after that step, whose size is not in the anchor. */
+  appendedChars: number;
+}): Promise<WireCompactionState | null> {
+  const { messages, config } = input;
+  const estimatedTokens = input.anchorTokens + Math.ceil(input.appendedChars / 4);
+  if (estimatedTokens <= config.contextWindow - config.reserveTokens) return null;
+
+  const startIndex = config.summaryMessageCount;
+  const cut = findWireCutIndex(messages, startIndex, config.keepRecentTokens);
+  if (cut < 0) return null;
+  const toSummarize = messages.slice(startIndex, cut);
+  if (toSummarize.length === 0) return null;
+
+  const { system, prompt } = buildSummaryPrompt(
+    serializeWireForSummary(toSummarize),
+    config.priorSummary,
+  );
+  const result = await generateText({
+    model: input.model,
+    system,
+    prompt,
+    abortSignal: input.signal,
+    ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
+    ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+  });
+  const summary = result.text.trim();
+  // A truncated checkpoint is worse than none: it would silently drop context
+  // the loop still needs. Fall through to an uncompacted (larger) prompt.
+  if (result.finishReason === 'length' || !summary) return null;
+
+  const summaryMessage: ModelMessage = {
+    role: 'user',
+    content: COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX,
+  };
+  return { messages: [summaryMessage, ...messages.slice(cut)], summary };
 }
 
 /**
@@ -462,6 +774,11 @@ export interface ChatStreamOptions {
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
   /** Called after each step with the cumulative token usage so far. */
   onUsage?: (usage: TokenUsageStats) => void;
+  /**
+   * Automatic compaction between tool steps. When omitted (or disabled) the
+   * loop keeps whatever prompt it was given, which is the historical behaviour.
+   */
+  compaction?: ChatCompactionOptions;
 }
 
 export async function chatStream({
@@ -480,6 +797,7 @@ export async function chatStream({
   resume,
   onStepComplete,
   onUsage,
+  compaction,
 }: ChatStreamOptions) {
   // Seed with the resumed parts so an abort or a second failure still reports
   // everything streamed across attempts, not just the current one.
@@ -549,6 +867,16 @@ export async function chatStream({
       maxSteps,
       isVision,
       signal,
+      compaction:
+        compaction?.enabled && (model.contextWindow ?? 0) > 0
+          ? {
+              contextWindow: model.contextWindow!,
+              reserveTokens: compaction.reserveTokens,
+              keepRecentTokens: compaction.keepRecentTokens,
+              ...(compaction.priorSummary ? { priorSummary: compaction.priorSummary } : {}),
+              summaryMessageCount: compaction.summaryMessageCount ?? 0,
+            }
+          : undefined,
       onUpdate: (updatedParts) => {
         latestParts = updatedParts;
         onUpdate(updatedParts);
@@ -606,6 +934,8 @@ export interface RunAgentLoopOptions {
    * Lets callers track costs in real time without awaiting the full result.
    */
   onUsage?: (usage: TokenUsageStats) => void;
+  /** Between-step compaction configuration. Absent leaves the prompt untouched. */
+  compaction?: WireCompactionConfig;
 }
 
 /** Outcome of a `runAgentLoop` run: what it produced, and why it stopped. */
@@ -654,10 +984,15 @@ export async function runAgentLoop({
   onError,
   onStepComplete,
   onUsage,
+  compaction,
 }: RunAgentLoopOptions): Promise<AgentLoopResult> {
   const hasTools = Object.keys(tools).length > 0;
   const trimmedSystem = system?.trim();
   let modelMessages = sanitizeToolResultImages(messages);
+  // Tracks the summary that supersedes any injected checkpoint as the loop folds
+  // more history away, so a second compaction merges instead of restarting.
+  let priorSummary = compaction?.priorSummary;
+  let summaryMessageCount = compaction?.summaryMessageCount ?? 0;
   // Seeding with the parts already streamed lets a resumed run keep appending
   // instead of restarting the part list, so the UI never loses earlier steps.
   let latestParts: ChatMessagePart[] = initialParts ? [...initialParts] : [];
@@ -690,6 +1025,7 @@ export async function runAgentLoop({
       onError?.(error);
     };
 
+    const promptMessageCount = modelMessages.length;
     const result = streamText({
       model,
       messages: modelMessages,
@@ -788,9 +1124,33 @@ export async function runAgentLoop({
     );
     if (!hasPendingToolCalls) return { parts: latestParts, stoppedReason: 'finished', usage: buildUsage() };
 
-    // Checkpoint *after* image injection, so the snapshot is byte-for-byte the
-    // prompt the next iteration is about to send. Emitted only when the loop
-    // continues, which makes "a checkpoint exists" mean "work remains".
+    // Between-step compaction. Checked after tool results and tool-produced
+    // images are folded in, before the next assistant response — the point at
+    // which the prompt is at its largest. `anchorTokens` is the exact prompt
+    // size of the step just run (it already includes system prompt and tool
+    // schemas), so only the messages appended since need estimating.
+    if (compaction) {
+      const compacted = await compactWireMessages({
+        messages: modelMessages,
+        model,
+        providerOptions,
+        reasoning,
+        signal,
+        config: { ...compaction, priorSummary, summaryMessageCount },
+        anchorTokens: stepInputTokens + stepOutputTokens,
+        appendedChars: estimateWireMessagesChars(modelMessages.slice(promptMessageCount)),
+      });
+      if (compacted) {
+        modelMessages = compacted.messages;
+        priorSummary = compacted.summary;
+        summaryMessageCount = 1;
+      }
+    }
+
+    // Checkpoint *after* image injection and any compaction, so the snapshot is
+    // byte-for-byte the prompt the next iteration is about to send. Emitted only
+    // when the loop continues, which makes "a checkpoint exists" mean "work
+    // remains".
     onStepComplete?.({
       modelMessages: [...modelMessages],
       parts: [...latestParts],

@@ -12,15 +12,23 @@ import { useTheme, THEME_OPTIONS } from '@/lib/theme';
 import { DEFAULT_FONT_SIZE, FONT_SIZE_OPTIONS } from '@/lib/font-size';
 import { DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { DEFAULT_MAX_STEPS } from '@/lib/max-steps';
+import {
+  DEFAULT_COMPACTION_SETTINGS,
+  KEEP_RECENT_TOKEN_PRESETS,
+  MAX_COMPACTION_TOKENS,
+  MIN_KEEP_RECENT_TOKENS,
+} from '@/lib/compaction';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
 import { PasteThresholdField } from './components/PasteThresholdField';
 import { MaxStepsField } from './components/MaxStepsField';
+import { ReserveField } from './components/ReserveField';
+import { TokenBudgetField } from './components/TokenBudgetField';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
-import type { SendKey, Theme, FontSize, UISettings, MessageToolbarSettings, MessageActionVisibility, MessageActionToggle } from '@/types';
+import type { SendKey, Theme, FontSize, UISettings, MessageToolbarSettings, MessageActionVisibility, MessageActionToggle, CompactionSettings } from '@/types';
 import { resolveLanguage } from '@/i18n';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -72,13 +80,14 @@ export function UISettingsPage() {
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const [maxSteps, setMaxSteps] = useState(DEFAULT_MAX_STEPS);
-  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(false);
+  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(true);
   const [messageToolbar, setMessageToolbar] = useState<MessageToolbarSettings>({
     copy: 'all',
     regenerate: 'show',
     delete: 'all',
     usage: 'show',
   });
+  const [compaction, setCompaction] = useState<CompactionSettings>(DEFAULT_COMPACTION_SETTINGS);
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -95,6 +104,7 @@ export function UISettingsPage() {
         delete: 'all',
         usage: 'show',
       });
+      setCompaction(settings.compaction ?? DEFAULT_COMPACTION_SETTINGS);
     });
   }, []);
 
@@ -147,6 +157,13 @@ export function UISettingsPage() {
     setAutoCollapseReasoning(checked);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, autoCollapseReasoning: checked });
+  };
+
+  const updateCompaction = async (patch: Partial<CompactionSettings>) => {
+    const next = { ...compaction, ...patch };
+    setCompaction(next);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, compaction: next });
   };
 
   const handleToolbarChange = async <K extends keyof MessageToolbarSettings>(
@@ -271,6 +288,49 @@ export function UISettingsPage() {
               aria-label={t('options.ui.autoCollapseReasoning')}
             />
           </SettingRow>
+        </SettingsGroup>
+
+        {/* Context compaction: keeps long chats inside the model window. */}
+        <SettingsGroup title={t('options.ui.groupCompaction')}>
+          <SettingRow
+            label={t('options.ui.compactionEnabled')}
+            description={t('options.ui.compactionEnabledDesc')}
+          >
+            <Switch
+              checked={compaction.enabled}
+              onCheckedChange={(checked) => void updateCompaction({ enabled: checked })}
+              aria-label={t('options.ui.compactionEnabled')}
+            />
+          </SettingRow>
+
+          {/* Budgets only matter while compaction is on — hide them otherwise. */}
+          {compaction.enabled && (
+            <>
+              <SettingRow
+                label={t('options.ui.compactionReserve')}
+                description={t('options.ui.compactionReserveDesc')}
+              >
+                <ReserveField
+                  value={compaction.reserve}
+                  onChange={(value) => void updateCompaction({ reserve: value })}
+                />
+              </SettingRow>
+
+              <SettingRow
+                label={t('options.ui.compactionKeepRecent')}
+              >
+                <TokenBudgetField
+                  value={compaction.keepRecentTokens}
+                  onChange={(value) => void updateCompaction({ keepRecentTokens: value })}
+                  presets={KEEP_RECENT_TOKEN_PRESETS}
+                  min={MIN_KEEP_RECENT_TOKENS}
+                  max={MAX_COMPACTION_TOKENS}
+                  ariaLabel={t('options.ui.compactionKeepRecent')}
+                  placeholder="20000"
+                />
+              </SettingRow>
+            </>
+          )}
         </SettingsGroup>
 
         {/* Message toolbar action visibility. */}

@@ -116,7 +116,7 @@ describe('slash command picker', () => {
     fireEvent.keyDown(textarea, { key: 'ArrowDown' });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
-    await waitFor(() => expect(textarea.value).toBe('/exit '));
+    await waitFor(() => expect(textarea.value).toBe('/compact '));
   });
 });
 

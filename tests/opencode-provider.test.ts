@@ -183,6 +183,17 @@ describe('OpenCode session identity', () => {
     expect(ocr).toMatch(/^ses_[0-9a-f]{64}$/);
     expect(ocr).toBe(await resolveProviderSessionId(provider({ vendor: 'opencode' })));
   });
+
+  it('derives a distinct session for compaction, keeping it routable but separate', async () => {
+    // OpenCode rejects a request with no session header, so the summarizer must
+    // send one. It is salted away from the live chat's session so the one-off
+    // summary does not share its routing/cache affinity.
+    const openCode = provider({ vendor: 'opencode' });
+    const chat = await resolveProviderSessionId(openCode, 'conv-1');
+    const compaction = await resolveProviderSessionId(openCode, 'conv-1:compaction');
+    expect(compaction).toMatch(/^ses_[0-9a-f]{64}$/);
+    expect(compaction).not.toBe(chat);
+  });
 });
 
 describe('createProvider on OpenCode', () => {

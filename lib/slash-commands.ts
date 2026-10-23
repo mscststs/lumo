@@ -51,7 +51,7 @@ export const MAX_COMMAND_PHRASE_LENGTH = 4000;
  * reports the action and the panel carries it out, because both targets (the
  * conversation, the side panel document) are outside the input box's reach.
  */
-export type BuiltinCommandAction = 'new-chat' | 'close-panel';
+export type BuiltinCommandAction = 'new-chat' | 'close-panel' | 'compact';
 
 export interface BuiltinCommandDefinition {
   /** Stable id. Also the i18n key suffix and the default trigger. */
@@ -64,6 +64,7 @@ export interface BuiltinCommandDefinition {
 /** Shipped commands, in picker order. */
 export const BUILTIN_COMMANDS: readonly BuiltinCommandDefinition[] = [
   { id: 'new', name: 'new', action: 'new-chat' },
+  { id: 'compact', name: 'compact', action: 'compact' },
   { id: 'exit', name: 'exit', action: 'close-panel' },
 ];
 

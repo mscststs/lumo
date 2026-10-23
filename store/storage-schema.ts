@@ -41,6 +41,10 @@ import { DEFAULT_FONT_SIZE, normalizeFontSize } from '@/lib/font-size-registry';
 import { normalizePasteThreshold, DEFAULT_PASTE_THRESHOLD } from '@/lib/paste-threshold';
 import { normalizeMaxSteps, DEFAULT_MAX_STEPS } from '@/lib/max-steps';
 import {
+  DEFAULT_COMPACTION_SETTINGS,
+  normalizeCompactionSettings,
+} from '@/lib/compaction';
+import {
   DEFAULT_COMMAND_SETTINGS,
   normalizeCommandSettings,
   type CommandSettings,
@@ -148,13 +152,14 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   sendKey: 'enter',
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
   maxSteps: DEFAULT_MAX_STEPS,
-  autoCollapseReasoning: false,
+  autoCollapseReasoning: true,
   messageToolbar: {
     copy: 'all',
     regenerate: 'show',
     delete: 'all',
     usage: 'show',
   },
+  compaction: DEFAULT_COMPACTION_SETTINGS,
 };
 
 const DEFAULT_MCP_SETTINGS: McpSettings = {
@@ -200,9 +205,14 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // zero steps and make every turn produce nothing.
       maxSteps: normalizeMaxSteps(raw.maxSteps),
       // An existing install's `uiSettings` predates this field entirely, and a
-      // hand-edited export may carry a non-boolean. Anything but an explicit
-      // `true` means the historical expand-and-stay-open behaviour.
-      autoCollapseReasoning: raw.autoCollapseReasoning === true,
+      // hand-edited export may carry a non-boolean. Only an explicit `false`
+      // means the expand-and-stay-open behaviour; everything else defaults to
+      // the shipped auto-collapse-on setting.
+      autoCollapseReasoning: raw.autoCollapseReasoning !== false,
+      // Configs written before compaction existed, or with a nonsensical token
+      // budget, land on the shipped defaults rather than on `0` — which would
+      // make the checkpoint fire on every message.
+      compaction: normalizeCompactionSettings(raw.compaction),
     }),
   },
   systemPrompt: {

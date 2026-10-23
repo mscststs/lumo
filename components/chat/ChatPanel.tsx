@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatInput, type ChatInputHandle } from '@/components/chat/ChatInput';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
+import { CompactionNotice } from '@/components/chat/CompactionNotice';
 import { ConversationFiles } from '@/components/chat/ConversationFiles';
 import { ConversationHistory } from '@/components/chat/ConversationHistory';
 import { useModelSelection } from '@/store/useModelSelection';
@@ -120,12 +121,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     isHistoryOpen,
     setIsHistoryOpen,
     isStreaming,
+    isCompacting,
+    compactionNotice,
     streamingMessage,
     chatError,
     isRetrying,
     retryAttempt,
     handleSend,
     handleRetry,
+    handleCompact,
     handleStop,
     handleNewChat,
     handleSelectConversation,
@@ -151,6 +155,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       systemPrompt: currentConversation.systemPrompt,
       pendingParts: isStreaming ? streamingMessage?.parts : undefined,
       model: getSelectedModel(),
+      ...(currentConversation.compaction
+        ? {
+            compaction: {
+              createdAt: currentConversation.compaction.createdAt,
+              summary: currentConversation.compaction.summary,
+              firstKeptMessageId: currentConversation.compaction.firstKeptMessageId,
+            },
+          }
+        : {}),
     });
   }, [currentConversation, isStreaming, streamingMessage, getSelectedModel]);
 
@@ -219,12 +232,16 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         } catch (error) {
           console.error('[Lumo] Failed to close the side panel:', error);
         }
+        return;
+      }
+      if (action === 'compact') {
+        handleCompact(getSelectedProvider, getSelectedModel);
       }
     },
     // onNewChat is recreated every render (it closes over handleNewChat); the
     // body only needs a stable call site, which this provides.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [handleNewChat],
+    [handleNewChat, handleCompact, getSelectedProvider, getSelectedModel],
   );
 
   /** Resolve a dragged or right-clicked image source (data URL or remote URL) into a data URL. */
@@ -647,6 +664,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       <ChatMessageList
         currentConversation={currentConversation}
         isStreaming={isStreaming}
+        isCompacting={isCompacting}
         streamingMessage={streamingMessage}
         chatError={chatError}
         isRetrying={isRetrying}
@@ -663,9 +681,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onReference={addFileReference}
       />
 
+      <CompactionNotice notice={compactionNotice} />
+
       <ChatInput
         ref={chatInputRef}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming || isCompacting}
         canAcceptImages={canAcceptImages()}
         contextUsage={contextUsage}
         onSend={onSend}

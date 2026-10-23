@@ -137,6 +137,70 @@ export interface MessageToolbarSettings {
   usage: MessageActionToggle;
 }
 
+/**
+ * A compaction reserve: either an absolute token count or a percentage of the
+ * model's context window. A percentage adapts to every model automatically —
+ * `20%` is 25.6K on a 128K window and 32K on a 160K one — which is why it is the
+ * default. Absolute values are for pinning a fixed headroom.
+ */
+export type ReserveAmount =
+  | { unit: 'tokens'; value: number }
+  | { unit: 'percent'; value: number };
+
+/**
+ * Automatic context compaction settings.
+ *
+ * When the committed context crosses `contextWindow - reserve`, older history
+ * is summarized into a single checkpoint so the next request fits.
+ * `keepRecentTokens` is the budget of recent history left verbatim. See
+ * `lib/compaction.ts`.
+ */
+export interface CompactionSettings {
+  enabled: boolean;
+  reserve: ReserveAmount;
+  keepRecentTokens: number;
+}
+
+/**
+ * A durable compaction boundary stored on a conversation.
+ *
+ * Everything before `firstKeptMessageId` is replaced by `summary` in the model
+ * prompt; the original messages stay on disk so the transcript remains readable
+ * and can be summarized again later. Mirrors pi's `CompactionEntry` shape.
+ */
+export interface ConversationCompaction {
+  /** Structured checkpoint produced by the summarizer. */
+  summary: string;
+  /** First stored message kept verbatim — where the prompt projection starts. */
+  firstKeptMessageId: string;
+  /**
+   * Message the transcript seam is rendered *after* — the chronological point
+   * at which compaction ran (normally the newest message at that moment).
+   *
+   * Distinct from `firstKeptMessageId` on purpose: the prompt places the summary
+   * before the kept range, but the UI marks where the compaction *happened*, the
+   * same way pi appends its compaction message at its chronological position.
+   */
+  triggeredAtMessageId?: string;
+  /** Committed context size before this checkpoint replaced the history. */
+  tokensBefore: number;
+  /** Committed context size after the checkpoint, when it could be measured. */
+  tokensAfter?: number;
+  createdAt: number;
+  /** Usage of the LLM call that produced the summary. */
+  usage?: TokenUsageStats;
+}
+
+/**
+ * A transient, user-facing notice for a manual action that could not run.
+ * Distinct from `ChatError`: nothing failed, the action was simply a no-op.
+ */
+export interface CompactionNotice {
+  kind: 'nothing-to-compact';
+  /** The recent-token budget the conversation did not exceed. */
+  keepRecentTokens: number;
+}
+
 export interface UISettings {
   language: 'auto' | 'en' | 'zh';
   theme: Theme;
@@ -166,6 +230,8 @@ export interface UISettings {
   autoCollapseReasoning: boolean;
   /** Per-action visibility for the message toolbar. */
   messageToolbar: MessageToolbarSettings;
+  /** Automatic context compaction. See `lib/compaction.ts`. */
+  compaction: CompactionSettings;
 }
 
 // Slash-command settings live in `lib/slash-commands.ts` and are re-exported
@@ -363,4 +429,9 @@ export interface Conversation {
    * so that time-injected prompts stay stable and provider caching works.
    */
   systemPrompt?: string;
+  /**
+   * Durable compaction checkpoint, once the conversation has been summarized.
+   * Absent until the first compaction. See `lib/compaction.ts`.
+   */
+  compaction?: ConversationCompaction;
 }

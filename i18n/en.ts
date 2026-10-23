@@ -45,6 +45,9 @@ export const en = {
     tokenSteps: 'Steps',
     contextUsage: 'Context',
     contextUsageLabel: 'Context {{percent}} used',
+    compactedHistory: 'Compacted history',
+    compacting: 'Compacting context…',
+    compactNothing: 'Nothing to compact yet — this chat is still under the {{tokens}} recent-token budget.',
     contextEstimated: 'estimated',
     contextRemaining: 'Remaining',
     contextPending: 'Draft',
@@ -142,6 +145,7 @@ export const en = {
   commands: {
     builtin: {
       new: 'Start a new conversation',
+      compact: 'Summarize older history to free up context',
       exit: 'Close the side panel',
     },
     badge: {
@@ -352,6 +356,15 @@ export const en = {
       autoCollapseReasoning: 'Auto-collapse Thinking',
       autoCollapseReasoningDesc:
         'Collapse a reasoning block once it finishes streaming, instead of leaving it open.',
+      groupCompaction: 'Context Compaction',
+      compactionEnabled: 'Automatic Compaction',
+      compactionEnabledDesc:
+        'Summarize older history into a checkpoint as the context fills up, so long chats keep going.',
+      compactionReserve: 'Compaction Reserve',
+      compactionReserveDesc:
+        'Headroom kept free for the next reply before compacting — a fixed token count or a share of the model window.',
+      compactionKeepRecent: 'Recent Tokens Kept',
+      tokenBudgetCustom: 'Custom',
       groupMessageToolbar: 'Message Toolbar',
       toolbarCopy: 'Copy',
       toolbarRegenerate: 'Regenerate',

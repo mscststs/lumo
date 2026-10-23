@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { chatStream, resumeFingerprint } from '@/lib/ai';
+import { chatStream, resumeFingerprint, generateCompactionSummary } from '@/lib/ai';
 import type { ResumeState, StopReason } from '@/lib/ai';
 import { isOcrAvailable } from '@/lib/image-projection';
 import { storage } from '@/store/storage';
@@ -10,11 +10,19 @@ import { deriveConversationTitle } from '@/lib/conversation-title';
 import { serializeAttachmentForModel } from '@/lib/attachment-serialization';
 import { MAX_RETRIES, retryDelay } from '@/lib/retry-policy';
 import { resolveSystemPrompt } from '@/lib/system-prompt';
+import {
+  applyCompaction,
+  planCompaction,
+  projectConversation,
+  resolveReserveTokens,
+  shouldCompact,
+} from '@/lib/compaction';
+import { computeContextUsage } from '@/lib/context-usage';
 import { classifyError, isRetryableError } from '@/components/chat/ChatError';
 import { toError } from '@/lib/provider-error';
 import type { ConversationMeta } from '@/lib/conversation-store';
 import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, Conversation, TextAttachment, TokenUsageStats } from '@/types';
+import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, CompactionNotice, Conversation, TextAttachment, TokenUsageStats } from '@/types';
 
 /**
  * Minimum gap between mid-stream checkpoints of the in-flight assistant turn.
@@ -48,6 +56,13 @@ export interface UseChatStreamReturn {
   setIsHistoryOpen: (open: boolean) => void;
   isStreaming: boolean;
   /**
+   * True while a summarization call is folding old history into a checkpoint.
+   * Distinct from `isStreaming`: no assistant tokens are being produced.
+   */
+  isCompacting: boolean;
+  /** Transient explanation for a manual action that was a no-op, if any. */
+  compactionNotice: CompactionNotice | null;
+  /**
    * The in-flight assistant turn, shaped as a real `ChatMessage` so the list can
    * render it through the same component and React key as the persisted one.
    * `null` until the turn has produced something worth showing.
@@ -58,6 +73,8 @@ export interface UseChatStreamReturn {
   retryAttempt: number;
   handleSend: (input: string, images: string[], textAttachments: TextAttachment[], getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined, selectedProviderId: string, selectedModelId: string) => Promise<void>;
   handleRetry: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
+  /** Manually fold older history into a checkpoint. Backs the `/compact` command. */
+  handleCompact: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
   handleStop: () => void;
   handleNewChat: () => void;
   handleSelectConversation: (id: string) => Promise<void>;
@@ -99,6 +116,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
   const [streamingParts, setStreamingParts] = useState<ChatMessagePart[]>([]);
   // Identity of the assistant message currently being streamed: the id it will
   // be saved under, plus the moment the turn started. Allocated when the turn
@@ -115,6 +133,13 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Transient feedback for a manual action that was a no-op (e.g. `/compact` on
+   * a conversation that already fits its budget). Auto-dismisses, so it never
+   * becomes permanent chrome.
+   */
+  const [compactionNotice, setCompactionNotice] = useState<CompactionNotice | null>(null);
+  const compactionNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Identifies the request that currently owns the UI.
   const activeRequestIdRef = useRef<string | null>(null);
@@ -148,6 +173,29 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
    * across the async gap between starting the stream and finishing it.
    */
   const regenerateVariantsRef = useRef<import('@/types').ChatMessageVariant[] | null>(null);
+
+  /** How long a no-op notice stays on screen before fading out. */
+  const COMPACTION_NOTICE_MS = 5000;
+
+  const clearCompactionNotice = useCallback(() => {
+    if (compactionNoticeTimerRef.current) {
+      clearTimeout(compactionNoticeTimerRef.current);
+      compactionNoticeTimerRef.current = null;
+    }
+    setCompactionNotice(null);
+  }, []);
+
+  const showCompactionNotice = useCallback(
+    (notice: CompactionNotice) => {
+      if (compactionNoticeTimerRef.current) clearTimeout(compactionNoticeTimerRef.current);
+      setCompactionNotice(notice);
+      compactionNoticeTimerRef.current = setTimeout(() => {
+        compactionNoticeTimerRef.current = null;
+        setCompactionNotice(null);
+      }, COMPACTION_NOTICE_MS);
+    },
+    [COMPACTION_NOTICE_MS],
+  );
 
   /**
    * Persists the in-flight turn as an interrupted message, if there is one worth
@@ -190,6 +238,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     setChatError(null);
     setIsRetrying(false);
     setRetryAttempt(0);
+    setIsCompacting(false);
   }, [flushInterruptedTurn]);
 
   /**
@@ -222,6 +271,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     return () => {
       document.removeEventListener('visibilitychange', onHidden);
       flushInterruptedTurn();
+      if (compactionNoticeTimerRef.current) clearTimeout(compactionNoticeTimerRef.current);
       // Stop the request and any pending retry: nothing is left to render into,
       // and a retry firing after unmount would spend a model call for nobody.
       abortControllerRef.current?.abort();
@@ -292,7 +342,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       model: ModelConfig,
       attempt: number,
       resume?: ResumeState | null,
-      { canCreate = false }: { canCreate?: boolean } = {},
+      { canCreate = false, compact = true }: { canCreate?: boolean; compact?: boolean } = {},
     ) => {
       // Reuse the system prompt snapshot stored in the conversation so that
       // time-injected prompts stay stable across messages and provider prompt
@@ -309,11 +359,71 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         convWithUserMessage = { ..._conv, systemPrompt: system ?? undefined };
       }
 
-      const uiMessages = toUIMessages(convWithUserMessage.messages);
+      // Read per turn rather than once per hook, so a cap or budget the user
+      // changes in the options page applies to the next message instead of the
+      // next reload.
+      const { maxSteps, compaction: compactionSettings } = await storage.getUISettings();
 
-      // Read per turn rather than once per hook, so a cap the user changes in the
-      // options page applies to the next message instead of the next reload.
-      const { maxSteps } = await storage.getUISettings();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const requestId = uuidv4();
+      activeRequestIdRef.current = requestId;
+      const isStale = () => activeRequestIdRef.current !== requestId;
+
+      // Durable compaction runs once, on the first attempt of a fresh turn.
+      // Retries and resumes reuse the checkpoint the earlier attempt already
+      // paid for, and a resume snapshot would be invalidated by a boundary
+      // change anyway. Failure is non-fatal: an over-budget prompt is still far
+      // better than no reply at all.
+      if (compact && !resume && compactionSettings.enabled) {
+        setIsCompacting(true);
+        try {
+          const usage = computeContextUsage({
+            messages: convWithUserMessage.messages,
+            systemPrompt: convWithUserMessage.systemPrompt,
+            model,
+            ...(convWithUserMessage.compaction
+              ? {
+                  compaction: {
+                    createdAt: convWithUserMessage.compaction.createdAt,
+                    summary: convWithUserMessage.compaction.summary,
+                    firstKeptMessageId: convWithUserMessage.compaction.firstKeptMessageId,
+                  },
+                }
+              : {}),
+          });
+          if (usage && shouldCompact(usage.tokens, model.contextWindow ?? 0, compactionSettings)) {
+            const plan = planCompaction(convWithUserMessage, compactionSettings.keepRecentTokens);
+            if (plan) {
+              const summary = await generateCompactionSummary({
+                provider,
+                model,
+                messages: plan.messagesToSummarize,
+                ...(plan.previousSummary ? { previousSummary: plan.previousSummary } : {}),
+                conversationId: convWithUserMessage.id,
+                signal: controller.signal,
+              });
+              convWithUserMessage = applyCompaction(convWithUserMessage, {
+                summary: summary.text,
+                firstKeptMessageId: plan.firstKeptMessageId,
+                tokensBefore: usage.tokens,
+                ...(summary.usage ? { usage: summary.usage } : {}),
+              });
+              await saveConversation(convWithUserMessage);
+            }
+          }
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            console.error('[Lumo] Failed to compact conversation context:', error);
+          }
+        } finally {
+          if (!isStale()) setIsCompacting(false);
+        }
+      }
+
+      // The model prompt is the *projection*: a checkpoint followed by kept
+      // messages. The stored transcript keeps every message.
+      const uiMessages = toUIMessages(projectConversation(convWithUserMessage));
 
       // OCR availability decides whether image-producing tools are exposed, so
       // it belongs in the resume fingerprint alongside vision capability.
@@ -325,18 +435,19 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         model,
         messageCount: convWithUserMessage.messages.length,
         ocrAvailable,
+        ...(convWithUserMessage.compaction
+          ? {
+              compaction: {
+                firstKeptMessageId: convWithUserMessage.compaction.firstKeptMessageId,
+                createdAt: convWithUserMessage.compaction.createdAt,
+              },
+            }
+          : {}),
       });
       const resumeFrom =
         resume && resume.fingerprint === fingerprint ? resume : undefined;
       // A mismatched snapshot must not leak into the next attempt either.
       resumeStateRef.current = resumeFrom ?? null;
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      const requestId = uuidv4();
-      activeRequestIdRef.current = requestId;
-
-      const isStale = () => activeRequestIdRef.current !== requestId;
 
       let latestParts: ChatMessagePart[] = resumeFrom ? [...resumeFrom.parts] : [];
 
@@ -480,6 +591,20 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         isVision: model.isVision,
         maxSteps,
         resume: resumeFrom,
+        compaction: {
+          enabled: compactionSettings.enabled,
+          // The wire config is absolute: a percentage is resolved against this
+          // model's declared window so the loop's between-step check matches the
+          // pre-send threshold.
+          reserveTokens: resolveReserveTokens(compactionSettings.reserve, model.contextWindow ?? 0),
+          keepRecentTokens: compactionSettings.keepRecentTokens,
+          ...(convWithUserMessage.compaction
+            ? {
+                priorSummary: convWithUserMessage.compaction.summary,
+                summaryMessageCount: 1,
+              }
+            : {}),
+        },
         onStepComplete: (checkpoint) => {
           if (isStale()) return;
           resumeStateRef.current = { ...checkpoint, fingerprint };
@@ -542,7 +667,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
                 model,
                 nextAttempt,
                 resumeForRetry,
-                { canCreate },
+                { canCreate, compact: false },
               ).catch((retryError) => {
                 // Same hazard as the initial send: an unhandled rejection here
                 // would leave `isStreaming` stuck true with nothing on screen.
@@ -591,7 +716,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     ) => {
       const text = input.trim();
       if (!text && images.length === 0 && textAttachments.length === 0) return;
-      if (isStreaming) return;
+      if (isStreaming || isCompacting) return;
 
       const provider = getProvider();
       const model = getModel();
@@ -643,6 +768,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       setChatError(null);
       setIsRetrying(false);
       setRetryAttempt(0);
+      setIsCompacting(false);
+      clearCompactionNotice();
       // A new turn invalidates any snapshot left by the previous one.
       resumeStateRef.current = null;
       // ...and gets a fresh assistant identity, allocated by `executeStream`.
@@ -697,12 +824,12 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         setChatError(classifyError(toError(error)));
       }
     },
-    [isStreaming, currentConversation, openConversation, saveConversation, executeStream],
+    [isStreaming, isCompacting, currentConversation, openConversation, saveConversation, executeStream, clearCompactionNotice],
   );
 
   const handleRetry = useCallback(
     (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => {
-      if (!currentConversation || isStreaming) return;
+      if (!currentConversation || isStreaming || isCompacting) return;
 
       const provider = getProvider();
       const model = getModel();
@@ -723,14 +850,88 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         setStreamingTurn(null);
       }
 
-      void executeStream(currentConversation, provider, model, 0, resume).catch((error) => {
+      void executeStream(currentConversation, provider, model, 0, resume, { compact: false }).catch((error) => {
         setIsStreaming(false);
         setStreamingTurn(null);
         setIsRetrying(false);
         setChatError(classifyError(toError(error)));
       });
     },
-    [currentConversation, isStreaming, executeStream],
+    [currentConversation, isStreaming, isCompacting, executeStream],
+  );
+
+  /**
+   * Manually fold older history into a checkpoint.
+   *
+   * Backs the `/compact` command. Unlike the automatic path this ignores the
+   * live threshold — the user explicitly asked — but it still keeps
+   * `keepRecentTokens` verbatim, so it behaves like pi's `/compact`.
+   */
+  const handleCompact = useCallback(
+    (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => {
+      if (!currentConversation || isStreaming || isCompacting) return;
+      const provider = getProvider();
+      const model = getModel();
+      if (!provider || !model) return;
+      const conv = currentConversation;
+
+      setIsCompacting(true);
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      void (async () => {
+        try {
+          // Same cut rule as the automatic path: keep `keepRecentTokens` of
+          // recent history verbatim and fold the rest. `/compact` only skips the
+          // threshold check — when the conversation already fits the budget there
+          // is genuinely nothing to compact, exactly as in pi.
+          const { compaction: compactionSettings } = await storage.getUISettings();
+          const plan = planCompaction(conv, compactionSettings.keepRecentTokens);
+          if (!plan) {
+            // Nothing failed — the conversation simply has not crossed the
+            // retained-token budget yet. Explain that instead of vanishing.
+            showCompactionNotice({
+              kind: 'nothing-to-compact',
+              keepRecentTokens: compactionSettings.keepRecentTokens,
+            });
+            return;
+          }
+
+          const usage = computeContextUsage({
+            messages: conv.messages,
+            systemPrompt: conv.systemPrompt,
+            model,
+            ...(conv.compaction
+              ? { compaction: { createdAt: conv.compaction.createdAt, summary: conv.compaction.summary, firstKeptMessageId: conv.compaction.firstKeptMessageId } }
+              : {}),
+          });
+          const summary = await generateCompactionSummary({
+            provider,
+            model,
+            messages: plan.messagesToSummarize,
+            ...(plan.previousSummary ? { previousSummary: plan.previousSummary } : {}),
+            conversationId: conv.id,
+            signal: controller.signal,
+          });
+          const updated = applyCompaction(conv, {
+            summary: summary.text,
+            firstKeptMessageId: plan.firstKeptMessageId,
+            tokensBefore: usage?.tokens ?? 0,
+            ...(summary.usage ? { usage: summary.usage } : {}),
+          });
+          await saveConversation(updated);
+          await openConversation(updated);
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            console.error('[Lumo] Failed to compact conversation context:', error);
+          }
+        } finally {
+          if (abortControllerRef.current === controller) abortControllerRef.current = null;
+          setIsCompacting(false);
+        }
+      })();
+    },
+    [currentConversation, isStreaming, isCompacting, saveConversation, openConversation, showCompactionNotice],
   );
 
   const handleStop = useCallback(() => {
@@ -933,12 +1134,15 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     isHistoryOpen,
     setIsHistoryOpen,
     isStreaming,
+    isCompacting,
+    compactionNotice,
     streamingMessage,
     chatError,
     isRetrying,
     retryAttempt,
     handleSend,
     handleRetry,
+    handleCompact,
     handleStop,
     handleNewChat,
     handleSelectConversation,

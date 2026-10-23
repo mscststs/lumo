@@ -1,6 +1,7 @@
 import type {
   ChatMessage,
   ChatMessagePart,
+  ConversationCompaction,
   ModelConfig,
   TextAttachment,
   TokenUsageStats,
@@ -64,6 +65,15 @@ export interface ContextUsageInput {
   pendingParts?: readonly ChatMessagePart[];
   /** The selected model, whose declared window sizes the ring. */
   model?: Pick<ModelConfig, 'contextWindow'>;
+  /**
+   * Durable compaction checkpoint, when one exists.
+   *
+   * Assistant usage recorded *before* the checkpoint describes a prompt that
+   * carried the un-summarized history, so it is not a valid anchor any more.
+   * Only turns that ran after `createdAt` re-anchor the estimate; until then the
+   * summary is counted by the heuristic alongside the kept messages.
+   */
+  compaction?: Pick<ConversationCompaction, 'createdAt' | 'summary' | 'firstKeptMessageId'>;
 }
 
 /** The chars/4 heuristic for a plain string. */
@@ -153,12 +163,15 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage | nu
 
   // Walk backwards to the most recent assistant turn with a real prompt count.
   // Anything after it (a fresh user message, a partially streamed reply) is
-  // estimated and added on top.
+  // estimated and added on top. Turns recorded before a compaction checkpoint
+  // are skipped: their usage measured a prompt that included history the
+  // checkpoint has since folded away, so trusting it would overstate the window.
   let anchorIndex = -1;
   let anchorUsage: TokenUsageStats | undefined;
   for (let i = input.messages.length - 1; i >= 0; i--) {
     const message = input.messages[i]!;
     if (message.role !== 'assistant') continue;
+    if (input.compaction && message.timestamp <= input.compaction.createdAt) continue;
     const usage = activeUsage(message);
     if (usage && turnContextTokens(usage) !== null) {
       anchorIndex = i;
@@ -186,8 +199,20 @@ export function computeContextUsage(input: ContextUsageInput): ContextUsage | nu
     // No turn has run against a real prompt yet, so the whole context is a
     // heuristic. Tool schemas are not visible from here and are the largest
     // omission; the first completed turn replaces this with the exact count.
+    // A checkpoint's summary rides ahead of the kept transcript, and only the
+    // kept range is actually sent — counting the summarized messages too would
+    // overstate the window by exactly the history compaction just removed.
     if (input.systemPrompt) trailingTokens += estimateTextTokens(input.systemPrompt);
-    for (const message of input.messages) trailingTokens += estimateMessageTokens(message);
+    if (input.compaction) {
+      trailingTokens += estimateTextTokens(input.compaction.summary);
+      const boundary = input.messages.findIndex(
+        (message) => message.id === input.compaction!.firstKeptMessageId,
+      );
+      const kept = boundary >= 0 ? input.messages.slice(boundary) : input.messages;
+      for (const message of kept) trailingTokens += estimateMessageTokens(message);
+    } else {
+      for (const message of input.messages) trailingTokens += estimateMessageTokens(message);
+    }
   }
 
   const pending = input.pendingParts?.length

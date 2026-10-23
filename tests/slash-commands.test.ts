@@ -48,7 +48,7 @@ describe('command names', () => {
 describe('resolveEnabledCommands', () => {
   it('ships both built-ins enabled by default', () => {
     const resolved = resolveEnabledCommands(DEFAULT_COMMAND_SETTINGS);
-    expect(resolved.map((c) => c.name)).toEqual(['new', 'exit']);
+    expect(resolved.map((c) => c.name)).toEqual(['new', 'compact', 'exit']);
   });
 
   it('returns nothing when the master switch is off', () => {
@@ -69,7 +69,7 @@ describe('resolveEnabledCommands', () => {
       userCommands: [user({ name: 'fy' }), user({ name: 'off', enabled: false })],
     };
     const resolved = resolveEnabledCommands(settings);
-    expect(resolved.map((c) => c.name)).toEqual(['new', 'fy']);
+    expect(resolved.map((c) => c.name)).toEqual(['new', 'compact', 'fy']);
   });
 
   it('drops a colliding user command in favour of the built-in already listed', () => {
@@ -80,7 +80,7 @@ describe('resolveEnabledCommands', () => {
       userCommands: [user({ name: 'new', phrase: 'should not win' })],
     };
     const resolved = resolveEnabledCommands(settings);
-    expect(resolved).toHaveLength(2);
+    expect(resolved).toHaveLength(3);
     expect(resolved[0]).toMatchObject({ kind: 'builtin', name: 'new' });
   });
 });
@@ -89,7 +89,7 @@ describe('enabled-name uniqueness', () => {
   it('disables a built-in when a user command of the same name is enabled', () => {
     const next = upsertUserCommand(DEFAULT_COMMAND_SETTINGS, user({ name: 'new', phrase: 'hi' }));
     expect(next.disabledBuiltins).toContain('new');
-    expect(resolveEnabledCommands(next).map((c) => c.name)).toEqual(['exit', 'new']);
+    expect(resolveEnabledCommands(next).map((c) => c.name)).toEqual(['compact', 'exit', 'new']);
     expect(resolveEnabledCommands(next).find((c) => c.name === 'new')).toMatchObject({
       kind: 'user',
       phrase: 'hi',
@@ -216,6 +216,6 @@ describe('normalizeCommandSettings', () => {
   });
 
   it('knows every shipped built-in', () => {
-    expect(BUILTIN_COMMANDS.map((c) => c.id).sort()).toEqual(['exit', 'new']);
+    expect(BUILTIN_COMMANDS.map((c) => c.id).sort()).toEqual(['compact', 'exit', 'new']);
   });
 });

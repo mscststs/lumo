@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -8,6 +8,7 @@ import {
   useConversationScroll,
 } from '@/components/ai-elements/conversation';
 import { MessageBubble } from '@/components/chat/MessageBubble';
+import { CompactionDivider } from '@/components/chat/CompactionDivider';
 import { ChatError } from '@/components/chat/ChatError';
 import { MAX_RETRIES } from '@/lib/retry-policy';
 import { storage } from '@/store/storage';
@@ -18,6 +19,8 @@ import type { ChatMessage, Conversation, UISettings, MessageToolbarSettings } fr
 interface ChatMessageListProps {
   currentConversation: Conversation | null;
   isStreaming: boolean;
+  /** True while old history is being folded into a checkpoint. */
+  isCompacting?: boolean;
   /** The in-flight assistant turn, or `null` when it has nothing to show yet. */
   streamingMessage: ChatMessage | null;
   chatError: ChatErrorInfo | null;
@@ -33,6 +36,7 @@ interface ChatMessageListProps {
 export function ChatMessageList({
   currentConversation,
   isStreaming,
+  isCompacting = false,
   streamingMessage,
   chatError,
   isRetrying,
@@ -49,7 +53,7 @@ export function ChatMessageList({
   // ─── Message toolbar visibility settings ─────────────────────────────────
   const DEFAULT_TOOLBAR: MessageToolbarSettings = { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' };
   const [toolbar, setToolbar] = useState<MessageToolbarSettings>(DEFAULT_TOOLBAR);
-  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(false);
+  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(true);
 
   useEffect(() => {
     storage.getUISettings().then((s) => {
@@ -60,10 +64,19 @@ export function ChatMessageList({
 
   useStorageWatch<UISettings>('uiSettings', (newVal) => {
     if (newVal?.messageToolbar) setToolbar(newVal.messageToolbar);
-    setAutoCollapseReasoning(newVal?.autoCollapseReasoning === true);
+    setAutoCollapseReasoning(newVal?.autoCollapseReasoning !== false);
   });
 
   const persisted = currentConversation?.messages ?? [];
+  const compaction = currentConversation?.compaction;
+  // The seam is a chronological event, not the prompt-projection boundary: it
+  // is drawn *after* the message that was newest when compaction ran, matching
+  // pi which appends the compaction message at its chronological position. The
+  // retained messages (and the summarized ones, kept for reading) stay above it.
+  // Falls back to the projection boundary for records written before the anchor
+  // existed.
+  const compactionAnchorId =
+    compaction?.triggeredAtMessageId ?? compaction?.firstKeptMessageId;
 
   // ─── Auto-scroll to bottom when the user sends a new message ────────────
   // When the user is scrolled up reviewing history and then sends a message,
@@ -123,27 +136,31 @@ export function ChatMessageList({
           </div>
         )}
         {rendered.map((msg, idx) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            isStreaming={isStreaming && msg.id === pending?.id}
-            onDelete={onDeleteMessage}
-            onRegenerate={onRegenerateMessage}
-            onSwitchVariant={onSwitchVariant}
-            isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
-            deleteCount={rendered.length - idx}
-            toolbar={toolbar}
-            autoCollapseReasoning={autoCollapseReasoning}
-          />
+          <Fragment key={msg.id}>
+            <MessageBubble
+              message={msg}
+              isStreaming={isStreaming && msg.id === pending?.id}
+              onDelete={onDeleteMessage}
+              onRegenerate={onRegenerateMessage}
+              onSwitchVariant={onSwitchVariant}
+              isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
+              deleteCount={rendered.length - idx}
+              toolbar={toolbar}
+              autoCollapseReasoning={autoCollapseReasoning}
+            />
+            {compaction && compactionAnchorId === msg.id && (
+              <CompactionDivider compaction={compaction} />
+            )}
+          </Fragment>
         ))}
-        {isStreaming && !pending && !chatError && (
+        {(isStreaming || isCompacting) && !pending && !chatError && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="flex items-center gap-2 text-muted-foreground text-sm py-1"
           >
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-pulse" />
-            {t('sidebar.thinking')}
+            {isCompacting ? t('sidebar.compacting') : t('sidebar.thinking')}
           </motion.div>
         )}
         {/* Error display with retry controls */}

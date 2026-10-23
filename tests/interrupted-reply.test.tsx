@@ -65,7 +65,11 @@ vi.mock('@/store/storage', () => ({
   storage: {
     getSystemPrompt: async () => ({ enabled: false, prompt: '' }),
     // Read per turn to pick up the tool step cap; the default is "no cap".
-    getUISettings: async () => ({ maxSteps: 0 }),
+    // Compaction is off so this suite exercises the streaming path only.
+    getUISettings: async () => ({
+      maxSteps: 0,
+      compaction: { enabled: false, reserve: { unit: 'tokens', value: 16384 }, keepRecentTokens: 20000 },
+    }),
     bumpConversationsRevision: async () => {},
   },
 }));

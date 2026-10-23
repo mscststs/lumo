@@ -47,6 +47,9 @@ export const zh: TranslationSchema = {
     tokenSteps: '步骤',
     contextUsage: '上下文',
     contextUsageLabel: '上下文已用 {{percent}}',
+    compactedHistory: '已压缩历史',
+    compacting: '正在压缩上下文…',
+    compactNothing: '暂无可压缩的内容——当前对话还没有超过 {{tokens}} 的保留预算。',
     contextEstimated: '估算',
     contextRemaining: '剩余',
     contextPending: '待发送',
@@ -139,6 +142,7 @@ export const zh: TranslationSchema = {
   commands: {
     builtin: {
       new: '开启新对话',
+      compact: '总结较早的历史以释放上下文',
       exit: '关闭侧边栏',
     },
     badge: {
@@ -343,6 +347,13 @@ export const zh: TranslationSchema = {
       maxStepsCustom: '自定义',
       autoCollapseReasoning: '自动折叠思考过程',
       autoCollapseReasoningDesc: '思考输出结束后自动收起推理内容，而不是一直展开。',
+      groupCompaction: '上下文压缩',
+      compactionEnabled: '自动压缩',
+      compactionEnabledDesc: '上下文接近上限时，自动将较早的历史总结为检查点，让长对话得以继续。',
+      compactionReserve: '压缩预留',
+      compactionReserveDesc: '触发压缩前为下一轮回复预留的空间，可设为固定 Token 或窗口百分比。',
+      compactionKeepRecent: '保留最近 Token',
+      tokenBudgetCustom: '自定义',
       groupMessageToolbar: '消息工具栏',
       toolbarCopy: '复制',
       toolbarRegenerate: '重新生成',
