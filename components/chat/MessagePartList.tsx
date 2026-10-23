@@ -45,7 +45,15 @@ export function MessagePartList({
 
         switch (part.type) {
           case 'text':
-            if (!part.text) return null;
+            // Whitespace-only, not just empty: a provider commonly opens a step
+            // with a `"\n"` text delta before it issues a tool call, and the
+            // SDK turns that into a real text part. Rendered, it becomes an
+            // apparently empty `.sd-message-response` block, and because
+            // `MessageContent` is a `gap-1` column that block still contributes
+            // a gap above and below — widening the space between two tool calls
+            // for no content. `\S` rather than `.trim()` so the check does not
+            // copy long streamed strings just to decide whether they are blank.
+            if (!/\S/.test(part.text)) return null;
             return (
               <MessageResponse key={key} isStreaming={isStreaming && part.state === 'streaming'}>
                 {part.text}
@@ -53,7 +61,9 @@ export function MessagePartList({
             );
 
           case 'reasoning':
-            if (!part.text) return null;
+            // Same reasoning as the text case above: a blank reasoning part is
+            // a spacing artefact, not something to show.
+            if (!/\S/.test(part.text)) return null;
             return (
               <Reasoning
                 key={key}
