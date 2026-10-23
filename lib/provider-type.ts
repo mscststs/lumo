@@ -10,6 +10,7 @@ import {
   normalizeReasoningEffort,
 } from '@/lib/reasoning-effort';
 import { deriveOpenCodeSession, openCodeBaseUrl, openCodeModelsUrl } from '@/lib/opencode';
+import { normalizeContextWindow } from '@/lib/context-window';
 
 /** i18n key suffix under `options.models.providerTypes` for each type. */
 export const PROVIDER_TYPE_I18N_KEY: Record<ProviderType, string> = {
@@ -84,9 +85,21 @@ export function normalizeProviderType(type: StoredProviderType | undefined): Pro
  * hand React a fresh identity for every row.
  */
 function normalizeModel(model: ModelConfig): ModelConfig {
-  if (model.reasoningEffort === undefined) return model;
-  const reasoningEffort = normalizeReasoningEffort(model.reasoningEffort);
-  return reasoningEffort === model.reasoningEffort ? model : { ...model, reasoningEffort };
+  let next = model;
+  if (next.reasoningEffort !== undefined) {
+    const reasoningEffort = normalizeReasoningEffort(next.reasoningEffort);
+    if (reasoningEffort !== next.reasoningEffort) next = { ...next, reasoningEffort };
+  }
+  // A present-but-invalid window (a hand-edited export) is dropped to
+  // `undefined` rather than clamped, so the ring hides instead of dividing by a
+  // number the user never entered. An absent field stays absent, like
+  // `reasoningEffort`: materialising it would hand React a fresh identity for
+  // every model stored before this field existed.
+  if (next.contextWindow !== undefined) {
+    const contextWindow = normalizeContextWindow(next.contextWindow);
+    if (contextWindow !== next.contextWindow) next = { ...next, contextWindow };
+  }
+  return next;
 }
 
 /** Read a stored provider with its vendor, type and models migrated to current values. */

@@ -125,6 +125,14 @@ describe('draft normalization', () => {
     const result = normalizeModelDraft(model({ modelId: ' gpt-4o ', displayName: ' GPT ' }));
     expect(result).toMatchObject({ modelId: 'gpt-4o', displayName: 'GPT' });
   });
+
+  it('stores an empty or unusable context window as absent', () => {
+    // "Not declared" must have a single representation: the ring's hide-rule
+    // reads `undefined`, so an empty form string cannot be allowed to survive.
+    expect(normalizeModelDraft(model({ contextWindow: undefined })).contextWindow).toBeUndefined();
+    expect(normalizeModelDraft(model({ contextWindow: 500 })).contextWindow).toBeUndefined();
+    expect(normalizeModelDraft(model({ contextWindow: 128_000 })).contextWindow).toBe(128_000);
+  });
 });
 
 describe('validation error keys resolve in every locale', () => {

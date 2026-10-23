@@ -28,6 +28,15 @@ export interface ModelConfig {
   displayName: string;
   isVision: boolean;
   /**
+   * Declared context window for this model, in tokens.
+   *
+   * Providers do not report this over the wire, so it is *configuration*: the
+   * user declares it and the composer's context ring divides by it. Optional
+   * on purpose — an absent value means "unknown", and the ring is hidden rather
+   * than drawn against an invented window. See `lib/context-window.ts`.
+   */
+  contextWindow?: number;
+  /**
    * How hard this model should think before answering.
    *
    * Per-model rather than per-provider because the available levels are a

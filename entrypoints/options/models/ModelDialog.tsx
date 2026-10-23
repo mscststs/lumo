@@ -21,6 +21,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { isOpenAIProvider, resolveModelsUrl } from '@/lib/provider-type';
 import type { ModelConfig, ProviderType, ProviderVendor } from '@/types';
+import { ContextWindowField } from '@/entrypoints/options/components/ContextWindowField';
 import {
   isWireEffort,
   normalizeReasoningEffort,
@@ -266,6 +267,16 @@ export function ModelDialog({
                 </Select>
               );
             }}
+          </Field>
+
+          <Field label={t('options.models.contextWindow')}>
+            {(props) => (
+              <ContextWindowField
+                value={value.contextWindow}
+                onChange={(contextWindow) => patch({ contextWindow })}
+                controlProps={props}
+              />
+            )}
           </Field>
 
           <FieldToggleRow

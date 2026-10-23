@@ -119,6 +119,16 @@ describe('normalizeProvider', () => {
     expect(normalizeProvider(stored)).toBe(stored);
   });
 
+  it('drops an unusable context window and keeps a valid one', () => {
+    // Same reasoning as an unknown reasoning level: a hand-edited export must
+    // not reach the ring as a denominator the user never chose.
+    const invalid = provider({ models: [model({ contextWindow: -1 })] });
+    expect(normalizeProvider(invalid).models[0]!.contextWindow).toBeUndefined();
+
+    const valid = provider({ models: [model({ contextWindow: 128_000 })] });
+    expect(normalizeProvider(valid).models[0]!.contextWindow).toBe(128_000);
+  });
+
   it('tolerates a config with no models array', () => {
     // Imported files are not guaranteed to be well-formed, and throwing here
     // would take down the whole import rather than one provider.

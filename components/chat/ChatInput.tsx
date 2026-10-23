@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { SuggestionPopup } from '@/components/ui/suggestion-popup';
+import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
+import { estimateDraftTokens, type ContextUsage } from '@/lib/context-usage';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME, LUMO_INPUT_CHIP_MIME } from '@/lib/constants';
 import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
@@ -75,6 +77,11 @@ interface ChatInputProps {
    * handler, and drag-and-drop acceptance.
    */
   canAcceptImages: boolean;
+  /**
+   * Current context-window occupancy for the composer's ring. `null` (or
+   * absent) hides the ring — the model has no declared window.
+   */
+  contextUsage?: ContextUsage | null;
   onSend: (input: string, images: string[], textAttachments: TextAttachment[]) => void;
   onStop: () => void;
   /**
@@ -92,7 +99,7 @@ interface ChatInputProps {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { isStreaming, canAcceptImages, onSend, onStop, onCommand, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
+  { isStreaming, canAcceptImages, contextUsage, onSend, onStop, onCommand, isInternalDrag, onInternalFileDrop, onInternalTextDrop, onInternalAttachmentDrop },
   ref,
 ) {
   const { t } = useTranslation();
@@ -738,7 +745,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               </Button>
             )}
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
+            {contextUsage && (
+              <ContextUsageRing
+                usage={contextUsage}
+                pendingTokens={estimateDraftTokens({
+                  text: input,
+                  images,
+                  attachments: textAttachments,
+                })}
+              />
+            )}
             {isStreaming ? (
               <Button
                 variant="ghost"

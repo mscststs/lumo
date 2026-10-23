@@ -92,7 +92,6 @@ export function ProviderDialog({
     }
   };
 
-  const typeKey = PROVIDER_TYPE_I18N_KEY[value.type];
   const vendor = value.vendor ?? 'custom';
 
   return (
@@ -131,10 +130,7 @@ export function ProviderDialog({
 
           {/* Vendor first: it decides which paths and request headers the
               protocol choice below will actually be spoken to. */}
-          <Field
-            label={t('options.models.providerVendor')}
-            hint={t(`options.models.vendors.${PROVIDER_VENDOR_I18N_KEY[vendor]}.hint`)}
-          >
+          <Field label={t('options.models.providerVendor')}>
             {({ id, 'aria-describedby': describedBy }) => (
               <Select
                 value={vendor}
@@ -154,12 +150,9 @@ export function ProviderDialog({
             )}
           </Field>
 
-          {/* The two OpenAI variants hit different endpoints, so the hint spells
-              out which one a given gateway actually serves. */}
-          <Field
-            label={t('options.models.providerProtocol')}
-            hint={t(`options.models.providerTypes.${typeKey}.hint`)}
-          >
+          {/* The two OpenAI variants hit different endpoints, so the choice
+              itself has to distinguish them; the labels do. */}
+          <Field label={t('options.models.providerProtocol')}>
             {({ id, 'aria-describedby': describedBy }) => (
               <Select
                 value={value.type}

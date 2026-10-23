@@ -1,4 +1,5 @@
 import type { ModelConfig, ProviderConfig } from '@/types';
+import { normalizeContextWindow } from '@/lib/context-window';
 
 /**
  * Field-level validation for the provider and model forms.
@@ -102,6 +103,10 @@ export function normalizeModelDraft(draft: ModelConfig): ModelConfig {
     ...draft,
     modelId: draft.modelId.trim(),
     displayName: draft.displayName.trim(),
+    // An empty or unusable window is stored as absent, so "not declared" has a
+    // single representation and the ring's hide-rule cannot be bypassed by an
+    // empty string.
+    contextWindow: normalizeContextWindow(draft.contextWindow),
   };
 }
 

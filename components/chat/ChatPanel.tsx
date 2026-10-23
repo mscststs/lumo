@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,6 +15,7 @@ import { fileRefContent } from '@/lib/file-drag';
 import { classifyDroppedFile, importTextFiles } from '@/lib/file-import';
 import { buildPageContextAttachment } from '@/lib/page-context';
 import { createTextAttachment } from '@/lib/text-attachment';
+import { computeContextUsage } from '@/lib/context-usage';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
 import type { BuiltinCommandAction } from '@/lib/slash-commands';
 import type { TextAttachment, Conversation } from '@/types';
@@ -134,6 +135,24 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     handleSwitchVariant,
     handleClearAllConversations,
   } = useChatStream({ panelId: panelIndex, occupiedSessionIds });
+
+  /**
+   * Context-window occupancy for the composer's ring.
+   *
+   * Derived from the visible conversation plus the in-flight reply, so the
+   * number tracks what the model would actually be sent. `streamingMessage`
+   * stands in for the assistant turn until it is persisted into the
+   * conversation, which keeps the estimate from briefly collapsing mid-stream.
+   */
+  const contextUsage = useMemo(() => {
+    if (!currentConversation) return null;
+    return computeContextUsage({
+      messages: currentConversation.messages,
+      systemPrompt: currentConversation.systemPrompt,
+      pendingParts: isStreaming ? streamingMessage?.parts : undefined,
+      model: getSelectedModel(),
+    });
+  }, [currentConversation, isStreaming, streamingMessage, getSelectedModel]);
 
   useEffect(() => {
     loadData();
@@ -648,6 +667,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         ref={chatInputRef}
         isStreaming={isStreaming}
         canAcceptImages={canAcceptImages()}
+        contextUsage={contextUsage}
         onSend={onSend}
         onStop={handleStop}
         onCommand={onCommand}

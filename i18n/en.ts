@@ -43,6 +43,11 @@ export const en = {
     tokenReasoning: 'Reasoning',
     tokenTotal: 'Total',
     tokenSteps: 'Steps',
+    contextUsage: 'Context',
+    contextUsageLabel: 'Context {{percent}} used',
+    contextEstimated: 'estimated',
+    contextRemaining: 'Remaining',
+    contextPending: 'Draft',
     interrupted: 'Reply interrupted',
     stepLimit: 'Tool step limit reached',
     contextMenu: {
@@ -184,25 +189,20 @@ export const en = {
       vendors: {
         custom: {
           label: 'Custom',
-          hint: 'Any self-hosted or third-party endpoint, called directly with the protocol below.',
         },
         opencode: {
           label: 'OpenCode',
-          hint: 'OpenCode (Zen / Console). Picks the official endpoint for the protocol and adds its required client and session headers.',
         },
       },
       providerTypes: {
         openaiChat: {
           label: 'OpenAI Compatible (Chat)',
-          hint: 'Calls POST {baseUrl}/chat/completions. Use this for OpenAI-compatible gateways such as DeepSeek, Moonshot, SiliconFlow, OpenRouter, OneAPI or Ollama.',
         },
         openaiResponses: {
           label: 'OpenAI Responses',
-          hint: 'Calls POST {baseUrl}/responses. Only for official OpenAI or a gateway that genuinely proxies the Responses API. Choose Chat if you are unsure.',
         },
         anthropic: {
           label: 'Anthropic',
-          hint: 'Calls the Anthropic Messages API.',
         },
       },
       baseUrl: 'Base URL',
@@ -226,6 +226,9 @@ export const en = {
       visionBadge: 'Vision',
       reasoningEffort: 'Reasoning Effort',
       reasoningEffortDefault: 'Provider default (send nothing)',
+      contextWindow: 'Context Window',
+      contextWindowCustom: 'Custom',
+      contextWindowUnset: 'Not set',
       modelCount_one: '{{count}} model',
       modelCount_other: '{{count}} models',
       noModels: 'No models yet',

@@ -45,6 +45,11 @@ export const zh: TranslationSchema = {
     tokenReasoning: '推理',
     tokenTotal: '总计',
     tokenSteps: '步骤',
+    contextUsage: '上下文',
+    contextUsageLabel: '上下文已用 {{percent}}',
+    contextEstimated: '估算',
+    contextRemaining: '剩余',
+    contextPending: '待发送',
     interrupted: '回复已中断',
     stepLimit: '已达到工具步数上限',
     contextMenu: {
@@ -181,25 +186,20 @@ export const zh: TranslationSchema = {
       vendors: {
         custom: {
           label: '自定义',
-          hint: '任意自建或第三方托管的接口，按下面的协议类型直接请求。',
         },
         opencode: {
           label: 'OpenCode',
-          hint: 'OpenCode（Zen / Console）。按协议自动选用官方端点，并携带其要求的客户端与会话标识。',
         },
       },
       providerTypes: {
         openaiChat: {
           label: 'OpenAI 兼容（Chat）',
-          hint: '请求 POST {baseUrl}/chat/completions。适用于 DeepSeek、Moonshot、硅基流动、OpenRouter、OneAPI、Ollama 等 OpenAI 兼容网关。',
         },
         openaiResponses: {
           label: 'OpenAI Responses',
-          hint: '请求 POST {baseUrl}/responses。仅适用于 OpenAI 官方接口，或确实代理了 Responses API 的网关。不确定时请选择 Chat。',
         },
         anthropic: {
           label: 'Anthropic',
-          hint: '请求 Anthropic Messages API。',
         },
       },
       baseUrl: '接口地址',
@@ -223,6 +223,9 @@ export const zh: TranslationSchema = {
       visionBadge: '视觉',
       reasoningEffort: '思考强度',
       reasoningEffortDefault: '跟随提供商默认（不发送）',
+      contextWindow: '上下文窗口',
+      contextWindowCustom: '自定义',
+      contextWindowUnset: '未设置',
       modelCount_one: '{{count}} 个模型',
       modelCount_other: '{{count}} 个模型',
       noModels: '暂无模型',
