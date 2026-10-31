@@ -434,6 +434,10 @@
       "serverType": "Siirtotyyppi",
       "serverUrl": "Palvelimen URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Pakollinen",
+        "invalidUrl": "Virheellinen URL-muoto"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moderni suoratoistosiirto (suositeltu)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Laajennuksen tunnus",
         "idPlaceholder": "32 merkin laajennuksen tunnus",
         "invalidId": "Anna 32 merkin Chromium-laajennuksen tunnus.",
+        "duplicate": "Tämä laajennus on jo lisätty",
         "empty": "Laajennustarjoajia ei ole vielä lisätty.",
         "badge": "Laajennus",
         "refresh": "Yhdistä uudelleen",

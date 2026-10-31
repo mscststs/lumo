@@ -434,6 +434,10 @@
       "serverType": "Loại truyền tải",
       "serverUrl": "URL máy chủ",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Bắt buộc",
+        "invalidUrl": "Định dạng URL không hợp lệ"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Truyền tải luồng hiện đại (khuyến nghị)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ID tiện ích",
         "idPlaceholder": "ID tiện ích 32 ký tự",
         "invalidId": "Nhập ID tiện ích Chromium 32 ký tự.",
+        "duplicate": "Tiện ích này đã được thêm",
         "empty": "Chưa thêm nhà cung cấp tiện ích nào.",
         "badge": "Tiện ích",
         "refresh": "Kết nối lại",

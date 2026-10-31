@@ -434,6 +434,10 @@
       "serverType": "वाहतूक प्रकार",
       "serverUrl": "सर्व्हर URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "आवश्यक",
+        "invalidUrl": "अवैध URL स्वरूप"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "आधुनिक स्ट्रीमिंग वाहतूक (शिफारस)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "एक्स्टेंशन ID",
         "idPlaceholder": "३२ अक्षरी एक्स्टेंशन ID",
         "invalidId": "३२ अक्षरी Chromium एक्स्टेंशन ID प्रविष्ट करा.",
+        "duplicate": "हे विस्तार आधीच जोडले आहे",
         "empty": "अजून एक्स्टेंशन प्रदाते जोडलेले नाहीत.",
         "badge": "एक्स्टेंशन",
         "refresh": "पुन्हा जोडा",

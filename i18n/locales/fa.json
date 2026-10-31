@@ -434,6 +434,10 @@
       "serverType": "نوع انتقال",
       "serverUrl": "نشانی سرور",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "الزامی",
+        "invalidUrl": "قالب URL نامعتبر است"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "انتقال جریانی مدرن (توصیه‌شده)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "شناسه افزونه",
         "idPlaceholder": "شناسه افزونه ۳۲ نویسه‌ای",
         "invalidId": "شناسه افزونه Chromium با ۳۲ نویسه وارد کنید.",
+        "duplicate": "این افزونه قبلاً اضافه شده است",
         "empty": "هنوز ارائه‌دهنده افزونه‌ای اضافه نشده است.",
         "badge": "افزونه",
         "refresh": "اتصال دوباره",

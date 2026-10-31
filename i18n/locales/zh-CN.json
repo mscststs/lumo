@@ -434,6 +434,10 @@
       "serverType": "传输类型",
       "serverUrl": "服务器地址",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "必填",
+        "invalidUrl": "URL 格式不正确"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "现代流式传输（推荐）",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "扩展 ID",
         "idPlaceholder": "32 位扩展 ID",
         "invalidId": "请输入 32 位 Chromium 扩展 ID。",
+        "duplicate": "该扩展已添加",
         "empty": "尚未添加扩展服务。",
         "badge": "扩展",
         "refresh": "重新连接",

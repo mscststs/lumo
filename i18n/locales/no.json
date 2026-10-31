@@ -434,6 +434,10 @@
       "serverType": "Transporttype",
       "serverUrl": "Server-URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Påkrevd",
+        "invalidUrl": "Ugyldig URL-format"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moderne strømmetransport (anbefalt)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Utvidelses-ID",
         "idPlaceholder": "32-tegns utvidelses-ID",
         "invalidId": "Skriv inn en 32-tegns Chromium-utvidelses-ID.",
+        "duplicate": "Denne utvidelsen er allerede lagt til",
         "empty": "Ingen utvidelsesleverandører lagt til ennå.",
         "badge": "Utvidelse",
         "refresh": "Koble til på nytt",

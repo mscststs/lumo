@@ -438,6 +438,10 @@
       "serverType": "نوع النقل",
       "serverUrl": "عنوان URL للخادم",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "مطلوب",
+        "invalidUrl": "تنسيق URL غير صالح"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "نقل بث حديث (موصى به)",
       "sse": "SSE",
@@ -487,6 +491,7 @@
         "idLabel": "معرّف الإضافة",
         "idPlaceholder": "معرّف إضافة من 32 حرفًا",
         "invalidId": "أدخل معرّف إضافة Chromium من 32 حرفًا.",
+        "duplicate": "هذا الامتداد مضاف بالفعل",
         "empty": "لم تُضف مزوّدو إضافات بعد.",
         "badge": "إضافة",
         "refresh": "إعادة الاتصال",

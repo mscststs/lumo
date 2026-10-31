@@ -434,6 +434,10 @@
       "serverType": "પરિવહન પ્રકાર",
       "serverUrl": "સર્વર URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "જરૂરી",
+        "invalidUrl": "અમાન્ય URL ફોર્મેટ"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "આધુનિક સ્ટ્રીમિંગ પરિવહન (ભલામણ)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "એક્સ્ટેન્શન ID",
         "idPlaceholder": "32-અક્ષર એક્સ્ટેન્શન ID",
         "invalidId": "32-અક્ષરનું Chromium એક્સ્ટેન્શન ID દાખલ કરો.",
+        "duplicate": "આ એક્સ્ટેન્શન પહેલેથી ઉમેરાયેલું છે",
         "empty": "હજી કોઈ એક્સ્ટેન્શન પ્રદાતા ઉમેરાયા નથી.",
         "badge": "એક્સ્ટેન્શન",
         "refresh": "ફરી જોડો",

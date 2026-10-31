@@ -434,6 +434,10 @@
       "serverType": "Edastuse tüüp",
       "serverUrl": "Serveri URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Kohustuslik",
+        "invalidUrl": "Vigane URL-i vorming"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moodne voogedastus (soovitatav)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Laajendi ID",
         "idPlaceholder": "32-kohaline laajendi ID",
         "invalidId": "Sisestage 32-kohaline Chromiumi laajendi ID.",
+        "duplicate": "See laiendus on juba lisatud",
         "empty": "Laajendite pakkujaid pole veel lisatud.",
         "badge": "Laajend",
         "refresh": "Ühenda uuesti",

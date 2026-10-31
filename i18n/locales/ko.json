@@ -434,6 +434,10 @@
       "serverType": "전송 유형",
       "serverUrl": "서버 URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "필수",
+        "invalidUrl": "올바르지 않은 URL 형식"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "최신 스트리밍 전송(권장)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "확장 프로그램 ID",
         "idPlaceholder": "32자 확장 프로그램 ID",
         "invalidId": "32자 Chromium 확장 프로그램 ID를 입력하세요.",
+        "duplicate": "이 확장 프로그램은 이미 추가되었습니다",
         "empty": "아직 추가된 확장 프로그램 공급자가 없습니다.",
         "badge": "확장 프로그램",
         "refresh": "다시 연결",

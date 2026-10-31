@@ -434,6 +434,10 @@
       "serverType": "பரிமாற்ற வகை",
       "serverUrl": "சேவையக URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "தேவை",
+        "invalidUrl": "தவறான URL வடிவம்"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "நவீன ஸ்ட்ரீமிங் பரிமாற்றம் (பரிந்துரைக்கப்படுகிறது)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "நீட்டிப்பு ID",
         "idPlaceholder": "32 எழுத்து நீட்டிப்பு ID",
         "invalidId": "32 எழுத்து Chromium நீட்டிப்பு ID ஐ உள்ளிடவும்.",
+        "duplicate": "இந்த நீட்டிப்பு ஏற்கனவே சேர்க்கப்பட்டுள்ளது",
         "empty": "இன்னும் நீட்டிப்பு வழங்குநர்கள் சேர்க்கப்படவில்லை.",
         "badge": "நீட்டிப்பு",
         "refresh": "மீண்டும் இணை",

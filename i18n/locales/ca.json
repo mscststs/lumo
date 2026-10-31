@@ -435,6 +435,10 @@
       "serverType": "Tipus de transport",
       "serverUrl": "URL del servidor",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obligatori",
+        "invalidUrl": "Format d'URL no vàlid"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Transport de transmissió modern (recomanat)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "ID de l'extensió",
         "idPlaceholder": "ID d'extensió de 32 caràcters",
         "invalidId": "Introdueix un ID d'extensió de Chromium de 32 caràcters.",
+        "duplicate": "Aquesta extensió ja està afegida",
         "empty": "Encara no s'ha afegit cap proveïdor d'extensió.",
         "badge": "Extensió",
         "refresh": "Torna a connectar",

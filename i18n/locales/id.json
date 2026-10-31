@@ -434,6 +434,10 @@
       "serverType": "Jenis transport",
       "serverUrl": "URL server",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Wajib diisi",
+        "invalidUrl": "Format URL tidak valid"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Transport streaming modern (disarankan)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ID ekstensi",
         "idPlaceholder": "ID ekstensi 32 karakter",
         "invalidId": "Masukkan ID ekstensi Chromium 32 karakter.",
+        "duplicate": "Ekstensi ini sudah ditambahkan",
         "empty": "Belum ada penyedia ekstensi yang ditambahkan.",
         "badge": "Ekstensi",
         "refresh": "Hubungkan ulang",

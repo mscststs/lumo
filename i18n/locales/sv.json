@@ -434,6 +434,10 @@
       "serverType": "Transporttyp",
       "serverUrl": "Server-URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obligatoriskt",
+        "invalidUrl": "Ogiltigt URL-format"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modern strömningstransport (rekommenderas)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Tilläggs-ID",
         "idPlaceholder": "32 tecken långt tilläggs-ID",
         "invalidId": "Ange ett 32 tecken långt Chromium-tilläggs-ID.",
+        "duplicate": "Det här tillägget har redan lagts till",
         "empty": "Inga tilläggsleverantörer tillagda än.",
         "badge": "Tillägg",
         "refresh": "Anslut igen",

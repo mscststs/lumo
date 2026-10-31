@@ -434,6 +434,10 @@
       "serverType": "రవాణా రకం",
       "serverUrl": "సర్వర్ URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "అవసరం",
+        "invalidUrl": "చెల్లని URL ఆకృతి"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "ఆధునిక స్ట్రీమింగ్ రవాణా (సిఫార్సు చేయబడింది)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "పొడిగింపు ID",
         "idPlaceholder": "32 అక్షరాల పొడిగింపు ID",
         "invalidId": "32 అక్షరాల Chromium పొడిగింపు ID ను నమోదు చేయండి.",
+        "duplicate": "ఈ పొడిగింపు ఇప్పటికే జోడించబడింది",
         "empty": "ఇంకా పొడిగింపు ప్రొవైడర్‌లు జోడించలేదు.",
         "badge": "పొడిగింపు",
         "refresh": "మళ్లీ కనెక్ట్ చేయి",

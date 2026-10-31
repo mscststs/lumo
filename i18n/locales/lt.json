@@ -436,6 +436,10 @@
       "serverType": "Perdavimo tipas",
       "serverUrl": "Serverio URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Privaloma",
+        "invalidUrl": "Netinkamas URL formatas"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modernus srautinis perdavimas (rekomenduojama)",
       "sse": "SSE",
@@ -485,6 +489,7 @@
         "idLabel": "Plėtinio ID",
         "idPlaceholder": "32 simbolių plėtinio ID",
         "invalidId": "Įveskite 32 simbolių Chromium plėtinio ID.",
+        "duplicate": "Šis plėtinys jau pridėtas",
         "empty": "Plėtinių tiekėjų dar nepridėta.",
         "badge": "Plėtinys",
         "refresh": "Prisijungti iš naujo",

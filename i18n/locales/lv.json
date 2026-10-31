@@ -435,6 +435,10 @@
       "serverType": "Pārsūtīšanas veids",
       "serverUrl": "Servera URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obligāti",
+        "invalidUrl": "Nederīgs URL formāts"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Mūsdienīga straumēšanas pārsūtīšana (ieteicams)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "Paplašinājuma ID",
         "idPlaceholder": "32 rakstzīmju paplašinājuma ID",
         "invalidId": "Ievadiet 32 rakstzīmju Chromium paplašinājuma ID.",
+        "duplicate": "Šis paplašinājums jau ir pievienots",
         "empty": "Paplašinājumu piegādātāji vēl nav pievienoti.",
         "badge": "Paplašinājums",
         "refresh": "Savienot no jauna",

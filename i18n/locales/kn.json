@@ -434,6 +434,10 @@
       "serverType": "ಸಾಗಣೆ ಪ್ರಕಾರ",
       "serverUrl": "ಸರ್ವರ್ URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "ಅಗತ್ಯವಿದೆ",
+        "invalidUrl": "ಅಮಾನ್ಯ URL ಸ್ವರೂಪ"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "ಆಧುನಿಕ ಸ್ಟ್ರೀಮಿಂಗ್ ಸಾಗಣೆ (ಶಿಫಾರಸು)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ವಿಸ್ತರಣೆ ID",
         "idPlaceholder": "32-ಅಕ್ಷರ ವಿಸ್ತರಣೆ ID",
         "invalidId": "32-ಅಕ್ಷರ Chromium ವಿಸ್ತರಣೆ ID ನಮೂದಿಸಿ.",
+        "duplicate": "ಈ ವಿಸ್ತರಣೆಯನ್ನು ಈಗಾಗಲೇ ಸೇರಿಸಲಾಗಿದೆ",
         "empty": "ಇನ್ನೂ ವಿಸ್ತರಣೆ ಪೂರೈಕೆದಾರರನ್ನು ಸೇರಿಸಲಾಗಿಲ್ಲ.",
         "badge": "ವಿಸ್ತರಣೆ",
         "refresh": "ಮತ್ತೆ ಸಂಪರ್ಕಿಸು",

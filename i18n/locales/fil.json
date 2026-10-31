@@ -434,6 +434,10 @@
       "serverType": "Uri ng transport",
       "serverUrl": "URL ng server",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Kinakailangan",
+        "invalidUrl": "Di-wastong format ng URL"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modernong streaming transport (inirerekomenda)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ID ng extension",
         "idPlaceholder": "32-character na ID ng extension",
         "invalidId": "Maglagay ng 32-character na Chromium extension ID.",
+        "duplicate": "Naidagdag na ang extension na ito",
         "empty": "Wala pang naidagdag na provider ng extension.",
         "badge": "Extension",
         "refresh": "Kumonekta muli",

@@ -434,6 +434,10 @@
       "serverType": "Átvitel típusa",
       "serverUrl": "Szerver URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Kötelező",
+        "invalidUrl": "Érvénytelen URL-formátum"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modern streamátvitel (ajánlott)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Bővítmény ID",
         "idPlaceholder": "32 karakteres bővítmény ID",
         "invalidId": "Adjon meg egy 32 karakteres Chromium-bővítmény ID-t.",
+        "duplicate": "Ez a bővítmény már hozzá van adva",
         "empty": "Még nincsenek hozzáadott bővítményszolgáltatók.",
         "badge": "Bővítmény",
         "refresh": "Újracsatlakozás",

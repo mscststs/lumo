@@ -434,6 +434,10 @@
       "serverType": "Transporttype",
       "serverUrl": "Server-URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Verplicht",
+        "invalidUrl": "Ongeldige URL-indeling"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modern streamingtransport (aanbevolen)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Extensie-ID",
         "idPlaceholder": "Extensie-ID van 32 tekens",
         "invalidId": "Voer een Chromium-extensie-ID van 32 tekens in.",
+        "duplicate": "Deze extensie is al toegevoegd",
         "empty": "Nog geen extensieproviders toegevoegd.",
         "badge": "Extensie",
         "refresh": "Opnieuw verbinden",

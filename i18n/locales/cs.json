@@ -436,6 +436,10 @@
       "serverType": "Typ přenosu",
       "serverUrl": "URL serveru",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Povinné",
+        "invalidUrl": "Neplatný formát URL"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moderní streamovací přenos (doporučeno)",
       "sse": "SSE",
@@ -485,6 +489,7 @@
         "idLabel": "ID rozšíření",
         "idPlaceholder": "32znakové ID rozšíření",
         "invalidId": "Zadejte 32znakové ID rozšíření Chromium.",
+        "duplicate": "Toto rozšíření je již přidáno",
         "empty": "Zatím nebyli přidáni žádní poskytovatelé rozšíření.",
         "badge": "Rozšíření",
         "refresh": "Znovu připojit",

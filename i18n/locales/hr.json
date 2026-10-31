@@ -435,6 +435,10 @@
       "serverType": "Vrsta prijenosa",
       "serverUrl": "URL poslužitelja",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obavezno",
+        "invalidUrl": "Nevažeći format URL-a"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moderni prijenos strujanjem (preporučeno)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "ID proširenja",
         "idPlaceholder": "32-znakovni ID proširenja",
         "invalidId": "Unesite 32-znakovni ID Chromium proširenja.",
+        "duplicate": "Ovo proširenje je već dodano",
         "empty": "Još nema dodanih pružatelja proširenja.",
         "badge": "Proširenje",
         "refresh": "Ponovno poveži",

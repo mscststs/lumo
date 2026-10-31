@@ -435,6 +435,10 @@
       "serverType": "Tip de transport",
       "serverUrl": "URL-ul serverului",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obligatoriu",
+        "invalidUrl": "Format URL nevalid"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Transport modern în flux (recomandat)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "ID-ul extensiei",
         "idPlaceholder": "ID de extensie de 32 de caractere",
         "invalidId": "Introdu un ID de extensie Chromium de 32 de caractere.",
+        "duplicate": "Această extensie a fost deja adăugată",
         "empty": "Încă niciun furnizor de extensie adăugat.",
         "badge": "Extensie",
         "refresh": "Reconectează",

@@ -434,6 +434,10 @@
       "serverType": "পরিবহন ধরন",
       "serverUrl": "সার্ভার URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "আবশ্যক",
+        "invalidUrl": "অবৈধ URL বিন্যাস"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "আধুনিক স্ট্রিমিং পরিবহন (প্রস্তাবিত)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "এক্সটেনশন ID",
         "idPlaceholder": "৩২ অক্ষরের এক্সটেনশন ID",
         "invalidId": "৩২ অক্ষরের Chromium এক্সটেনশন ID লিখুন।",
+        "duplicate": "এই এক্সটেনশনটি ইতিমধ্যে যোগ করা হয়েছে",
         "empty": "এখনও কোনো এক্সটেনশন প্রোভাইডার যোগ করা হয়নি।",
         "badge": "এক্সটেনশন",
         "refresh": "আবার সংযুক্ত করুন",

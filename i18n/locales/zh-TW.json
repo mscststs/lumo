@@ -434,6 +434,10 @@
       "serverType": "傳輸類型",
       "serverUrl": "伺服器位址",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "必填",
+        "invalidUrl": "URL 格式不正確"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "現代串流傳輸（建議）",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "擴充功能 ID",
         "idPlaceholder": "32 字元擴充功能 ID",
         "invalidId": "請輸入 32 字元的 Chromium 擴充功能 ID。",
+        "duplicate": "此擴充功能已新增",
         "empty": "尚未新增擴充功能服務。",
         "badge": "擴充功能",
         "refresh": "重新連線",

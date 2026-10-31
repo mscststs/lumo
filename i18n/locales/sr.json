@@ -435,6 +435,10 @@
       "serverType": "Тип преноса",
       "serverUrl": "URL сервера",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Обавезно",
+        "invalidUrl": "Неважећи формат URL-а"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Модерни пренос стримовањем (препоручено)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "ID екстензије",
         "idPlaceholder": "32-знаковни ID екстензије",
         "invalidId": "Унесите 32-знаковни ID Chromium екстензије.",
+        "duplicate": "Ово проширење је већ додато",
         "empty": "Још нема додатих добављача екстензија.",
         "badge": "Екстензија",
         "refresh": "Поново повежи",

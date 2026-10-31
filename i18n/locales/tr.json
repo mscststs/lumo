@@ -434,6 +434,10 @@
       "serverType": "Aktarım türü",
       "serverUrl": "Sunucu URL'si",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Gerekli",
+        "invalidUrl": "Geçersiz URL biçimi"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modern akış aktarımı (önerilir)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Uzantı kimliği",
         "idPlaceholder": "32 karakterlik uzantı kimliği",
         "invalidId": "32 karakterlik bir Chromium uzantı kimliği girin.",
+        "duplicate": "Bu uzantı zaten eklendi",
         "empty": "Henüz uzantı sağlayıcısı eklenmedi.",
         "badge": "Uzantı",
         "refresh": "Yeniden bağlan",

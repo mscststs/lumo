@@ -434,6 +434,10 @@
       "serverType": "Jenis pengangkutan",
       "serverUrl": "URL pelayan",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Wajib diisi",
+        "invalidUrl": "Format URL tidak sah"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Pengangkutan penstriman moden (disyorkan)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ID sambungan",
         "idPlaceholder": "ID sambungan 32 aksara",
         "invalidId": "Masukkan ID sambungan Chromium 32 aksara.",
+        "duplicate": "Sambungan ini sudah ditambah",
         "empty": "Belum ada pembekal sambungan ditambah.",
         "badge": "Sambungan",
         "refresh": "Sambung semula",

@@ -435,6 +435,10 @@
       "serverType": "Type de transport",
       "serverUrl": "URL du serveur",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Obligatoire",
+        "invalidUrl": "Format d'URL non valide"
+      },
       "httpStream": "HTTP streamable",
       "httpStreamDesc": "Transport streaming moderne (recommandé)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "ID de l'extension",
         "idPlaceholder": "ID d'extension à 32 caractères",
         "invalidId": "Saisissez un ID d'extension Chromium à 32 caractères.",
+        "duplicate": "Cette extension est déjà ajoutée",
         "empty": "Aucun fournisseur d'extension ajouté pour l'instant.",
         "badge": "Extension",
         "refresh": "Reconnecter",

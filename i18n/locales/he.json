@@ -435,6 +435,10 @@
       "serverType": "סוג העברה",
       "serverUrl": "כתובת URL של השרת",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "חובה",
+        "invalidUrl": "פורמט כתובת URL שגוי"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "העברת זרימה מודרנית (מומלץ)",
       "sse": "SSE",
@@ -484,6 +488,7 @@
         "idLabel": "מזהה הרחבה",
         "idPlaceholder": "מזהה הרחבה בן 32 תווים",
         "invalidId": "הזן מזהה הרחבה של Chromium בן 32 תווים.",
+        "duplicate": "התוסף הזה כבר נוסף",
         "empty": "לא נוספו ספקי הרחבות עדיין.",
         "badge": "הרחבה",
         "refresh": "התחברות מחדש",

@@ -434,6 +434,10 @@
       "serverType": "የማስተላለፊያ ዓይነት",
       "serverUrl": "የአገልጋይ URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "ያስፈልጋል",
+        "invalidUrl": "የURL አቀራረብ ትክክል አይደለም"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "ዘመናዊ ዥረት ማስተላለፊያ (የሚመከር)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "የኤክስቴንሽን ID",
         "idPlaceholder": "32 ቁምፊ ያለው የኤክስቴንሽን ID",
         "invalidId": "32 ቁምፊ ያለው የChromium ኤክስቴንሽን ID ያስገቡ።",
+        "duplicate": "ይህ ቅጥያ አስቀድሞ ተጨምሯል",
         "empty": "እስካሁን ምንም የኤክስቴንሽን አቅራቢ አልተጨመረም።",
         "badge": "ኤክስቴንሽን",
         "refresh": "እንደገና ተገናኝ",

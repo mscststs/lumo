@@ -434,6 +434,10 @@
       "serverType": "Transporttype",
       "serverUrl": "Server-URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Påkrævet",
+        "invalidUrl": "Ugyldigt URL-format"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Moderne streamingtransport (anbefalet)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Udvidelses-ID",
         "idPlaceholder": "32-tegns udvidelses-ID",
         "invalidId": "Indtast et 32-tegns Chromium-udvidelses-ID.",
+        "duplicate": "Denne udvidelse er allerede tilføjet",
         "empty": "Ingen udvidelsesudbydere tilføjet endnu.",
         "badge": "Udvidelse",
         "refresh": "Forbind igen",

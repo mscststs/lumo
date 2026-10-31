@@ -436,6 +436,10 @@
       "serverType": "Тип транспорту",
       "serverUrl": "URL сервера",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Обов'язково",
+        "invalidUrl": "Невірний формат URL"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Сучасний потоковий транспорт (рекомендовано)",
       "sse": "SSE",
@@ -485,6 +489,7 @@
         "idLabel": "ID розширення",
         "idPlaceholder": "32-символьний ID розширення",
         "invalidId": "Введіть 32-символьний ID розширення Chromium.",
+        "duplicate": "Це розширення вже додано",
         "empty": "Постачальники розширень поки не додані.",
         "badge": "Розширення",
         "refresh": "Перепідключити",

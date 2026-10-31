@@ -434,6 +434,10 @@
       "serverType": "കൈമാറ്റ തരം",
       "serverUrl": "സെർവർ URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "ആവശ്യമാണ്",
+        "invalidUrl": "അസാധുവായ URL ഫോർമാറ്റ്"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "ആധുനിക സ്ട്രീമിംഗ് കൈമാറ്റം (ശുപാർശ ചെയ്യുന്നു)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "എക്സ്റ്റൻഷൻ ID",
         "idPlaceholder": "32 പ്രതീക എക്സ്റ്റൻഷൻ ID",
         "invalidId": "32 പ്രതീക Chromium എക്സ്റ്റൻഷൻ ID നൽകുക.",
+        "duplicate": "ഈ എക്സ്റ്റൻഷൻ ഇതിനകം ചേർത്തിട്ടുണ്ട്",
         "empty": "ഇപ്പോൾ എക്സ്റ്റൻഷൻ ദാതാക്കൾ ചേർത്തിട്ടില്ല.",
         "badge": "എക്സ്റ്റൻഷൻ",
         "refresh": "വീണ്ടും ബന്ധിപ്പിക്കുക",

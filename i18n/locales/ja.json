@@ -434,6 +434,10 @@
       "serverType": "トランスポートの種類",
       "serverUrl": "サーバー URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "必須",
+        "invalidUrl": "URL の形式が正しくありません"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "最新のストリーミングトランスポート（推奨）",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "拡張機能 ID",
         "idPlaceholder": "32 文字の拡張機能 ID",
         "invalidId": "32 文字の Chromium 拡張機能 ID を入力してください。",
+        "duplicate": "この拡張機能はすでに追加されています",
         "empty": "拡張機能プロバイダーはまだ追加されていません。",
         "badge": "拡張機能",
         "refresh": "再接続",

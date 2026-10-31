@@ -434,6 +434,10 @@
       "serverType": "Transport Type",
       "serverUrl": "Server URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Required",
+        "invalidUrl": "Invalid URL format"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Modern streaming transport (recommended)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "Extension ID",
         "idPlaceholder": "32-character extension ID",
         "invalidId": "Enter a 32-character Chromium extension ID.",
+        "duplicate": "This extension is already added",
         "empty": "No extension providers added yet.",
         "badge": "Extension",
         "refresh": "Reconnect",

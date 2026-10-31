@@ -434,6 +434,10 @@
       "serverType": "ประเภทการรับส่ง",
       "serverUrl": "URL เซิร์ฟเวอร์",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "จำเป็น",
+        "invalidUrl": "รูปแบบ URL ไม่ถูกต้อง"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "การรับส่งแบบสตรีมสมัยใหม่ (แนะนำ)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "ID ส่วนขยาย",
         "idPlaceholder": "ID ส่วนขยาย 32 อักขระ",
         "invalidId": "กรอก ID ส่วนขยาย Chromium 32 อักขระ",
+        "duplicate": "ส่วนขยายนี้ถูกเพิ่มแล้ว",
         "empty": "ยังไม่มีผู้ให้บริการส่วนขยายที่เพิ่ม",
         "badge": "ส่วนขยาย",
         "refresh": "เชื่อมต่อใหม่",

@@ -434,6 +434,10 @@
       "serverType": "परिवहन प्रकार",
       "serverUrl": "सर्वर URL",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "आवश्यक",
+        "invalidUrl": "अमान्य URL प्रारूप"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "आधुनिक स्ट्रीमिंग परिवहन (अनुशंसित)",
       "sse": "SSE",
@@ -483,6 +487,7 @@
         "idLabel": "एक्सटेंशन ID",
         "idPlaceholder": "32-अक्षर एक्सटेंशन ID",
         "invalidId": "32-अक्षर का Chromium एक्सटेंशन ID दर्ज करें।",
+        "duplicate": "यह एक्सटेंशन पहले से जोड़ा गया है",
         "empty": "अभी कोई एक्सटेंशन प्रदाता नहीं जोड़ा गया।",
         "badge": "एक्सटेंशन",
         "refresh": "फिर से कनेक्ट करें",

@@ -436,6 +436,10 @@
       "serverType": "Typ transportu",
       "serverUrl": "URL serwera",
       "serverUrlPlaceholder": "https://example.com/mcp",
+      "errors": {
+        "required": "Wymagane",
+        "invalidUrl": "Nieprawidłowy format URL"
+      },
       "httpStream": "HTTP Streamable",
       "httpStreamDesc": "Nowoczesny transport strumieniowy (zalecany)",
       "sse": "SSE",
@@ -485,6 +489,7 @@
         "idLabel": "ID rozszerzenia",
         "idPlaceholder": "32-znakowe ID rozszerzenia",
         "invalidId": "Wpisz 32-znakowe ID rozszerzenia Chromium.",
+        "duplicate": "To rozszerzenie zostało już dodane",
         "empty": "Nie dodano jeszcze dostawców rozszerzeń.",
         "badge": "Rozszerzenie",
         "refresh": "Połącz ponownie",
