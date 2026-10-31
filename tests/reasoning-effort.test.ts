@@ -7,7 +7,8 @@ import type {
 } from '@ai-sdk/provider';
 import { en } from '@/i18n/en';
 import { zh } from '@/i18n/zh';
-import { createProvider, resumeFingerprint, runAgentLoop } from '@/lib/ai';
+import { resumeFingerprint, runAgentLoop } from '@/lib/ai';
+import { createProvider } from '@/lib/provider-runtime';
 import { normalizeProvider } from '@/lib/provider-type';
 import {
   PROVIDER_ONLY_EFFORTS,

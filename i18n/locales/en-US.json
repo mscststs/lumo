@@ -49,7 +49,6 @@
     "compactedHistory": "Compacted history",
     "compacting": "Compacting context…",
     "compactNothing": "Nothing to compact yet — this chat is still under the {{tokens}} recent-token budget.",
-    "contextEstimated": "estimated",
     "contextRemaining": "Remaining",
     "contextPending": "Draft",
     "interrupted": "Reply interrupted",

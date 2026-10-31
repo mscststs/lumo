@@ -23,4 +23,15 @@ describe('CompactionNotice', () => {
     const { container } = render(<CompactionNotice notice={null} />);
     expect(container.textContent).toBe('');
   });
+
+  it('reports the size change of a between-step compaction', () => {
+    const { container } = render(
+      <CompactionNotice
+        notice={{ kind: 'compacted', tokensBefore: 20000, tokensAfter: 5000 }}
+      />,
+    );
+    expect(container.textContent).toContain('sidebar.compactedHistory');
+    expect(container.textContent).toContain('20K');
+    expect(container.textContent).toContain('5K');
+  });
 });

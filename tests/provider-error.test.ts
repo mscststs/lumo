@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { APICallError } from '@ai-sdk/provider';
-import { toError, providerErrorInfo, ProviderError } from '@/lib/provider-error';
-import { classifyError, isRetryableError } from '@/components/chat/ChatError';
+import {
+  classifyError,
+  isContextOverflowError,
+  isRetryableCategory,
+  toError,
+  providerErrorInfo,
+  ProviderError,
+} from '@/lib/provider-error';
+
 
 const QUOTA_MESSAGE =
   '402 "You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get 20x more included usage."';
@@ -219,18 +226,18 @@ describe('providerErrorInfo', () => {
   });
 });
 
-describe('isRetryableError', () => {
+describe('isRetryableCategory', () => {
   it('does not auto-retry deterministic failures', () => {
-    expect(isRetryableError('auth')).toBe(false);
-    expect(isRetryableError('quota')).toBe(false);
+    expect(isRetryableCategory('auth')).toBe(false);
+    expect(isRetryableCategory('quota')).toBe(false);
     // The disk will not have more room a second later, and the reply itself
     // already succeeded — retrying would only re-run the model call.
-    expect(isRetryableError('storage')).toBe(false);
+    expect(isRetryableCategory('storage')).toBe(false);
   });
 
   it('auto-retries transient failures', () => {
     for (const category of ['network', 'rateLimit', 'server', 'timeout', 'unknown'] as const) {
-      expect(isRetryableError(category)).toBe(true);
+      expect(isRetryableCategory(category)).toBe(true);
     }
   });
 });
@@ -270,6 +277,28 @@ describe('end-to-end: a late response.failed frame', () => {
     const info = classifyError(toError(responseFailedFrame()));
     expect(info.category).toBe('quota');
     expect(info.message).toBe(QUOTA_MESSAGE);
-    expect(isRetryableError(info.category)).toBe(false);
+    expect(isRetryableCategory(info.category)).toBe(false);
   });
 });
+
+describe('isContextOverflowError', () => {
+  it('recognises the provider codes and phrasings for a too-long prompt', () => {
+    expect(
+      isContextOverflowError(new ProviderError('rejected', { code: 'context_length_exceeded' })),
+    ).toBe(true);
+    expect(isContextOverflowError(new Error('prompt is too long: 210000 tokens > 200000'))).toBe(
+      true,
+    );
+    expect(
+      isContextOverflowError(new Error('This model\'s maximum context length is 128000 tokens')),
+    ).toBe(true);
+    expect(isContextOverflowError(new Error('input is too long for this model'))).toBe(true);
+  });
+
+  it('does not mistake unrelated failures for overflow', () => {
+    expect(isContextOverflowError(new Error('429 rate limit exceeded'))).toBe(false);
+    expect(isContextOverflowError(new Error('502 bad gateway'))).toBe(false);
+    expect(isContextOverflowError(new Error('insufficient_quota'))).toBe(false);
+  });
+});
+

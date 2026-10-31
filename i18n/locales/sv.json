@@ -49,7 +49,6 @@
     "compactedHistory": "Komprimerad historik",
     "compacting": "Komprimerar kontext…",
     "compactNothing": "Inget att komprimera än — den här chatten ligger fortfarande inom budgeten på {{tokens}} senaste tokens.",
-    "contextEstimated": "uppskattat",
     "contextRemaining": "Kvarvarande",
     "contextPending": "Utkast",
     "interrupted": "Svar avbrutet",

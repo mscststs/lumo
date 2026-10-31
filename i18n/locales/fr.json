@@ -49,7 +49,6 @@
     "compactedHistory": "Historique compacté",
     "compacting": "Compactage du contexte…",
     "compactNothing": "Rien à compacter pour l'instant — cette conversation reste sous le budget de {{tokens}} tokens récents.",
-    "contextEstimated": "estimé",
     "contextRemaining": "Restant",
     "contextPending": "Brouillon",
     "interrupted": "Réponse interrompue",

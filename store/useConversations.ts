@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { storage } from './storage';
 import { useStorageWatch } from './useStorageWatch';
-import { panelConversationKey, windowConversationKey, sessionPanelStorage } from '@/lib/panel-storage';
+import { windowConversationKey, sessionPanelStorage } from '@/lib/panel-storage';
 import { useWindowId } from '@/lib/window-id';
 import {
   clearConversations,
@@ -129,8 +129,22 @@ export function useConversations(options?: UseConversationsOptions) {
    * Writes a conversation through and keeps the local list in sync.
    */
   const save = useCallback(async (conversation: Conversation, { create = false } = {}) => {
-    const written = await persistConversation(conversation, { insertIfMissing: create });
-    if (!written) return;
+    const stored = await persistConversation(conversation, { insertIfMissing: create });
+    if (!stored) return;
+    // Adopt the persistence layer's copy: screenshots are offloaded to Blob
+    // references on write, so keeping the caller's base64 version in memory
+    // both wastes RAM and makes every later checkpoint decode every image
+    // again (the offload short-circuits on the stored reference).
+    //
+    // Only when the open conversation has not moved past the version that was
+    // written. A save can resolve after the user started a newer turn, or after
+    // another panel opened a newer record; adopting this older copy then would
+    // drop the newer messages until their own write lands.
+    setCurrent((prev) =>
+      prev && prev.id === stored.id && prev.updatedAt <= conversation.updatedAt
+        ? stored
+        : prev,
+    );
     await refreshList();
     await storage.bumpConversationsRevision();
   }, [refreshList]);
@@ -139,7 +153,7 @@ export function useConversations(options?: UseConversationsOptions) {
    * Writes a mid-stream snapshot — durability only, no observable side effects.
    */
   const saveDraft = useCallback(async (conversation: Conversation) => {
-    await persistConversation(conversation, { insertIfMissing: false });
+    await persistConversation(conversation, { insertIfMissing: false, project: false });
   }, []);
 
   /** Makes `conversation` the open one (pass `null` to start a fresh chat). */

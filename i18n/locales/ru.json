@@ -49,7 +49,6 @@
     "compactedHistory": "Сжатая история",
     "compacting": "Сжатие контекста…",
     "compactNothing": "Пока нечего сжимать — этот чат всё ещё в пределах бюджета последних {{tokens}} токенов.",
-    "contextEstimated": "оценка",
     "contextRemaining": "Осталось",
     "contextPending": "Черновик",
     "interrupted": "Ответ прерван",

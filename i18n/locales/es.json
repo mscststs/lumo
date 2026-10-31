@@ -49,7 +49,6 @@
     "compactedHistory": "Historial compactado",
     "compacting": "Compactando contexto…",
     "compactNothing": "Aún no hay nada que compactar: este chat sigue por debajo del presupuesto de {{tokens}} tokens recientes.",
-    "contextEstimated": "estimado",
     "contextRemaining": "Restante",
     "contextPending": "Borrador",
     "interrupted": "Respuesta interrumpida",

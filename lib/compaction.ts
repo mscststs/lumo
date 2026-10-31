@@ -295,6 +295,21 @@ export function buildSummaryPrompt(
 // Threshold + cut point
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether `contextTokens` has crossed `contextWindow - reserveTokens`.
+ *
+ * Shared by the pre-send decision (stored transcript) and the between-step
+ * decision (in-memory wire prompt) so the two thresholds cannot drift apart.
+ */
+export function exceedsBudget(
+  contextTokens: number,
+  contextWindow: number,
+  reserveTokens: number,
+): boolean {
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0) return false;
+  return contextTokens > contextWindow - reserveTokens;
+}
+
 /** Whether the committed context has crossed the compaction threshold. */
 export function shouldCompact(
   contextTokens: number,
@@ -302,8 +317,11 @@ export function shouldCompact(
   settings: CompactionSettings,
 ): boolean {
   if (!settings.enabled) return false;
-  if (!Number.isFinite(contextWindow) || contextWindow <= 0) return false;
-  return contextTokens > contextWindow - resolveReserveTokens(settings.reserve, contextWindow);
+  return exceedsBudget(
+    contextTokens,
+    contextWindow,
+    resolveReserveTokens(settings.reserve, contextWindow),
+  );
 }
 
 export interface CompactionPlan {
@@ -314,6 +332,20 @@ export interface CompactionPlan {
   /** The checkpoint being superseded, when this is a repeat compaction. */
   previousSummary?: string;
 }
+
+/**
+ * Lifecycle of an automatic compaction run.
+ *
+ * Surfaced to the store so a silent summary call can no longer look like a
+ * stalled reply: `start` raises the compacting state, `end` / `failed` clears
+ * it, and `end` carries the size change for a transient notice. Token counts
+ * describe the *history* being folded (system prompt and tool schemas are not
+ * part of the wire message list), so before and after share one basis.
+ */
+export type CompactionEvent =
+  | { phase: 'start'; tokensBefore: number }
+  | { phase: 'end'; tokensBefore: number; tokensAfter: number }
+  | { phase: 'failed'; tokensBefore: number; error: unknown };
 
 /** Index of the first kept message, or `-1` when the boundary is gone. */
 export function firstKeptIndex(conv: Conversation): number {
@@ -442,11 +474,12 @@ export function applyCompaction(
 // ---------------------------------------------------------------------------
 
 /** Maximum characters of a single tool result fed to the summarizer. */
-const TOOL_RESULT_MAX_CHARS = 2000;
+export const SUMMARY_TOOL_RESULT_MAX_CHARS = 2000;
 /** Maximum characters of tool-call arguments fed to the summarizer. */
-const TOOL_ARGS_MAX_CHARS = 500;
+export const SUMMARY_TOOL_ARGS_MAX_CHARS = 500;
 
-function truncate(text: string, maxChars: number): string {
+/** Clamp a payload fed to the summarizer, noting how much was dropped. */
+export function truncateForSummary(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`;
 }
@@ -466,7 +499,7 @@ function serializeToolCall(part: ChatMessagePart): string {
   } catch {
     args = String(input);
   }
-  return `${name}(${truncate(args, TOOL_ARGS_MAX_CHARS)})`;
+  return `${name}(${truncateForSummary(args, SUMMARY_TOOL_ARGS_MAX_CHARS)})`;
 }
 
 function serializeToolResult(part: ChatMessagePart): string | undefined {
@@ -475,9 +508,9 @@ function serializeToolResult(part: ChatMessagePart): string | undefined {
   const normalized = normalizeToolOutput(output);
   switch (normalized.kind) {
     case 'text':
-      return truncate(normalized.text, TOOL_RESULT_MAX_CHARS);
+      return truncateForSummary(normalized.text, SUMMARY_TOOL_RESULT_MAX_CHARS);
     case 'error':
-      return `error: ${truncate(normalized.message, TOOL_RESULT_MAX_CHARS)}`;
+      return `error: ${truncateForSummary(normalized.message, SUMMARY_TOOL_RESULT_MAX_CHARS)}`;
     case 'image':
     case 'image-ref':
       return '[image]';

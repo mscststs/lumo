@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createProvider } from '@/lib/ai';
+import { createProvider } from '@/lib/provider-runtime';
 import {
   isOpenCodeVendor,
   normalizeProvider,

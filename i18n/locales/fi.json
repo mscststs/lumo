@@ -49,7 +49,6 @@
     "compactedHistory": "Tiivistetty historia",
     "compacting": "Tiivistetään kontekstia…",
     "compactNothing": "Ei vielä tiivistettävää — tämä chat on yhä {{tokens}} viimeisimmän tokenin budjetissa.",
-    "contextEstimated": "arvioitu",
     "contextRemaining": "Jäljellä",
     "contextPending": "Luonnos",
     "interrupted": "Vastaus keskeytetty",

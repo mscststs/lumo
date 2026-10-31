@@ -49,7 +49,6 @@
     "compactedHistory": "Cronologia compattata",
     "compacting": "Compattazione del contesto…",
     "compactNothing": "Niente da compattare per ora — questa chat rientra ancora nel budget di {{tokens}} token recenti.",
-    "contextEstimated": "stimato",
     "contextRemaining": "Rimanente",
     "contextPending": "Bozza",
     "interrupted": "Risposta interrotta",

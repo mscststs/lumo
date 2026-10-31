@@ -49,7 +49,6 @@
     "compactedHistory": "Стиснута історія",
     "compacting": "Стиснення контексту…",
     "compactNothing": "Поки нічого стискати — цей чат усе ще в межах бюджету останніх {{tokens}} токенів.",
-    "contextEstimated": "оцінка",
     "contextRemaining": "Залишилось",
     "contextPending": "Чернетка",
     "interrupted": "Відповідь перервано",

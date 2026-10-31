@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { classifyError, isRetryableCategory } from '@/lib/provider-error';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { runAgentLoop } from '@/lib/ai';
-import { classifyError, isRetryableError } from '@/components/chat/ChatError';
+
 
 const QUOTA_MESSAGE =
   '402 "You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers."';
@@ -96,6 +97,6 @@ describe('runAgentLoop error surfacing', () => {
     const info = classifyError(errors[0] as Error);
     expect(info.category).toBe('quota');
     // Retrying a depleted account would burn the backoff and fail identically.
-    expect(isRetryableError(info.category)).toBe(false);
+    expect(isRetryableCategory(info.category)).toBe(false);
   });
 });

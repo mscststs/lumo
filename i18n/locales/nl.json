@@ -49,7 +49,6 @@
     "compactedHistory": "Verkorte geschiedenis",
     "compacting": "Context wordt ingekort…",
     "compactNothing": "Nog niets om in te korten — deze chat zit nog binnen het budget van {{tokens}} recente tokens.",
-    "contextEstimated": "geschat",
     "contextRemaining": "Resterend",
     "contextPending": "Concept",
     "interrupted": "Antwoord onderbroken",

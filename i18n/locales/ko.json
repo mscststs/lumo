@@ -49,7 +49,6 @@
     "compactedHistory": "압축된 기록",
     "compacting": "컨텍스트 압축 중…",
     "compactNothing": "아직 압축할 내용이 없습니다 — 이 채팅은 최근 {{tokens}} 토큰 예산 이내입니다.",
-    "contextEstimated": "추정",
     "contextRemaining": "남음",
     "contextPending": "초안",
     "interrupted": "응답이 중단되었습니다",

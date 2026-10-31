@@ -13,7 +13,7 @@ import { ChatError } from '@/components/chat/ChatError';
 import { MAX_RETRIES } from '@/lib/retry-policy';
 import { storage } from '@/store/storage';
 import { useStorageWatch } from '@/store/useStorageWatch';
-import type { ChatErrorInfo } from '@/components/chat/ChatError';
+import type { ChatErrorInfo } from '@/lib/provider-error';
 import type { ChatMessage, Conversation, UISettings, MessageToolbarSettings } from '@/types';
 
 interface ChatMessageListProps {

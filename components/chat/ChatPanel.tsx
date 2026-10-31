@@ -16,7 +16,7 @@ import { fileRefContent } from '@/lib/file-drag';
 import { classifyDroppedFile, importTextFiles } from '@/lib/file-import';
 import { buildPageContextAttachment } from '@/lib/page-context';
 import { createTextAttachment } from '@/lib/text-attachment';
-import { computeContextUsage } from '@/lib/context-usage';
+import { computeConversationContextUsage } from '@/lib/context-usage';
 import type { QuickActionDelivery } from '@/lib/quick-action-routing';
 import type { BuiltinCommandAction } from '@/lib/slash-commands';
 import type { TextAttachment, Conversation } from '@/types';
@@ -127,6 +127,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     chatError,
     isRetrying,
     retryAttempt,
+    liveUsage,
     handleSend,
     handleRetry,
     handleCompact,
@@ -150,22 +151,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
    */
   const contextUsage = useMemo(() => {
     if (!currentConversation) return null;
-    return computeContextUsage({
-      messages: currentConversation.messages,
-      systemPrompt: currentConversation.systemPrompt,
-      pendingParts: isStreaming ? streamingMessage?.parts : undefined,
+    return computeConversationContextUsage({
+      conversation: currentConversation,
       model: getSelectedModel(),
-      ...(currentConversation.compaction
-        ? {
-            compaction: {
-              createdAt: currentConversation.compaction.createdAt,
-              summary: currentConversation.compaction.summary,
-              firstKeptMessageId: currentConversation.compaction.firstKeptMessageId,
-            },
-          }
-        : {}),
+      ...(isStreaming && streamingMessage ? { pendingParts: streamingMessage.parts } : {}),
+      ...(liveUsage ? { liveUsage } : {}),
     });
-  }, [currentConversation, isStreaming, streamingMessage, getSelectedModel]);
+  }, [currentConversation, isStreaming, streamingMessage, liveUsage, getSelectedModel]);
 
   useEffect(() => {
     loadData();

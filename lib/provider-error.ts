@@ -355,6 +355,43 @@ function categorizeByMessage(message: string): ChatErrorCategory {
   return 'unknown';
 }
 
+/** The display-facing view of a failure: raw message plus its category. */
+export interface ChatErrorInfo {
+  message: string;
+  category: ChatErrorCategory;
+}
+
+/** Classify a raw Error into the shape the chat UI renders. */
+export function classifyError(error: Error): ChatErrorInfo {
+  return { message: error.message, category: categorizeError(error) };
+}
+
+/**
+ * Whether the provider rejected the request because the prompt is too long.
+ *
+ * Kept separate from {@link ChatErrorCategory}: overflow is not a display
+ * category but a *recovery* trigger. The store answers it by folding history
+ * once and retrying, so it must be recognised before the generic retry policy
+ * (which would resend the same oversized prompt).
+ */
+export function isContextOverflowError(error: Error): boolean {
+  const { code } = providerErrorInfo(error);
+  const text = `${code ?? ''} ${error.message}`.toLowerCase();
+  return (
+    text.includes('context_length_exceeded') ||
+    text.includes('context length') ||
+    text.includes('context_length') ||
+    text.includes('maximum context') ||
+    text.includes('max_context') ||
+    text.includes('model_context_window_exceeded') ||
+    text.includes('prompt is too long') ||
+    text.includes('input is too long') ||
+    text.includes('too many tokens') ||
+    text.includes('exceeds the maximum number of tokens') ||
+    text.includes('reduce the length of the messages')
+  );
+}
+
 /**
  * Whether a category is safe to auto-retry.
  *
@@ -366,3 +403,4 @@ function categorizeByMessage(message: string): ChatErrorCategory {
 export function isRetryableCategory(category: ChatErrorCategory): boolean {
   return category !== 'auth' && category !== 'quota' && category !== 'storage';
 }
+

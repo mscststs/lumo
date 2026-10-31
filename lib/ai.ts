@@ -1,6 +1,3 @@
-import { createOpenResponses } from '@ai-sdk/open-responses';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
 import {
   streamText,
   generateText,
@@ -15,19 +12,26 @@ import {
   type ToolSet,
   type UIMessage,
 } from 'ai';
-import type { ProviderConfig, ProviderType, ModelConfig, ChatMessage, ChatMessagePart, CompactionSettings, TokenUsageStats, TokenUsageStep } from '@/types';
+import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, TokenUsageStats, TokenUsageStep } from '@/types';
+import { createProvider } from '@/lib/provider-runtime';
 import {
-  COMPACTION_SUMMARY_PREFIX,
-  COMPACTION_SUMMARY_SUFFIX,
   buildSummaryPrompt,
+  exceedsBudget,
   serializeConversationForSummary,
 } from '@/lib/compaction';
-import { isOpenCodeVendor, normalizeProviderType, resolveBaseUrl, resolveProviderSessionId } from '@/lib/provider-type';
-import { openCodeHeaders } from '@/lib/opencode';
+import type { CompactionEvent } from '@/lib/compaction';
 import {
-  isUnifiedEffort,
+  compactifyImageData,
+  estimateCharsToTokens,
+  measureModelMessagesChars,
+} from '@/lib/prompt-size';
+import {
+  compactWireMessages,
+  type WireCompactionConfig,
+} from '@/lib/wire-compaction';
+import { normalizeProviderType, resolveBaseUrl, resolveProviderSessionId } from '@/lib/provider-type';
+import {
   resolveReasoningEffort,
-  type ReasoningEffort,
   type UnifiedReasoningEffort,
 } from '@/lib/reasoning-effort';
 import { toError } from '@/lib/provider-error';
@@ -39,11 +43,6 @@ import { projectImagesForNonVision, buildImageFallbackMessage, filterToolsByVisi
 /** Placeholder used when image payloads are stripped from the model prompt. */
 const IMAGE_OMITTED = '[image data omitted for model context]';
 
-/** Compact a string by replacing base64 image data-URLs with a placeholder. */
-export function compactifyImageData(text: string): string {
-  if (!text.includes('data:image/')) return text;
-  return text.replace(/data:image\/[^;,)]+;base64,[A-Za-z0-9+/=]+/g, '[image]');
-}
 
 /** Detect whether a tool result output carries image content. */
 export function toolResultOutputHasImage(output: { type?: string; value?: unknown }): boolean {
@@ -224,132 +223,6 @@ export function buildImageUserMessage(images: Array<{ data: string; mimeType: st
 }
 
 /**
- * A model plus the provider-specific request options it needs.
- *
- * `providerOptions` is not cosmetic for the Responses API: with the SDK default
- * `store: true` and no `previousResponseId`, prior assistant/reasoning parts are
- * replayed as `{ type: 'item_reference', id }`, which requires the server to
- * still hold those items. Forcing `store: false` makes the SDK inline the real
- * content (and auto-request `reasoning.encrypted_content`) instead.
- */
-export interface ResolvedModel {
-  model: LanguageModel;
-  /** `ProviderMetadata` is the request-side provider options bag in ai v7. */
-  providerOptions?: ProviderMetadata;
-  /**
-   * The unified reasoning level for this request, or `undefined` to leave the
-   * setting off entirely.
-   *
-   * Only levels the unified setting can spell reach this field. Passing them here
-   * rather than as provider options is what buys the per-model corrections we
-   * would otherwise have to reproduce: the SDK's Anthropic adapter turns `high`
-   * into `output_config.effort` on models built for it and into a derived
-   * `thinking.budget_tokens` on models that are not, using a capability table we
-   * have no access to. A level with no unified spelling — see
-   * `PROVIDER_ONLY_EFFORTS` — is written into `providerOptions` by the branch for
-   * its own provider instead.
-   */
-  reasoning?: UnifiedReasoningEffort;
-}
-
-/**
- * Provider options carrying a level the unified setting cannot express.
- *
- * Split per provider because the field is genuinely different in each protocol,
- * which is also why this cannot live in shared code: OpenAI takes an effort
- * string, Anthropic takes an `output_config.effort` *plus* a thinking block. The
- * levels that land here only exist on models new enough to implement the
- * effort-style API, so mirroring what the SDK sends for `xhigh` on those same
- * models — adaptive thinking, summarised — is what keeps the reasoning stream
- * visible instead of silently dropping it one notch above `xhigh`.
- */
-function providerOnlyReasoning(
-  type: ProviderType,
-  effort: Exclude<ReasoningEffort, UnifiedReasoningEffort>,
-): ProviderMetadata {
-  return type === 'anthropic'
-    ? { anthropic: { effort, thinking: { type: 'adaptive', display: 'summarized' } } }
-    : type === 'openai-responses'
-      ? { 'open-responses': { reasoningEffort: effort } }
-      : { openai: { reasoningEffort: effort } };
-}
-
-export function createProvider(
-  provider: ProviderConfig,
-  model: ModelConfig,
-  /**
-   * Session identifier for vendors that route per conversation.
-   *
-   * Only OpenCode consumes it today, as the `x-opencode-session` header. Callers
-   * that are not tied to a conversation (OCR) may omit it, which leaves the
-   * header off rather than fabricating one.
-   */
-  options?: { sessionId?: string },
-): ResolvedModel {
-  const type = normalizeProviderType(provider.type);
-  const effort = resolveReasoningEffort(model.reasoningEffort);
-  // Either the level rides the unified setting, or it is this provider's own
-  // spelling of one the unified setting has no word for. Never both.
-  const reasoning = effort && isUnifiedEffort(effort) ? { reasoning: effort } : {};
-  const reasoningOptions =
-    effort && !isUnifiedEffort(effort) ? providerOnlyReasoning(type, effort) : undefined;
-  const baseUrl = resolveBaseUrl(provider);
-  // Vendor extras are attached here rather than at each call site: every wire
-  // protocol OpenCode serves needs the same two headers, and forgetting one on
-  // a branch is exactly how the session header went missing before.
-  const headers = isOpenCodeVendor(provider) ? openCodeHeaders(options?.sessionId) : undefined;
-
-  if (type === 'anthropic') {
-    const anthropic = createAnthropic({
-      apiKey: provider.apiKey,
-      ...(baseUrl ? { baseURL: baseUrl } : {}),
-      ...(headers ? { headers } : {}),
-    });
-    return {
-      model: anthropic(model.modelId),
-      ...reasoning,
-      ...(reasoningOptions ? { providerOptions: reasoningOptions } : {}),
-    };
-  }
-
-  const openai = createOpenAI({
-    apiKey: provider.apiKey,
-    baseURL: baseUrl || 'https://api.openai.com/v1',
-    ...(headers ? { headers } : {}),
-  });
-
-  if (type === 'openai-responses') {
-    const openResponses = createOpenResponses({
-      name: 'open-responses',
-      url: `${baseUrl || 'https://api.openai.com/v1'}/responses`,
-      apiKey: provider.apiKey,
-      ...(headers ? { headers } : {}),
-    });
-    return {
-      model: openResponses(model.modelId),
-      ...reasoning,
-      providerOptions: {
-        openai: {
-          store: false,
-          ...(reasoningOptions?.['open-responses'] as { reasoningEffort?: string } | undefined),
-        },
-        'open-responses': {
-          ...reasoningOptions?.['open-responses'],
-        },
-      },
-    };
-  }
-
-  // `openai-chat` → /chat/completions, the portable shape every
-  // "OpenAI compatible" gateway implements.
-  return {
-    model: openai.chat(model.modelId),
-    ...reasoning,
-    ...(reasoningOptions ? { providerOptions: reasoningOptions } : {}),
-  };
-}
-
-/**
  * A resumable snapshot of an interrupted `chatStream` run.
  *
  * `modelMessages` bypasses `convertToModelMessages`, so it is only valid for the
@@ -439,6 +312,31 @@ export interface ChatCompactionOptions {
   summaryMessageCount?: number;
 }
 
+/**
+ * A between-step request to compact the *stored* transcript.
+ *
+ * The loop knows the prompt is over budget but only the store owns the
+ * conversation and its persistence. Returning a projection lets the loop
+ * rebuild its prefix while keeping the current turn's wire tail untouched.
+ */
+export interface StepCompactionRequest {
+  /** Step that just completed (0-based). */
+  step: number;
+  /** Estimated prompt size the next request would send. */
+  tokensBefore: number;
+}
+
+export interface StepCompactionResult {
+  /**
+   * The new UI projection: checkpoint first, then kept stored messages. The
+   * loop converts it with the same tool set it used for the turn's first
+   * request, so tool-call replay stays consistent.
+   */
+  uiMessages: UIMessage[];
+  /** Checkpoint summary when the projection starts with one. */
+  priorSummary?: string;
+}
+
 export interface GenerateCompactionSummaryOptions {
   provider: ProviderConfig;
   model: ModelConfig;
@@ -518,201 +416,6 @@ export async function generateCompactionSummary({
   return { text, usage: toTokenUsageStats(result.usage) };
 }
 
-/** A permissive view of a wire content part, for the summary serializer. */
-interface WireContentPart {
-  type?: string;
-  text?: string;
-  toolName?: string;
-  input?: unknown;
-  output?: unknown;
-}
-
-function wireContentParts(message: ModelMessage): WireContentPart[] {
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === 'string') return [{ type: 'text', text: content }];
-  return Array.isArray(content) ? (content as WireContentPart[]) : [];
-}
-
-/** Worst-case chars/4 estimate for a wire message (images are stripped upstream). */
-function estimateWireMessageChars(message: ModelMessage): number {
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === 'string') return content.length;
-  try {
-    return JSON.stringify(content ?? '').length;
-  } catch {
-    return 0;
-  }
-}
-
-function estimateWireMessagesChars(messages: readonly ModelMessage[]): number {
-  let chars = 0;
-  for (const message of messages) chars += estimateWireMessageChars(message);
-  return chars;
-}
-
-const WIRE_TOOL_RESULT_MAX_CHARS = 2000;
-const WIRE_TOOL_ARGS_MAX_CHARS = 500;
-
-function truncateWire(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`;
-}
-
-/**
- * Flatten wire messages to text so the summarizer continues nothing.
- * Mirrors the stored-message serializer in `lib/compaction.ts`.
- */
-function serializeWireForSummary(messages: readonly ModelMessage[]): string {
-  const blocks: string[] = [];
-  for (const message of messages) {
-    if (message.role === 'system') continue;
-    if (message.role === 'user') {
-      const text = wireContentParts(message)
-        .map((part) => (part.type === 'text' ? part.text ?? '' : '[image]'))
-        .join('');
-      if (text) blocks.push(`[User]: ${text}`);
-      continue;
-    }
-    if (message.role === 'assistant') {
-      const parts = wireContentParts(message);
-      const text = parts
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text ?? '')
-        .join('');
-      if (text) blocks.push(`[Assistant]: ${text}`);
-      const calls = parts
-        .filter((part) => part.type === 'tool-call')
-        .map((part) => {
-          let args = '';
-          try {
-            args = part.input === undefined ? '' : JSON.stringify(part.input);
-          } catch {
-            args = String(part.input);
-          }
-          return `${part.toolName ?? 'tool'}(${truncateWire(args, WIRE_TOOL_ARGS_MAX_CHARS)})`;
-        });
-      if (calls.length > 0) blocks.push(`[Assistant tool calls]: ${calls.join('; ')}`);
-      continue;
-    }
-    // Tool role: render each tool result, truncated.
-    for (const part of wireContentParts(message)) {
-      if (part.type !== 'tool-result') continue;
-      let rendered = '';
-      const output = part.output as { type?: string; value?: unknown } | undefined;
-      if (output && typeof output === 'object') {
-        if (output.type === 'text') rendered = String(output.value ?? '');
-        else if (typeof output.value === 'string') rendered = output.value;
-        else {
-          try {
-            rendered = JSON.stringify(output.value);
-          } catch {
-            rendered = String(output.value);
-          }
-        }
-      } else if (typeof part.output === 'string') {
-        rendered = part.output;
-      }
-      if (rendered) blocks.push(`[Tool result]: ${truncateWire(rendered, WIRE_TOOL_RESULT_MAX_CHARS)}`);
-    }
-  }
-  return blocks.join('\n\n');
-}
-
-/**
- * Where to cut the wire prompt so roughly `keepRecentTokens` stay verbatim.
- *
- * Prefers the nearest message at or after the budget point that is not a tool
- * result, so a tool result is never orphaned from its tool call. When the
- * trailing tool results alone exceed the budget, it falls back to the owning
- * assistant message (at or before that point) — mirroring pi, which keeps the
- * call and its results together rather than dropping the call.
- */
-function findWireCutIndex(
-  messages: readonly ModelMessage[],
-  startIndex: number,
-  keepRecentTokens: number,
-): number {
-  let accumulated = 0;
-  for (let i = messages.length - 1; i >= startIndex; i--) {
-    accumulated += Math.ceil(estimateWireMessageChars(messages[i]!) / 4);
-    if (accumulated < keepRecentTokens) continue;
-    for (let candidate = i; candidate < messages.length; candidate++) {
-      if (messages[candidate]!.role !== 'tool') return candidate;
-    }
-    for (let candidate = i; candidate >= startIndex; candidate--) {
-      if (messages[candidate]!.role !== 'tool') return candidate;
-    }
-    return -1;
-  }
-  return -1;
-}
-
-interface WireCompactionConfig {
-  contextWindow: number;
-  reserveTokens: number;
-  keepRecentTokens: number;
-  priorSummary?: string;
-  summaryMessageCount: number;
-}
-
-interface WireCompactionState {
-  messages: ModelMessage[];
-  summary: string;
-}
-
-/**
- * Fold the leading wire prompt into a summary when the context is over budget.
- *
- * Runs entirely in memory: the durable checkpoint is written by the caller on
- * the next turn boundary, so a long tool loop can finish inside the window
- * without touching persisted state mid-run.
- */
-async function compactWireMessages(input: {
-  messages: ModelMessage[];
-  model: LanguageModel;
-  providerOptions?: ProviderMetadata;
-  reasoning?: UnifiedReasoningEffort;
-  signal?: AbortSignal;
-  config: WireCompactionConfig;
-  /** Committed context tokens from the last completed step (includes schemas). */
-  anchorTokens: number;
-  /** Wire messages appended after that step, whose size is not in the anchor. */
-  appendedChars: number;
-}): Promise<WireCompactionState | null> {
-  const { messages, config } = input;
-  const estimatedTokens = input.anchorTokens + Math.ceil(input.appendedChars / 4);
-  if (estimatedTokens <= config.contextWindow - config.reserveTokens) return null;
-
-  const startIndex = config.summaryMessageCount;
-  const cut = findWireCutIndex(messages, startIndex, config.keepRecentTokens);
-  if (cut < 0) return null;
-  const toSummarize = messages.slice(startIndex, cut);
-  if (toSummarize.length === 0) return null;
-
-  const { system, prompt } = buildSummaryPrompt(
-    serializeWireForSummary(toSummarize),
-    config.priorSummary,
-  );
-  const result = await generateText({
-    model: input.model,
-    system,
-    prompt,
-    abortSignal: input.signal,
-    ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
-    ...(input.reasoning ? { reasoning: input.reasoning } : {}),
-  });
-  const summary = result.text.trim();
-  // A truncated checkpoint is worse than none: it would silently drop context
-  // the loop still needs. Fall through to an uncompacted (larger) prompt.
-  if (result.finishReason === 'length' || !summary) return null;
-
-  const summaryMessage: ModelMessage = {
-    role: 'user',
-    content: COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX,
-  };
-  return { messages: [summaryMessage, ...messages.slice(cut)], summary };
-}
-
 /**
  * Why an assistant turn stopped producing steps.
  *
@@ -773,12 +476,24 @@ export interface ChatStreamOptions {
   /** Emits a resume checkpoint after every completed step. */
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
   /** Called after each step with the cumulative token usage so far. */
-  onUsage?: (usage: TokenUsageStats) => void;
+  onUsage?: (usage: TokenUsageStats, processedPartCount: number) => void;
   /**
    * Automatic compaction between tool steps. When omitted (or disabled) the
    * loop keeps whatever prompt it was given, which is the historical behaviour.
    */
   compaction?: ChatCompactionOptions;
+  /**
+   * Raised while the loop folds history into a summary between steps. Lets the
+   * UI show the call instead of appearing to stall mid-tool-loop.
+   */
+  onCompaction?: (event: CompactionEvent) => void;
+  /**
+   * Durable between-step compaction. When provided, the store folds the stored
+   * transcript and hands back the projection; the loop keeps the current turn's
+   * wire messages as a tail. Resumed runs pass nothing: their prompt is a
+   * snapshot, not a projection that can be rebuilt.
+   */
+  onCompactBeforeStep?: (request: StepCompactionRequest) => Promise<StepCompactionResult | null>;
 }
 
 export async function chatStream({
@@ -798,6 +513,8 @@ export async function chatStream({
   onStepComplete,
   onUsage,
   compaction,
+  onCompaction,
+  onCompactBeforeStep,
 }: ChatStreamOptions) {
   // Seed with the resumed parts so an abort or a second failure still reports
   // everything streamed across attempts, not just the current one.
@@ -884,6 +601,11 @@ export async function chatStream({
       onError: failOnce,
       onStepComplete,
       onUsage,
+      onCompaction,
+      // A resume prompt is a one-off snapshot, not a projection that can be
+      // rebuilt from the stored transcript, so durable folding is disabled and
+      // the in-memory fold takes over.
+      ...(resume ? {} : { onCompactBeforeStep }),
     });
     latestParts = parts;
 
@@ -930,12 +652,23 @@ export interface RunAgentLoopOptions {
    */
   onStepComplete?: (checkpoint: AgentLoopCheckpoint) => void;
   /**
-   * Called after each step with the cumulative token usage so far.
-   * Lets callers track costs in real time without awaiting the full result.
+   * Called after each step with the cumulative token usage so far and the
+   * number of parts the anchored prompt now covers. The count is what lets the
+   * caller add only the parts streamed *after* the anchor without ever
+   * double-counting the step's own output.
    */
-  onUsage?: (usage: TokenUsageStats) => void;
+  onUsage?: (usage: TokenUsageStats, processedPartCount: number) => void;
   /** Between-step compaction configuration. Absent leaves the prompt untouched. */
   compaction?: WireCompactionConfig;
+  /** Raised while a between-step compaction runs. */
+  onCompaction?: (event: CompactionEvent) => void;
+  /**
+   * Durable between-step compaction. The loop asks the caller to fold the
+   * stored transcript and hand back the new projection; the current turn's wire
+   * messages are preserved as a tail. Absent (or on a resumed run) the loop
+   * falls back to the in-memory fold.
+   */
+  onCompactBeforeStep?: (request: StepCompactionRequest) => Promise<StepCompactionResult | null>;
 }
 
 /** Outcome of a `runAgentLoop` run: what it produced, and why it stopped. */
@@ -985,10 +718,21 @@ export async function runAgentLoop({
   onStepComplete,
   onUsage,
   compaction,
+  onCompaction,
+  onCompactBeforeStep,
 }: RunAgentLoopOptions): Promise<AgentLoopResult> {
   const hasTools = Object.keys(tools).length > 0;
   const trimmedSystem = system?.trim();
   let modelMessages = sanitizeToolResultImages(messages);
+  // First wire message produced by this turn. Everything from here on is the
+  // live tail and must survive a projection rebuild; everything before it is
+  // the stored prompt the durable callback may replace.
+  let turnTailStart = modelMessages.length;
+  // A resumed prompt is a snapshot, not a projection: there is no stored
+  // boundary to rebuild from. Retries keep the in-memory fold. Disabled for the
+  // rest of the run once an in-memory fold has replaced the whole prompt, since
+  // the live tail is no longer a separable suffix.
+  let durableCompaction = initialParts ? undefined : onCompactBeforeStep;
   // Tracks the summary that supersedes any injected checkpoint as the loop folds
   // more history away, so a second compaction merges instead of restarting.
   let priorSummary = compaction?.priorSummary;
@@ -1094,7 +838,7 @@ export async function runAgentLoop({
       ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
     });
 
-    onUsage?.(buildUsage());
+    onUsage?.(buildUsage(), latestParts.length);
 
     const responseMeta = await result.response;
     const stepMessages = responseMeta.messages;
@@ -1130,20 +874,62 @@ export async function runAgentLoop({
     // size of the step just run (it already includes system prompt and tool
     // schemas), so only the messages appended since need estimating.
     if (compaction) {
-      const compacted = await compactWireMessages({
-        messages: modelMessages,
-        model,
-        providerOptions,
-        reasoning,
-        signal,
-        config: { ...compaction, priorSummary, summaryMessageCount },
-        anchorTokens: stepInputTokens + stepOutputTokens,
-        appendedChars: estimateWireMessagesChars(modelMessages.slice(promptMessageCount)),
-      });
-      if (compacted) {
-        modelMessages = compacted.messages;
-        priorSummary = compacted.summary;
-        summaryMessageCount = 1;
+      let foldedDurably = false;
+      if (durableCompaction) {
+        const appendedChars = measureModelMessagesChars(
+          modelMessages.slice(promptMessageCount),
+        );
+        const estimatedTokens =
+          stepInputTokens + stepOutputTokens + estimateCharsToTokens(appendedChars);
+        if (exceedsBudget(estimatedTokens, compaction.contextWindow, compaction.reserveTokens)) {
+          const result = await durableCompaction({ step, tokensBefore: estimatedTokens });
+          if (result) {
+            // Rebuild the stored prefix from the durable projection and keep the
+            // live tail (this turn's tool calls/results and injected images).
+            const tail = modelMessages.slice(turnTailStart);
+            const converted = sanitizeToolResultImages(
+              await convertToModelMessages(result.uiMessages, {
+                tools,
+                ignoreIncompleteToolCalls: true,
+              }),
+            );
+            const prefix = isVision
+              ? converted
+              : await projectImagesForNonVision(converted, signal);
+            modelMessages = [...prefix, ...tail];
+            turnTailStart = prefix.length;
+            priorSummary = result.priorSummary;
+            summaryMessageCount = result.priorSummary ? 1 : 0;
+            foldedDurably = true;
+          }
+        }
+      }
+
+      // Fall back to the in-memory fold when there is no durable owner, or when
+      // the durable one found nothing old enough to summarize.
+      if (!foldedDurably) {
+        const compacted = await compactWireMessages({
+          messages: modelMessages,
+          model,
+          providerOptions,
+          reasoning,
+          signal,
+          config: { ...compaction, priorSummary, summaryMessageCount },
+          anchorTokens: stepInputTokens + stepOutputTokens,
+          appendedChars: measureModelMessagesChars(
+            modelMessages.slice(promptMessageCount),
+          ),
+          ...(onCompaction ? { onEvent: onCompaction } : {}),
+        });
+        if (compacted) {
+          modelMessages = compacted.messages;
+          priorSummary = compacted.summary;
+          summaryMessageCount = 1;
+          turnTailStart = 0;
+          // The in-memory fold rewrote the whole prompt (prefix *and* tail).
+          // A later durable rebuild would append a second copy of the tail.
+          durableCompaction = undefined;
+        }
       }
     }
 

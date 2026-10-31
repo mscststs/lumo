@@ -3,15 +3,7 @@ import { motion } from 'motion/react';
 import { AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { categorizeError, isRetryableCategory } from '@/lib/provider-error';
-import type { ChatErrorCategory } from '@/lib/provider-error';
-
-export interface ChatErrorInfo {
-  /** Original error message from the API/network */
-  message: string;
-  /** Classified error category for user-friendly display */
-  category: ChatErrorCategory;
-}
+import type { ChatErrorCategory, ChatErrorInfo } from '@/lib/provider-error';
 
 interface ChatErrorProps {
   error: ChatErrorInfo;
@@ -23,26 +15,6 @@ interface ChatErrorProps {
   maxRetries: number;
   /** Callback to manually trigger a retry */
   onRetry: () => void;
-}
-
-/**
- * Classify a raw Error into a user-facing category.
- *
- * Thin wrapper over `categorizeError`, which prefers the provider's own code and
- * HTTP status over matching on the message text.
- */
-export function classifyError(error: Error): ChatErrorInfo {
-  return { message: error.message, category: categorizeError(error) };
-}
-
-/**
- * Whether this error category is safe to auto-retry.
- *
- * Auth and quota failures are deterministic: retrying burns the backoff delay
- * and hits the same wall, so they surface immediately instead.
- */
-export function isRetryableError(category: ChatErrorCategory): boolean {
-  return isRetryableCategory(category);
 }
 
 const categoryToI18nKey: Record<ChatErrorCategory, string> = {
@@ -120,7 +92,7 @@ export function ChatError({ error, isRetrying, retryAttempt, maxRetries, onRetry
             </span>
           ) : (
             /*
-              Always offered, even for categories `isRetryableError` excludes: that
+              Always offered, even for categories `isRetryableCategory` excludes: that
               flag only governs *automatic* retries. Once the user fixes the key or
               tops up credits, a manual retry resumes this conversation instead of
               forcing them to start a new one.

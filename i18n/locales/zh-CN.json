@@ -49,7 +49,6 @@
     "compactedHistory": "已压缩历史",
     "compacting": "正在压缩上下文…",
     "compactNothing": "暂无可压缩的内容——当前对话还没有超过 {{tokens}} 的保留预算。",
-    "contextEstimated": "估算",
     "contextRemaining": "剩余",
     "contextPending": "待发送",
     "interrupted": "回复已中断",

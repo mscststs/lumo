@@ -49,7 +49,6 @@
     "compactedHistory": "圧縮された履歴",
     "compacting": "コンテキストを圧縮中…",
     "compactNothing": "まだ圧縮するものはありません — このチャットは {{tokens}} トークンの直近予算内です。",
-    "contextEstimated": "推定",
     "contextRemaining": "残り",
     "contextPending": "下書き",
     "interrupted": "返信が中断されました",

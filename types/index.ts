@@ -194,14 +194,22 @@ export interface ConversationCompaction {
 }
 
 /**
- * A transient, user-facing notice for a manual action that could not run.
- * Distinct from `ChatError`: nothing failed, the action was simply a no-op.
+ * A transient, user-facing notice about a compaction that is not otherwise
+ * visible: a manual action that had nothing to do, or an automatic between-step
+ * fold that succeeded. Distinct from `ChatError`: nothing failed.
  */
-export interface CompactionNotice {
-  kind: 'nothing-to-compact';
-  /** The recent-token budget the conversation did not exceed. */
-  keepRecentTokens: number;
-}
+export type CompactionNotice =
+  | {
+      kind: 'nothing-to-compact';
+      /** The recent-token budget the conversation did not exceed. */
+      keepRecentTokens: number;
+    }
+  | {
+      /** A between-step compaction actually folded history away. */
+      kind: 'compacted';
+      tokensBefore: number;
+      tokensAfter: number;
+    };
 
 export interface UISettings {
   /** `auto` follows the browser UI language; otherwise a shipped BCP-47 tag. */

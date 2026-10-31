@@ -49,7 +49,6 @@
     "compactedHistory": "Skompresowana historia",
     "compacting": "Kompresowanie kontekstu…",
     "compactNothing": "Nie ma jeszcze czego kompresować — ten czat wciąż mieści się w budżecie {{tokens}} ostatnich tokenów.",
-    "contextEstimated": "szacowane",
     "contextRemaining": "Pozostało",
     "contextPending": "Szkic",
     "interrupted": "Odpowiedź przerwana",

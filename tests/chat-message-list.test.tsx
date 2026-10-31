@@ -25,7 +25,6 @@ vi.mock('@/components/chat/CompactionDivider', () => ({
 vi.mock('@/components/chat/ChatError', () => ({
   ChatError: () => <div data-chat-error />,
   classifyError: () => ({ category: 'unknown', message: '' }),
-  isRetryableError: () => false,
 }));
 
 vi.mock('@/store/storage', () => ({

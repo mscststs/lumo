@@ -190,6 +190,12 @@ describe('interrupted reply persistence', () => {
     const conv = await storedConversation();
     expect(conv.messages[1]!.interrupted).toBe(true);
     expect((conv.messages[1]!.parts![0] as { text: string }).text).toBe('stopped here');
+
+    // The UI must settle too: the bubble hands off to the saved message rather
+    // than lingering as a streaming turn.
+    expect(hook.result.current.isStreaming).toBe(false);
+    expect(hook.result.current.streamingMessage).toBeNull();
+    expect(hook.result.current.currentConversation?.messages).toHaveLength(2);
   });
 
   it('does not mark a reply that finished on its own', async () => {

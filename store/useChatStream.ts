@@ -1,50 +1,33 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useReducer, useRef, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { chatStream, resumeFingerprint, generateCompactionSummary } from '@/lib/ai';
-import type { ResumeState, StopReason } from '@/lib/ai';
-import { isOcrAvailable } from '@/lib/image-projection';
-import { storage } from '@/store/storage';
-import { useConversations } from '@/store/useConversations';
-import { hasRenderableParts, toUIMessages } from '@/lib/message-parts';
+import { generateCompactionSummary } from '@/lib/ai';
+import type { ResumeState } from '@/lib/ai';
 import { deriveConversationTitle } from '@/lib/conversation-title';
 import { serializeAttachmentForModel } from '@/lib/attachment-serialization';
-import { MAX_RETRIES, retryDelay } from '@/lib/retry-policy';
-import { resolveSystemPrompt } from '@/lib/system-prompt';
+import type { AssistantTurn } from '@/lib/conversation-turn';
+import type { LiveUsage } from '@/lib/context-usage';
+import { classifyError, toError, type ChatErrorInfo } from '@/lib/provider-error';
+import { compactTurn } from '@/lib/turn-compaction';
+import { storage } from '@/store/storage';
+import { useConversations } from '@/store/useConversations';
 import {
-  applyCompaction,
-  planCompaction,
-  projectConversation,
-  resolveReserveTokens,
-  shouldCompact,
-} from '@/lib/compaction';
-import { computeContextUsage } from '@/lib/context-usage';
-import { classifyError, isRetryableError } from '@/components/chat/ChatError';
-import { toError } from '@/lib/provider-error';
-import { notifyTurnComplete } from '@/lib/turn-notifier';
+  initialStreamState,
+  selectStreamingMessage,
+  streamReducer,
+} from '@/store/stream-machine';
+import { TurnRunner, type TurnRunnerInput } from '@/store/turn/runner';
+import { useCompactionNotice } from '@/store/useCompactionNotice';
 import type { ConversationMeta } from '@/lib/conversation-store';
-import type { ChatErrorInfo } from '@/components/chat/ChatError';
-import type { ProviderConfig, ModelConfig, ChatMessage, ChatMessagePart, CompactionNotice, Conversation, TextAttachment, TokenUsageStats } from '@/types';
-
-/**
- * Minimum gap between mid-stream checkpoints of the in-flight assistant turn.
- *
- * A turn can emit hundreds of chunks per second, so checkpointing on every
- * update would queue an IndexedDB write per token. One second bounds how much of
- * a reply an abrupt teardown can cost while keeping writes far apart enough to
- * stay off the render path.
- */
-const CHECKPOINT_INTERVAL = 1000;
-
-/**
- * Identity of one assistant turn, allocated before the first chunk arrives so
- * the streaming bubble and the persisted message agree on both fields.
- */
-interface AssistantTurn {
-  /** The id the finished message will be saved under. */
-  id: string;
-  /** When the turn started — kept across retries so it reflects the user's ask. */
-  timestamp: number;
-}
+import type {
+  ChatMessage,
+  ChatMessagePart,
+  ChatMessageVariant,
+  CompactionNotice,
+  Conversation,
+  ModelConfig,
+  ProviderConfig,
+  TextAttachment,
+} from '@/types';
 
 export interface UseChatStreamReturn {
   /**
@@ -72,6 +55,12 @@ export interface UseChatStreamReturn {
   chatError: ChatErrorInfo | null;
   isRetrying: boolean;
   retryAttempt: number;
+  /**
+   * Latest completed step of the in-flight turn. The ring anchors on it so the
+   * context gauge is a measurement during a tool loop, not a guess from the
+   * first token to the last.
+   */
+  liveUsage: LiveUsage | null;
   handleSend: (input: string, images: string[], textAttachments: TextAttachment[], getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined, selectedProviderId: string, selectedModelId: string) => Promise<void>;
   handleRetry: (getProvider: () => ProviderConfig | undefined, getModel: () => ModelConfig | undefined) => void;
   /** Manually fold older history into a checkpoint. Backs the `/compact` command. */
@@ -94,11 +83,13 @@ export interface UseChatStreamOptions {
 }
 
 /**
- * Hook that encapsulates all streaming chat logic including:
- * - Sending messages and managing stream lifecycle
- * - Auto-retry with exponential backoff
- * - Aborting in-flight requests
- * - Conversation management (new, switch, delete, clear)
+ * Chat composition root.
+ *
+ * This hook is deliberately thin: it owns conversation selection, the streaming
+ * reducer, and the lifecycle of the active {@link TurnRunner}. Everything that
+ * happens *inside* one assistant turn — prompt preparation, retries, overflow
+ * recovery, compaction, checkpointing — lives in the runner, which has no React
+ * dependency and is unit-testable on its own.
  */
 export function useChatStream(options?: UseChatStreamOptions): UseChatStreamReturn {
   const {
@@ -116,140 +107,87 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
   });
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isCompacting, setIsCompacting] = useState(false);
-  const [streamingParts, setStreamingParts] = useState<ChatMessagePart[]>([]);
-  // Identity of the assistant message currently being streamed: the id it will
-  // be saved under, plus the moment the turn started. Allocated when the turn
-  // starts and reused verbatim when it is persisted, so the streaming bubble and
-  // the saved bubble are the same React element (same key, same position) and
-  // the DOM is patched in place instead of being torn down and rebuilt — which
-  // is what made the finished reply visibly flash.
-  const [streamingTurn, setStreamingTurn] = useState<AssistantTurn | null>(null);
-  // Mirrors `streamingTurn` for callbacks that must read it without re-running.
-  // Survives retries so a resumed turn keeps rendering under the same key and
-  // reports the time the user actually asked, not the time of the last attempt.
-  const streamingTurnRef = useRef<AssistantTurn | null>(null);
-  const [chatError, setChatError] = useState<ChatErrorInfo | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [retryAttempt, setRetryAttempt] = useState(0);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * Transient feedback for a manual action that was a no-op (e.g. `/compact` on
-   * a conversation that already fits its budget). Auto-dismisses, so it never
-   * becomes permanent chrome.
-   */
-  const [compactionNotice, setCompactionNotice] = useState<CompactionNotice | null>(null);
-  const compactionNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  // Identifies the request that currently owns the UI.
-  const activeRequestIdRef = useRef<string | null>(null);
-  // Last completed agent-loop step of the current assistant turn. A retry
-  // replays this instead of the whole turn, so finished tool calls are not run
-  // twice. Held in a ref because it must survive the delay between a failure
-  // and the retry without re-rendering.
+  // One state machine for the streaming turn: eight independent `useState`
+  // values used to be updated in loose groups at a dozen sites, and disagreeing
+  // members produced a spinner with no turn, or an error with no attempt count.
+  const [stream, dispatch] = useReducer(streamReducer, initialStreamState);
+  const {
+    isStreaming,
+    isCompacting,
+    isRetrying,
+    retryAttempt,
+    turn: streamingTurn,
+    parts: streamingParts,
+    liveUsage,
+    error: chatError,
+  } = stream;
+
+  const {
+    notice: compactionNotice,
+    show: showCompactionNotice,
+    clear: clearCompactionNotice,
+  } = useCompactionNotice();
+
+  /** The runner that currently owns the UI, if any. */
+  const activeRunnerRef = useRef<TurnRunner | null>(null);
+  /** Resume snapshot for a manual retry; mirrors the runner's last checkpoint. */
   const resumeStateRef = useRef<ResumeState | null>(null);
+  /** Turn identity across manual retries. */
+  const turnRef = useRef<AssistantTurn | null>(null);
+  /** Manual `/compact` request, cancelled with the conversation change. */
+  const compactionAbortRef = useRef<AbortController | null>(null);
+
   /**
-   * How to write the in-flight turn to disk right now.
-   *
-   * Set for the duration of a stream and cleared when it settles. This is what
-   * makes an interrupted reply recoverable: `onFinish` is the only place a turn
-   * was ever persisted, and it never runs when the panel is torn down
-   * mid-stream, so the reply was lost outright. Teardown handlers and the
-   * throttled checkpoint both go through this.
-   *
-   * A ref rather than state because the teardown effect must read the *current*
-   * writer without re-subscribing on every chunk.
+   * Start one assistant turn. The runner replaces any previous one; a new turn
+   * cannot begin while `isStreaming`, so this is only a safety net.
    */
-  const checkpointRef = useRef<((parts: ChatMessagePart[]) => Promise<void>) | null>(null);
-  /** Parts as of the latest update, for teardown to flush without React state. */
-  const livePartsRef = useRef<ChatMessagePart[]>([]);
-  /** When the last checkpoint was written, to throttle the next one. */
-  const lastCheckpointAtRef = useRef(0);
-  /** Guards against overlapping checkpoint writes to the same record. */
-  const checkpointInFlightRef = useRef(false);
-  /**
-   * Variants from a regeneration in progress. Attached to the new assistant
-   * message when it is persisted, then cleared. Held in a ref so it survives
-   * across the async gap between starting the stream and finishing it.
-   */
-  const regenerateVariantsRef = useRef<import('@/types').ChatMessageVariant[] | null>(null);
-
-  /** How long a no-op notice stays on screen before fading out. */
-  const COMPACTION_NOTICE_MS = 5000;
-
-  const clearCompactionNotice = useCallback(() => {
-    if (compactionNoticeTimerRef.current) {
-      clearTimeout(compactionNoticeTimerRef.current);
-      compactionNoticeTimerRef.current = null;
-    }
-    setCompactionNotice(null);
-  }, []);
-
-  const showCompactionNotice = useCallback(
-    (notice: CompactionNotice) => {
-      if (compactionNoticeTimerRef.current) clearTimeout(compactionNoticeTimerRef.current);
-      setCompactionNotice(notice);
-      compactionNoticeTimerRef.current = setTimeout(() => {
-        compactionNoticeTimerRef.current = null;
-        setCompactionNotice(null);
-      }, COMPACTION_NOTICE_MS);
+  const startTurn = useCallback(
+    async (input: TurnRunnerInput) => {
+      activeRunnerRef.current?.abort();
+      const runner = new TurnRunner(input, {
+        dispatch,
+        save: saveConversation,
+        saveDraft: saveConversationDraft,
+        open: openConversation,
+        showCompactionNotice,
+        setResume: (resume) => {
+          resumeStateRef.current = resume;
+        },
+        setTurn: (turn) => {
+          turnRef.current = turn;
+        },
+      });
+      activeRunnerRef.current = runner;
+      await runner.run();
     },
-    [COMPACTION_NOTICE_MS],
+    [saveConversation, saveConversationDraft, openConversation, showCompactionNotice],
   );
 
-  /**
-   * Persists the in-flight turn as an interrupted message, if there is one worth
-   * keeping. Safe to call when no stream is running.
-   *
-   * Used by every path that abandons a stream without letting it settle, so a
-   * partial reply survives instead of vanishing.
-   */
-  const flushInterruptedTurn = useCallback(() => {
-    const checkpoint = checkpointRef.current;
-    const parts = livePartsRef.current;
-    if (!checkpoint || !hasRenderableParts(parts)) return;
-    // Fire-and-forget: callers include synchronous teardown paths that cannot
-    // await. The write itself is a single IndexedDB transaction already in
-    // flight by the time this returns.
-    void checkpoint(parts).catch((error) => {
-      console.error('[Lumo] Failed to persist the interrupted reply:', error);
-    });
+  /** Durability-only flush of the active turn (teardown paths). */
+  const flushActiveTurn = useCallback(() => {
+    void activeRunnerRef.current?.flush();
   }, []);
 
   // Cancels the in-flight request and invalidates its pending callbacks.
   const abortActiveStream = useCallback(() => {
-    // Before the request id is cleared, so the partial reply is still attributed
-    // to the turn that produced it.
-    flushInterruptedTurn();
-    activeRequestIdRef.current = null;
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
+    const runner = activeRunnerRef.current;
+    if (runner) {
+      // Flush before aborting: a teardown/switch should not depend on the
+      // stream's abort path getting a chance to settle, and the turn must not
+      // dispatch into the conversation that is taking over.
+      void runner.flush();
+      runner.abort();
     }
+    activeRunnerRef.current = null;
     resumeStateRef.current = null;
-    streamingTurnRef.current = null;
-    checkpointRef.current = null;
-    livePartsRef.current = [];
-    setIsStreaming(false);
-    setStreamingParts([]);
-    setStreamingTurn(null);
-    setChatError(null);
-    setIsRetrying(false);
-    setRetryAttempt(0);
-    setIsCompacting(false);
-  }, [flushInterruptedTurn]);
+    turnRef.current = null;
+    compactionAbortRef.current?.abort();
+    compactionAbortRef.current = null;
+    dispatch({ type: 'reset' });
+  }, []);
 
   /**
    * Last-chance persistence when the panel goes away mid-stream.
-   *
-   * This is the case that silently destroyed replies: the assistant turn was
-   * only ever written from `chatStream`'s `onFinish`, and closing the side panel
-   * (or hiding/removing a split panel) tears the document down before that runs.
-   * The user message had already been saved, so reopening showed a question with
-   * no answer and no indication anything had been lost.
    *
    * Two triggers, because neither alone is enough:
    * - `visibilitychange` fires while the document is still alive, which is the
@@ -260,25 +198,23 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
    *   closed or collapsed by a width change.
    *
    * `pagehide`/`beforeunload` are deliberately not used: by then only synchronous
-   * work is guaranteed to run, and IndexedDB is asynchronous, so a write started
-   * there is not guaranteed to land.
+   * work is guaranteed to run, and IndexedDB is asynchronous.
    */
   useEffect(() => {
     const onHidden = () => {
-      if (document.visibilityState === 'hidden') flushInterruptedTurn();
+      if (document.visibilityState === 'hidden') flushActiveTurn();
     };
     document.addEventListener('visibilitychange', onHidden);
 
     return () => {
       document.removeEventListener('visibilitychange', onHidden);
-      flushInterruptedTurn();
-      if (compactionNoticeTimerRef.current) clearTimeout(compactionNoticeTimerRef.current);
+      flushActiveTurn();
       // Stop the request and any pending retry: nothing is left to render into,
       // and a retry firing after unmount would spend a model call for nobody.
-      abortControllerRef.current?.abort();
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+      activeRunnerRef.current?.abort();
+      compactionAbortRef.current?.abort();
     };
-  }, [flushInterruptedTurn]);
+  }, [flushActiveTurn]);
 
   /**
    * Leaves the current conversation: any in-flight stream is abandoned and the
@@ -321,408 +257,6 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     abortActiveStream();
     await clearAllConversations();
   }, [abortActiveStream, clearAllConversations]);
-
-  /**
-   * Executes the stream request. Separated from `handleSend` so it can be
-   * called again on retries without re-preparing the conversation.
-   *
-   * `resume` replays the last completed agent-loop step instead of the whole
-   * turn, so a mid-turn failure does not re-run tool calls that already
-   * succeeded. It is dropped when its fingerprint no longer matches the request
-   * about to be sent (different conversation, provider, model, or history
-   * length), because the snapshot is a provider-shaped model prompt.
-   *
-   * `canCreate` lets the final save insert the conversation when the initial
-   * write of the user turn failed. Normally the save must *not* insert, so a
-   * stream settling after the user deleted its conversation cannot resurrect it.
-   */
-   const executeStream = useCallback(
-    async (
-      _conv: Conversation,
-      provider: ProviderConfig,
-      model: ModelConfig,
-      attempt: number,
-      resume?: ResumeState | null,
-      { canCreate = false, compact = true }: { canCreate?: boolean; compact?: boolean } = {},
-    ) => {
-      // Reuse the system prompt snapshot stored in the conversation so that
-      // time-injected prompts stay stable across messages and provider prompt
-      // caching can work. Only generate a fresh one for brand-new conversations.
-      let system: string | undefined;
-      let convWithUserMessage: Conversation;
-      if (_conv.systemPrompt !== undefined) {
-        system = _conv.systemPrompt;
-        convWithUserMessage = _conv;
-      } else {
-        system = resolveSystemPrompt(await storage.getSystemPrompt());
-        // Persist the resolved prompt into the conversation object so
-        // subsequent messages in this conversation reuse the same value.
-        convWithUserMessage = { ..._conv, systemPrompt: system ?? undefined };
-      }
-
-      // Read per turn rather than once per hook, so a cap or budget the user
-      // changes in the options page applies to the next message instead of the
-      // next reload.
-      const { maxSteps, compaction: compactionSettings, turnNotification } =
-        await storage.getUISettings();
-
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      const requestId = uuidv4();
-      activeRequestIdRef.current = requestId;
-      const isStale = () => activeRequestIdRef.current !== requestId;
-
-      // Durable compaction runs once, on the first attempt of a fresh turn.
-      // Retries and resumes reuse the checkpoint the earlier attempt already
-      // paid for, and a resume snapshot would be invalidated by a boundary
-      // change anyway. Failure is non-fatal: an over-budget prompt is still far
-      // better than no reply at all.
-      if (compact && !resume && compactionSettings.enabled) {
-        setIsCompacting(true);
-        try {
-          const usage = computeContextUsage({
-            messages: convWithUserMessage.messages,
-            systemPrompt: convWithUserMessage.systemPrompt,
-            model,
-            ...(convWithUserMessage.compaction
-              ? {
-                  compaction: {
-                    createdAt: convWithUserMessage.compaction.createdAt,
-                    summary: convWithUserMessage.compaction.summary,
-                    firstKeptMessageId: convWithUserMessage.compaction.firstKeptMessageId,
-                  },
-                }
-              : {}),
-          });
-          if (usage && shouldCompact(usage.tokens, model.contextWindow ?? 0, compactionSettings)) {
-            const plan = planCompaction(convWithUserMessage, compactionSettings.keepRecentTokens);
-            if (plan) {
-              const summary = await generateCompactionSummary({
-                provider,
-                model,
-                messages: plan.messagesToSummarize,
-                ...(plan.previousSummary ? { previousSummary: plan.previousSummary } : {}),
-                conversationId: convWithUserMessage.id,
-                signal: controller.signal,
-              });
-              convWithUserMessage = applyCompaction(convWithUserMessage, {
-                summary: summary.text,
-                firstKeptMessageId: plan.firstKeptMessageId,
-                tokensBefore: usage.tokens,
-                ...(summary.usage ? { usage: summary.usage } : {}),
-              });
-              await saveConversation(convWithUserMessage);
-            }
-          }
-        } catch (error) {
-          if (!controller.signal.aborted) {
-            console.error('[Lumo] Failed to compact conversation context:', error);
-          }
-        } finally {
-          if (!isStale()) setIsCompacting(false);
-        }
-      }
-
-      // The model prompt is the *projection*: a checkpoint followed by kept
-      // messages. The stored transcript keeps every message.
-      const uiMessages = toUIMessages(projectConversation(convWithUserMessage));
-
-      // OCR availability decides whether image-producing tools are exposed, so
-      // it belongs in the resume fingerprint alongside vision capability.
-      const ocrAvailable = await isOcrAvailable();
-
-      const fingerprint = resumeFingerprint({
-        conversationId: convWithUserMessage.id,
-        provider,
-        model,
-        messageCount: convWithUserMessage.messages.length,
-        ocrAvailable,
-        ...(convWithUserMessage.compaction
-          ? {
-              compaction: {
-                firstKeptMessageId: convWithUserMessage.compaction.firstKeptMessageId,
-                createdAt: convWithUserMessage.compaction.createdAt,
-              },
-            }
-          : {}),
-      });
-      const resumeFrom =
-        resume && resume.fingerprint === fingerprint ? resume : undefined;
-      // A mismatched snapshot must not leak into the next attempt either.
-      resumeStateRef.current = resumeFrom ?? null;
-
-      let latestParts: ChatMessagePart[] = resumeFrom ? [...resumeFrom.parts] : [];
-
-      // Identity for the assistant message this turn produces. Reused for both
-      // the live streaming bubble and the persisted one. A retry inherits the
-      // existing turn so the saved timestamp is when the user asked.
-      const turn: AssistantTurn = streamingTurnRef.current ?? {
-        id: uuidv4(),
-        timestamp: Date.now(),
-      };
-      streamingTurnRef.current = turn;
-      setStreamingTurn(turn);
-
-      /**
-       * The conversation with this turn's assistant message appended, or `null`
-       * when the turn has produced nothing worth storing.
-       *
-       * `interrupted` marks a reply that stopped short of its natural end, so the
-       * UI can distinguish a truncated answer from a complete one. `stopReason`
-       * narrows that to a cause the user configured rather than one they took, so
-       * a reply cut by the step cap can say which cap cut it.
-       */
-      const withAssistantTurn = (
-        parts: ChatMessagePart[],
-        { interrupted, stopReason, usage }: { interrupted: boolean; stopReason?: 'step-limit'; usage?: TokenUsageStats },
-      ): Conversation | null => {
-        if (!hasRenderableParts(parts)) return null;
-        const variants = regenerateVariantsRef.current ?? undefined;
-        return {
-          ...convWithUserMessage,
-          messages: [
-            ...convWithUserMessage.messages,
-            {
-              // Same id and timestamp the streaming bubble already rendered
-              // under, so the hand-off from "live" to "saved" reuses the
-              // existing DOM instead of unmounting and remounting the reply.
-              ...turn,
-              role: 'assistant',
-              parts,
-              ...(interrupted ? { interrupted: true } : {}),
-              ...(stopReason ? { stopReason } : {}),
-              ...(usage ? { usage } : {}),
-              ...(variants ? { variants } : {}),
-            } satisfies ChatMessage,
-          ],
-          updatedAt: Date.now(),
-        };
-      };
-
-      /**
-       * Writes the turn as it currently stands, flagged as interrupted.
-       *
-       * Registered for the whole stream so teardown paths can reach it. Uses the
-       * draft writer, which skips the list refresh and the cross-panel broadcast:
-       * a checkpoint is about durability, not about telling anyone.
-       */
-      const writeCheckpoint = async (parts: ChatMessagePart[]) => {
-        const snapshot = withAssistantTurn(parts, { interrupted: true });
-        if (!snapshot) return;
-        lastCheckpointAtRef.current = Date.now();
-        await saveConversationDraft(snapshot);
-      };
-      checkpointRef.current = writeCheckpoint;
-      livePartsRef.current = latestParts;
-      // Seeded so the first chunk of a fresh turn is not checkpointed instantly.
-      lastCheckpointAtRef.current = Date.now();
-
-      const persist = async (parts: ChatMessagePart[], stoppedReason: StopReason, usage?: TokenUsageStats) => {
-        const stale = isStale();
-        // Running out of steps leaves tool calls pending, so it is every bit as
-        // truncated as an abort — it just arrives through the success path. Left
-        // unflagged, the reply was saved and rendered as if the model had
-        // answered, and the only way to get the rest was to type "continue".
-        const hitStepLimit = stoppedReason === 'step-limit';
-        const updatedConv = withAssistantTurn(parts, {
-          // A settled turn is complete unless the user or a teardown cut it
-          // short — which is exactly when the signal was aborted — or the step
-          // cap did.
-          interrupted: controller.signal.aborted || hitStepLimit,
-          ...(hitStepLimit ? { stopReason: 'step-limit' as const } : {}),
-          usage,
-        });
-
-        if (!stale) {
-          activeRequestIdRef.current = null;
-          abortControllerRef.current = null;
-          // Kept when the cap cut the turn short, because work genuinely remains:
-          // the last completed step already emitted a checkpoint, and that is what
-          // a resume would pick up instead of replaying the whole conversation.
-          // Nothing reaches `handleRetry` without an error on screen today, so
-          // this is inert until a "continue" affordance exists — but the snapshot
-          // has to survive `persist` for one to be possible at all, and a stale
-          // one cannot be misused: `resumeFingerprint` includes the message count,
-          // which this very save increments.
-          if (!hitStepLimit) resumeStateRef.current = null;
-          streamingTurnRef.current = null;
-          checkpointRef.current = null;
-          livePartsRef.current = [];
-
-          // These all land in a single React commit: the finished message is
-          // appended to the conversation in the very same render that drops the
-          // streaming state. Awaiting in between would paint a frame with the
-          // reply missing, which is what made the completed message flash.
-          // `openConversation` applies its state update synchronously and only
-          // then persists the pointer, so it is safe not to await here.
-          if (updatedConv) {
-            void openConversation(updatedConv).catch(() => {
-              // Pointer persistence is best-effort; the id is unchanged anyway.
-            });
-          }
-          setIsStreaming(false);
-          setStreamingParts([]);
-          setStreamingTurn(null);
-          setChatError(null);
-          setIsRetrying(false);
-          setRetryAttempt(0);
-          regenerateVariantsRef.current = null;
-        }
-
-        if (!updatedConv) return;
-
-        // The turn settled as a reply. Only a settle the user was not there to
-        // watch earns a banner: an abort means they pressed stop themselves, and
-        // a stale request has already been superseded by a newer one.
-        if (!stale && !controller.signal.aborted) {
-          void notifyTurnComplete(turnNotification, {
-            title: convWithUserMessage.title,
-            elapsedMs: Date.now() - turn.timestamp,
-          });
-        }
-
-        // Surfaced rather than swallowed: this used to reject into
-        // `chatStream`'s already-settled `onFinish`, so a failed save left the
-        // reply on screen but absent from disk — it vanished on reload with no
-        // indication anything had gone wrong.
-        try {
-          await saveConversation(updatedConv, { create: canCreate });
-        } catch (error) {
-          if (stale) return;
-          setChatError(classifyError(toError(error)));
-        }
-      };
-
-      await chatStream({
-        provider,
-        model,
-        messages: uiMessages,
-        system,
-        signal: controller.signal,
-        conversationId: convWithUserMessage.id,
-        isVision: model.isVision,
-        maxSteps,
-        resume: resumeFrom,
-        compaction: {
-          enabled: compactionSettings.enabled,
-          // The wire config is absolute: a percentage is resolved against this
-          // model's declared window so the loop's between-step check matches the
-          // pre-send threshold.
-          reserveTokens: resolveReserveTokens(compactionSettings.reserve, model.contextWindow ?? 0),
-          keepRecentTokens: compactionSettings.keepRecentTokens,
-          ...(convWithUserMessage.compaction
-            ? {
-                priorSummary: convWithUserMessage.compaction.summary,
-                summaryMessageCount: 1,
-              }
-            : {}),
-        },
-        onStepComplete: (checkpoint) => {
-          if (isStale()) return;
-          resumeStateRef.current = { ...checkpoint, fingerprint };
-          // A completed step is the most valuable thing to have on disk: it may
-          // represent a tool call that took seconds and had side effects. Written
-          // unconditionally, bypassing the throttle.
-          void writeCheckpoint(checkpoint.parts).catch((error) => {
-            console.error('[Lumo] Failed to checkpoint the reply:', error);
-          });
-        },
-        onUpdate: (parts) => {
-          latestParts = parts;
-          livePartsRef.current = parts;
-          if (isStale()) return;
-          setStreamingParts(parts);
-
-          // Throttled snapshot, so an abrupt teardown loses at most a second of
-          // the reply rather than all of it. `checkpointInFlightRef` keeps writes
-          // serialised: overlapping transactions on the same record would race,
-          // and a slow write must not queue a backlog behind it.
-          const now = Date.now();
-          if (
-            checkpointInFlightRef.current ||
-            now - lastCheckpointAtRef.current < CHECKPOINT_INTERVAL
-          ) {
-            return;
-          }
-          checkpointInFlightRef.current = true;
-          void writeCheckpoint(parts)
-            .catch((error) => {
-              console.error('[Lumo] Failed to checkpoint the reply:', error);
-            })
-            .finally(() => {
-              checkpointInFlightRef.current = false;
-            });
-        },
-        onFinish: persist,
-        onError: (error) => {
-          if (isStale()) return;
-
-          const errorInfo = classifyError(error);
-          const canRetry = isRetryableError(errorInfo.category);
-          const nextAttempt = attempt + 1;
-
-          if (canRetry && nextAttempt <= MAX_RETRIES) {
-            setChatError(errorInfo);
-            setIsRetrying(true);
-            setRetryAttempt(nextAttempt);
-            if (latestParts.length > 0) {
-              setStreamingParts(latestParts);
-            }
-
-            const resumeForRetry = resumeStateRef.current;
-            const delay = retryDelay(attempt);
-            retryTimeoutRef.current = setTimeout(() => {
-              retryTimeoutRef.current = null;
-              void executeStream(
-                convWithUserMessage,
-                provider,
-                model,
-                nextAttempt,
-                resumeForRetry,
-                { canCreate, compact: false },
-              ).catch((retryError) => {
-                // Same hazard as the initial send: an unhandled rejection here
-                // would leave `isStreaming` stuck true with nothing on screen.
-                setIsStreaming(false);
-                setStreamingTurn(null);
-                setIsRetrying(false);
-                setChatError(classifyError(toError(retryError)));
-              });
-            }, delay);
-          } else {
-            setIsStreaming(false);
-            setStreamingParts(latestParts);
-            setChatError(errorInfo);
-            setIsRetrying(false);
-            setRetryAttempt(nextAttempt > MAX_RETRIES ? MAX_RETRIES : nextAttempt);
-            abortControllerRef.current = null;
-            activeRequestIdRef.current = null;
-            // Snapshot is intentionally kept so the manual retry button can
-            // still resume from the last completed step.
-
-            // Persist whatever the failed turn produced. `onError` and `onFinish`
-            // are mutually exclusive, so without this a reply that streamed for a
-            // while and then hit a non-retryable error stayed on screen but was
-            // never written — and vanished on reload. Kept flagged as interrupted
-            // because the model never finished; the manual retry can still resume
-            // it, which overwrites this snapshot under the same message id.
-            void writeCheckpoint(latestParts).catch((persistError) => {
-              console.error('[Lumo] Failed to persist the failed reply:', persistError);
-            });
-
-            // The retries are spent, so this turn is over. A user who is away is
-            // at least as likely to want to return for a failure as for a reply.
-            void notifyTurnComplete(turnNotification, {
-              title: convWithUserMessage.title,
-              failed: true,
-              elapsedMs: Date.now() - turn.timestamp,
-            });
-          }
-        },
-      });
-    },
-    [saveConversation, saveConversationDraft, openConversation],
-  );
 
   const handleSend = useCallback(
     async (
@@ -783,22 +317,11 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         updatedAt: Date.now(),
       };
 
-      setIsStreaming(true);
-      setStreamingParts([]);
-      setChatError(null);
-      setIsRetrying(false);
-      setRetryAttempt(0);
-      setIsCompacting(false);
+      dispatch({ type: 'turn/start' });
       clearCompactionNotice();
       // A new turn invalidates any snapshot left by the previous one.
       resumeStateRef.current = null;
-      // ...and gets a fresh assistant identity, allocated by `executeStream`.
-      streamingTurnRef.current = null;
-      setStreamingTurn(null);
-      // The previous turn's checkpoint writer must not be reachable once a new
-      // turn starts, or a teardown could write the old reply onto the new turn.
-      checkpointRef.current = null;
-      livePartsRef.current = [];
+      turnRef.current = null;
 
       const convWithUserMessage = conv;
 
@@ -809,15 +332,13 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         // Losing the pointer only costs conversation restoration on next open.
       });
 
-      // The user turn is persisted before the request because `persist` saves
+      // The user turn is persisted before the request because the runner saves
       // with `insertIfMissing: false` — it must not resurrect a conversation the
       // user deleted mid-stream, which also means it cannot create this one.
       //
-      // Crucially this is no longer allowed to gate the request. It used to be a
-      // bare `await`, so a storage failure meant `executeStream` was never
-      // reached while `isStreaming` stayed true: the composer sat on "thinking"
-      // forever showing no error, and `handleSend`'s own `isStreaming` guard
-      // then silently swallowed every further attempt.
+      // Crucially this is not allowed to gate the request. It used to be a bare
+      // `await`, so a storage failure meant the stream was never reached while
+      // `isStreaming` stayed true: the composer sat on "thinking" forever.
       let persistedUserTurn = true;
       try {
         await saveConversation(convWithUserMessage, { create: true });
@@ -825,26 +346,35 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         persistedUserTurn = false;
         // Reported, but the turn still goes to the model: losing history is far
         // less disruptive than losing the ability to talk to the assistant.
-        setChatError(classifyError(toError(error)));
+        dispatch({ type: 'error', error: classifyError(toError(error)) });
       }
 
       try {
-        await executeStream(convWithUserMessage, provider, model, 0, undefined, {
+        await startTurn({
+          conversation: convWithUserMessage,
+          provider,
+          model,
+          resume: null,
+          compact: true,
           canCreate: !persistedUserTurn,
         });
       } catch (error) {
-        // `chatStream` reports provider failures through `onError`; reaching here
-        // means something outside the stream broke (a failed settings read, a
-        // storage fault). Without this the rejection escaped into ChatPanel's
-        // `void handleSend(...)` and left the panel hung.
-        setIsStreaming(false);
-        setStreamingParts([]);
-        setStreamingTurn(null);
-        setIsRetrying(false);
-        setChatError(classifyError(toError(error)));
+        dispatch({
+          type: 'turn/crashed',
+          error: classifyError(toError(error)),
+          clearParts: true,
+        });
       }
     },
-    [isStreaming, isCompacting, currentConversation, openConversation, saveConversation, executeStream, clearCompactionNotice],
+    [
+      isStreaming,
+      isCompacting,
+      currentConversation,
+      openConversation,
+      saveConversation,
+      startTurn,
+      clearCompactionNotice,
+    ],
   );
 
   const handleRetry = useCallback(
@@ -856,28 +386,29 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       if (!provider || !model) return;
 
       const resume = resumeStateRef.current;
+      dispatch({ type: 'turn/resume', resume: Boolean(resume) });
+      // Resuming keeps the already-streamed steps on screen; the runner re-seeds
+      // them and appends the remaining steps. Only a full restart clears the
+      // transcript, and only then is a new identity warranted.
+      if (!resume) turnRef.current = null;
 
-      setChatError(null);
-      setIsRetrying(false);
-      setRetryAttempt(0);
-      setIsStreaming(true);
-      // Resuming keeps the already-streamed steps on screen; `executeStream`
-      // re-seeds them and appends the remaining steps. Only a full restart
-      // clears the transcript, and only then is a new identity warranted.
-      if (!resume) {
-        setStreamingParts([]);
-        streamingTurnRef.current = null;
-        setStreamingTurn(null);
-      }
-
-      void executeStream(currentConversation, provider, model, 0, resume, { compact: false }).catch((error) => {
-        setIsStreaming(false);
-        setStreamingTurn(null);
-        setIsRetrying(false);
-        setChatError(classifyError(toError(error)));
+      void startTurn({
+        conversation: currentConversation,
+        provider,
+        model,
+        resume,
+        compact: false,
+        canCreate: false,
+        turn: resume ? turnRef.current : null,
+      }).catch((error) => {
+        dispatch({
+          type: 'turn/crashed',
+          error: classifyError(toError(error)),
+          clearParts: false,
+        });
       });
     },
-    [currentConversation, isStreaming, isCompacting, executeStream],
+    [currentConversation, isStreaming, isCompacting, startTurn],
   );
 
   /**
@@ -895,19 +426,25 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       if (!provider || !model) return;
       const conv = currentConversation;
 
-      setIsCompacting(true);
+      dispatch({ type: 'compacting', value: true });
       const controller = new AbortController();
-      abortControllerRef.current = controller;
+      compactionAbortRef.current = controller;
 
       void (async () => {
         try {
           // Same cut rule as the automatic path: keep `keepRecentTokens` of
           // recent history verbatim and fold the rest. `/compact` only skips the
-          // threshold check — when the conversation already fits the budget there
-          // is genuinely nothing to compact, exactly as in pi.
+          // threshold check.
           const { compaction: compactionSettings } = await storage.getUISettings();
-          const plan = planCompaction(conv, compactionSettings.keepRecentTokens);
-          if (!plan) {
+          const compacted = await compactTurn({
+            conversation: conv,
+            model,
+            settings: compactionSettings,
+            summarize: (args) => generateCompactionSummary({ provider, model, ...args }),
+            signal: controller.signal,
+            force: true,
+          });
+          if (!compacted) {
             // Nothing failed — the conversation simply has not crossed the
             // retained-token budget yet. Explain that instead of vanishing.
             showCompactionNotice({
@@ -917,85 +454,63 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
             return;
           }
 
-          const usage = computeContextUsage({
-            messages: conv.messages,
-            systemPrompt: conv.systemPrompt,
-            model,
-            ...(conv.compaction
-              ? { compaction: { createdAt: conv.compaction.createdAt, summary: conv.compaction.summary, firstKeptMessageId: conv.compaction.firstKeptMessageId } }
-              : {}),
+          // The user may have switched conversations while the summary ran.
+          // Opening this record then would clobber the conversation they chose.
+          if (controller.signal.aborted) return;
+
+          // Open first, save last: the save adopts the renderable record
+          // (screenshots replaced by Blob references), so memory matches a reload.
+          await openConversation(compacted.conversation);
+          await saveConversation(compacted.conversation);
+          showCompactionNotice({
+            kind: 'compacted',
+            tokensBefore: compacted.tokensBefore,
+            tokensAfter: compacted.tokensAfter,
           });
-          const summary = await generateCompactionSummary({
-            provider,
-            model,
-            messages: plan.messagesToSummarize,
-            ...(plan.previousSummary ? { previousSummary: plan.previousSummary } : {}),
-            conversationId: conv.id,
-            signal: controller.signal,
-          });
-          const updated = applyCompaction(conv, {
-            summary: summary.text,
-            firstKeptMessageId: plan.firstKeptMessageId,
-            tokensBefore: usage?.tokens ?? 0,
-            ...(summary.usage ? { usage: summary.usage } : {}),
-          });
-          await saveConversation(updated);
-          await openConversation(updated);
         } catch (error) {
           if (!controller.signal.aborted) {
             console.error('[Lumo] Failed to compact conversation context:', error);
           }
         } finally {
-          if (abortControllerRef.current === controller) abortControllerRef.current = null;
-          setIsCompacting(false);
+          // Only clear the spinner if this is still the compaction that owns it:
+          // a switch may have aborted it and started another one.
+          if (compactionAbortRef.current === controller) {
+            compactionAbortRef.current = null;
+            dispatch({ type: 'compacting', value: false });
+          }
         }
       })();
     },
-    [currentConversation, isStreaming, isCompacting, saveConversation, openConversation, showCompactionNotice],
+    [
+      currentConversation,
+      isStreaming,
+      isCompacting,
+      saveConversation,
+      openConversation,
+      showCompactionNotice,
+    ],
   );
 
   const handleStop = useCallback(() => {
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-
-    const controller = abortControllerRef.current;
-    if (controller) {
-      // A live request settles through `chatStream`'s abort path, which routes the
-      // partial turn into `onFinish` → `persist`. Flushing here as well would
-      // race two writes of the same message against each other.
-      controller.abort();
-    } else {
-      // No request in flight: the user stopped while a retry was waiting out its
-      // backoff, so nothing will settle and nothing would otherwise be saved.
-      flushInterruptedTurn();
-      checkpointRef.current = null;
-      livePartsRef.current = [];
-    }
-
-    // Stopping is an explicit abandon: the partial turn is persisted by
-    // `chatStream`'s abort path, so there is nothing left to resume into.
+    // Dispatch before aborting: the abort path may settle the turn synchronously,
+    // and `turn/settled` must win over `turn/stopped` regardless of ordering.
+    dispatch({ type: 'turn/stopped' });
+    // The runner aborts a live request (whose abort path persists) or flushes
+    // directly when it is waiting between retries.
+    activeRunnerRef.current?.stop();
+    // Stopping is an explicit abandon: nothing should resume into the turn.
     resumeStateRef.current = null;
-    setIsStreaming(false);
-    setChatError(null);
-    setIsRetrying(false);
-    setRetryAttempt(0);
-  }, [flushInterruptedTurn]);
+  }, []);
 
   /**
    * The in-flight turn as a `ChatMessage`. Memoised on the turn identity + parts
    * so the object identity only changes when the content does, letting the
    * message component's `memo` skip renders driven by unrelated panel state.
    */
-  const streamingMessage = useMemo<ChatMessage | null>(() => {
-    if (!streamingTurn || !hasRenderableParts(streamingParts)) return null;
-    return {
-      ...streamingTurn,
-      role: 'assistant',
-      parts: streamingParts,
-    };
-  }, [streamingTurn, streamingParts]);
+  const streamingMessage = useMemo(
+    () => selectStreamingMessage(streamingTurn, streamingParts),
+    [streamingTurn, streamingParts],
+  );
 
   const handleDeleteMessage = useCallback(
     async (messageId: string) => {
@@ -1014,8 +529,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         messages: updatedMessages,
         updatedAt: Date.now(),
       };
-      await saveConversation(updated);
       await openConversation(updated);
+      await saveConversation(updated);
     },
     [currentConversation, isStreaming, saveConversation, openConversation, removeConversation],
   );
@@ -1042,8 +557,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       if (!provider || !model) return;
 
       // Archive the current response as a variant.
-      const existingVariants: import('@/types').ChatMessageVariant[] = message.variants ?? [];
-      const currentVariant: import('@/types').ChatMessageVariant = {
+      const existingVariants: ChatMessageVariant[] = message.variants ?? [];
+      const currentVariant: ChatMessageVariant = {
         id: message.id,
         parts: message.parts ?? [],
         timestamp: message.timestamp,
@@ -1051,14 +566,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         ...(message.stopReason ? { stopReason: message.stopReason } : {}),
         ...(message.usage ? { usage: message.usage } : {}),
       };
-      // If we are currently viewing an archived variant, archive the shown
-      // content back into its slot rather than duplicating it.
-      const archivedVariants =
-        message.activeVariantIndex !== undefined &&
-        message.activeVariantIndex < existingVariants.length
-          ? existingVariants // Already archived; just append current parts as new
-          : existingVariants;
-      const allVariants = [...archivedVariants, currentVariant];
+      const allVariants = [...existingVariants, currentVariant];
 
       // Remove the assistant message, keep everything before it.
       const updatedMessages = currentConversation.messages.slice(0, idx);
@@ -1071,36 +579,35 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
       };
 
       // Reset streaming state and fire the request.
-      setIsStreaming(true);
-      setStreamingParts([]);
-      setChatError(null);
-      setIsRetrying(false);
-      setRetryAttempt(0);
+      dispatch({ type: 'turn/start' });
       resumeStateRef.current = null;
-      streamingTurnRef.current = null;
-      setStreamingTurn(null);
-      checkpointRef.current = null;
-      livePartsRef.current = [];
-
-      // Stash the variants so the persist callback can attach them.
-      regenerateVariantsRef.current = allVariants;
+      turnRef.current = null;
 
       // Show the trimmed conversation immediately.
       void openConversation(conv).catch(() => {});
 
       // Persist the trimmed conversation, then execute the stream.
-      void saveConversation(conv).then(() => {
-        return executeStream(conv, provider, model, 0);
-      }).catch((error) => {
-        setIsStreaming(false);
-        setStreamingParts([]);
-        setStreamingTurn(null);
-        setIsRetrying(false);
-        setChatError(classifyError(toError(error)));
-        regenerateVariantsRef.current = null;
-      });
+      void saveConversation(conv)
+        .then(() =>
+          startTurn({
+            conversation: conv,
+            provider,
+            model,
+            resume: null,
+            compact: true,
+            canCreate: false,
+            variants: allVariants,
+          }),
+        )
+        .catch((error) => {
+          dispatch({
+            type: 'turn/crashed',
+            error: classifyError(toError(error)),
+            clearParts: true,
+          });
+        });
     },
-    [currentConversation, isStreaming, saveConversation, openConversation, executeStream],
+    [currentConversation, isStreaming, saveConversation, openConversation, startTurn],
   );
 
   /**
@@ -1142,8 +649,8 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
         updatedAt: Date.now(),
       };
 
-      await saveConversation(updated);
       await openConversation(updated);
+      await saveConversation(updated);
     },
     [currentConversation, isStreaming, saveConversation, openConversation],
   );
@@ -1160,6 +667,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     chatError,
     isRetrying,
     retryAttempt,
+    liveUsage,
     handleSend,
     handleRetry,
     handleCompact,

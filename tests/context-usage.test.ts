@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeContextUsage,
+  computeConversationContextUsage,
   estimateDraftTokens,
   estimatePartsTokens,
   estimateTextTokens,
 } from '@/lib/context-usage';
+import { IMAGE_CHARS } from '@/lib/prompt-size';
 import type { ChatMessage, ChatMessagePart, TokenUsageStats } from '@/types';
 
 /**
@@ -117,7 +119,7 @@ describe('computeContextUsage', () => {
       pendingParts,
       model: { contextWindow: 128_000 },
     })!;
-    expect(usage.tokens).toBe(750 + estimatePartsTokens(pendingParts));
+    expect(usage.tokens).toBe(750 + estimatePartsTokens(pendingParts, 'live'));
   });
 
   it('clamps the percentage at 100', () => {
@@ -143,6 +145,102 @@ describe('computeContextUsage', () => {
     })!;
     expect(usage.estimated).toBe(true);
   });
+
+  it('refuses to anchor on an aggregate without per-step usage', () => {
+    // `inputTokens` on a multi-step turn is the sum over every step, so using
+    // it as the prompt size counts the whole history once per step. Without a
+    // per-step record the honest answer is "estimated", not an overstatement.
+    const usage = computeContextUsage({
+      messages: [
+        userMessage('hello'),
+        assistantMessage({ inputTokens: 5_000, outputTokens: 100, totalTokens: 5_100 }),
+      ],
+      model: { contextWindow: 128_000 },
+    })!;
+    expect(usage.estimated).toBe(true);
+    expect(usage.inputTokens).toBe(0);
+  });
+
+  it('charges a replayed screenshot only its tool call, and a live one the image', () => {
+    const screenshot = {
+      type: 'tool-page_screenshot',
+      toolCallId: 'tc1',
+      state: 'output-available',
+      input: { scope: 'fullpage' },
+      output: {
+        content: [
+          { type: 'image', data: 'A'.repeat(1_500_000), mimeType: 'image/png' },
+          { type: 'text', text: 'shot' },
+        ],
+        isError: false,
+      },
+    } as unknown as ChatMessagePart;
+
+    const replayed = computeContextUsage({
+      messages: [
+        userMessage('hi'),
+        assistantMessage(MULTI_STEP_USAGE),
+        { id: 'a2', role: 'assistant', parts: [screenshot], timestamp: 1 },
+      ],
+      model: { contextWindow: 1_000_000 },
+    })!;
+    const live = computeContextUsage({
+      messages: [userMessage('hi'), assistantMessage(MULTI_STEP_USAGE)],
+      pendingParts: [screenshot],
+      model: { contextWindow: 1_000_000 },
+    })!;
+
+    // The stored copy contributes only the call and caption; the in-flight one
+    // is also injected as an image, which costs exactly the bounded constant.
+    expect(replayed.tokens).toBeGreaterThan(750);
+    expect(replayed.tokens).toBeLessThan(750 + 100);
+    expect(live.tokens - replayed.tokens).toBe(Math.ceil(IMAGE_CHARS / 4));
+  });
+
+  it('anchors on the in-flight step and only adds parts after it', () => {
+    const pendingParts: ChatMessagePart[] = [
+      { type: 'text', text: 'a'.repeat(400), state: 'done' },
+      { type: 'text', text: 'b'.repeat(400), state: 'streaming' },
+    ];
+    const usage = computeContextUsage({
+      messages: [userMessage('hi')],
+      pendingParts,
+      liveUsage: {
+        usage: {
+          inputTokens: 1_000,
+          outputTokens: 200,
+          totalTokens: 1_200,
+          steps: [{ step: 0, inputTokens: 1_000, outputTokens: 200, totalTokens: 1_200 }],
+        },
+        // The first part was already counted by the provider.
+        coveredPartCount: 1,
+      },
+      model: { contextWindow: 128_000 },
+    })!;
+    expect(usage.estimated).toBe(false);
+    expect(usage.inputTokens).toBe(1_000);
+    expect(usage.outputTokens).toBe(200);
+    expect(usage.tokens).toBe(1_200 + estimateTextTokens('b'.repeat(400)));
+  });
+
+  it('clamps a stale live part count instead of slicing backwards', () => {
+    const usage = computeContextUsage({
+      messages: [userMessage('hi')],
+      pendingParts: [{ type: 'text', text: 'x', state: 'streaming' }],
+      liveUsage: {
+        usage: {
+          inputTokens: 10,
+          outputTokens: 1,
+          totalTokens: 11,
+          steps: [{ step: 0, inputTokens: 10, outputTokens: 1, totalTokens: 11 }],
+        },
+        // Stale snapshot: more parts claimed than the stream exposes.
+        coveredPartCount: 99,
+      },
+      model: { contextWindow: 128_000 },
+    })!;
+    expect(usage.tokens).toBe(11);
+  });
 });
 
 describe('estimateDraftTokens', () => {
@@ -165,5 +263,26 @@ describe('estimateTextTokens', () => {
     expect(estimateTextTokens('')).toBe(0);
     expect(estimateTextTokens('abcd')).toBe(1);
     expect(estimateTextTokens('abcde')).toBe(2);
+  });
+});
+
+describe('computeConversationContextUsage', () => {
+  it('reads the prompt shape from the conversation instead of loose fields', () => {
+    const conversation = {
+      messages: [userMessage('hello world')],
+      systemPrompt: 'be helpful',
+    };
+    const fromConversation = computeConversationContextUsage({
+      conversation,
+      model: { contextWindow: 128_000 },
+    })!;
+    const fromFields = computeContextUsage({
+      messages: conversation.messages,
+      systemPrompt: conversation.systemPrompt,
+      model: { contextWindow: 128_000 },
+    })!;
+
+    expect(fromConversation).toEqual(fromFields);
+    expect(fromConversation.estimated).toBe(true);
   });
 });

@@ -49,7 +49,6 @@
     "compactedHistory": "ประวัติที่บีบอัด",
     "compacting": "กำลังบีบอัดบริบท…",
     "compactNothing": "ยังไม่มีอะไรให้บีบอัด — แชทนี้ยังอยู่ในงบประมาณ {{tokens}} โทเค็นล่าสุด",
-    "contextEstimated": "ประมาณ",
     "contextRemaining": "คงเหลือ",
     "contextPending": "ฉบับร่าง",
     "interrupted": "การตอบกลับถูกขัดจังหวะ",

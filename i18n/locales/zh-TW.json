@@ -49,7 +49,6 @@
     "compactedHistory": "已壓縮歷史",
     "compacting": "正在壓縮上下文…",
     "compactNothing": "尚無可壓縮的內容——目前對話尚未超過 {{tokens}} 的保留預算。",
-    "contextEstimated": "估算",
     "contextRemaining": "剩餘",
     "contextPending": "待傳送",
     "interrupted": "回覆已中斷",

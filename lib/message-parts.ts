@@ -62,7 +62,7 @@ export function extractText(parts: ChatMessagePart[]): string {
 }
 
 /** Whether a message has anything worth rendering. */
-export function hasRenderableParts(parts: ChatMessagePart[]): boolean {
+export function hasRenderableParts(parts: readonly ChatMessagePart[]): boolean {
   return parts.some(
     (part) =>
       (part.type === 'text' && part.text.length > 0) ||

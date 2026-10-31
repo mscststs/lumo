@@ -49,7 +49,6 @@
     "compactedHistory": "Komprimierter Verlauf",
     "compacting": "Kontext wird komprimiert…",
     "compactNothing": "Noch nichts zu komprimieren – dieser Chat liegt unter dem Budget von {{tokens}} aktuellen Token.",
-    "contextEstimated": "geschätzt",
     "contextRemaining": "Verbleibend",
     "contextPending": "Entwurf",
     "interrupted": "Antwort unterbrochen",

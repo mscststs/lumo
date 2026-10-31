@@ -49,7 +49,6 @@
     "compactedHistory": "Sažeta povijest",
     "compacting": "Sažimanje konteksta…",
     "compactNothing": "Još nema što sažeti — ovaj je razgovor unutar proračuna od {{tokens}} nedavnih tokena.",
-    "contextEstimated": "procijenjeno",
     "contextRemaining": "Preostalo",
     "contextPending": "Skica",
     "interrupted": "Odgovor prekinut",

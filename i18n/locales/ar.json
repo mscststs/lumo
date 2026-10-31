@@ -49,7 +49,6 @@
     "compactedHistory": "السجل المضغوط",
     "compacting": "جارٍ ضغط السياق…",
     "compactNothing": "لا يوجد شيء لضغطه بعد — هذه المحادثة لا تزال ضمن ميزانية {{tokens}} رمزًا حديثًا.",
-    "contextEstimated": "تقديري",
     "contextRemaining": "المتبقي",
     "contextPending": "مسودة",
     "interrupted": "تمت مقاطعة الرد",

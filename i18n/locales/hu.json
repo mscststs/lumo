@@ -49,7 +49,6 @@
     "compactedHistory": "Tömörített előzmények",
     "compacting": "Kontextus tömörítése…",
     "compactNothing": "Még nincs mit tömöríteni — ez a csevegés még a {{tokens}} legutóbbi token keretén belül van.",
-    "contextEstimated": "becsült",
     "contextRemaining": "Hátralévő",
     "contextPending": "Piszkozat",
     "interrupted": "Válasz megszakítva",

@@ -281,16 +281,27 @@ export async function getConversation(id: string): Promise<Conversation | null> 
  *
  * `insertIfMissing: false` makes the write a no-op for a conversation that no
  * longer exists, so a stream settling after the user deleted it cannot
- * resurrect it. Returns whether anything was written.
+ * resurrect it.
+ *
+ * Returns the conversation as the UI should hold it in memory, or `null` when
+ * nothing was written. The stored record carries only `blobId` for screenshots;
+ * with `project` (the default) the returned value is the renderable projection
+ * with `lumo-blob:` markers, so callers can replace their in-memory copy
+ * without a second read — and the next save then short-circuits instead of
+ * decoding every image again. Mid-stream checkpoints pass `project: false`
+ * because they only need durability, not a value to render.
  */
 export async function saveConversation(
   conversation: Conversation,
-  { insertIfMissing = true }: { insertIfMissing?: boolean } = {},
-): Promise<boolean> {
+  {
+    insertIfMissing = true,
+    project = true,
+  }: { insertIfMissing?: boolean; project?: boolean } = {},
+): Promise<Conversation | null> {
   const { conversation: record, blobs } = offloadToolImages(conversation);
   const meta = buildMeta(record);
 
-  return withStores(
+  const written = await withStores(
     [CONVERSATIONS_STORE, META_STORE, BLOBS_STORE],
     'readwrite',
     async (tx) => {
@@ -310,6 +321,9 @@ export async function saveConversation(
       return true;
     },
   );
+
+  if (!written) return null;
+  return project ? markBlobReferences(record) : record;
 }
 
 /** Delete a conversation along with its summary and screenshots. */

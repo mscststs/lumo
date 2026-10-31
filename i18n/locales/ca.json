@@ -49,7 +49,6 @@
     "compactedHistory": "Historial compactat",
     "compacting": "S'està compactant el context…",
     "compactNothing": "Encara no hi ha res per compactar — aquest xat encara és dins del pressupost de {{tokens}} tokens recents.",
-    "contextEstimated": "estimat",
     "contextRemaining": "Restant",
     "contextPending": "Esborrany",
     "interrupted": "Resposta interrompuda",

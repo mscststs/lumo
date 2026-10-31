@@ -114,7 +114,7 @@ describe('conversation persistence', () => {
     // A stream settling after the user deleted its conversation must not bring
     // it back.
     const written = await saveConversation(conversation(), { insertIfMissing: false });
-    expect(written).toBe(false);
+    expect(written).toBeNull();
     expect(await getConversation('conv-1')).toBeNull();
   });
 
@@ -160,7 +160,13 @@ describe('history list summaries', () => {
 
 describe('screenshot offloading', () => {
   it('keeps base64 out of the stored record and leaves a resolvable reference', async () => {
-    await saveConversation(conversation());
+    const saved = await saveConversation(conversation());
+
+    // The returned value is the copy the UI should hold: renderable, with a
+    // sentinel URL instead of the bytes. Callers adopt it so memory matches
+    // disk without a second read.
+    expect(imageEntry(saved!).data).toBeDefined();
+    expect(parseBlobRef(imageEntry(saved!).data as string)).toBeDefined();
 
     const loaded = await getConversation('conv-1');
     const entry = imageEntry(loaded!);
@@ -199,7 +205,7 @@ describe('screenshot offloading', () => {
     await saveConversation(conversation());
     const first = await getConversation('conv-1');
 
-    await expect(saveConversation(first!)).resolves.toBe(true);
+    await expect(saveConversation(first!)).resolves.not.toBeNull();
 
     const second = await getConversation('conv-1');
     expect(parseBlobRef(imageEntry(second!).data as string)).toBeDefined();

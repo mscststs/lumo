@@ -293,11 +293,7 @@ describe('computeContextUsage with a checkpoint', () => {
     const usage = computeContextUsage({
       messages: conv.messages,
       model,
-      compaction: {
-        createdAt: conv.compaction!.createdAt,
-        summary: conv.compaction!.summary,
-        firstKeptMessageId: conv.compaction!.firstKeptMessageId,
-      },
+      compaction: conv.compaction!,
     })!;
 
     // The pre-checkpoint anchor is unusable, so the whole context is estimated

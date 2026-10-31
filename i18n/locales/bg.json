@@ -49,7 +49,6 @@
     "compactedHistory": "Компресирана история",
     "compacting": "Компресиране на контекста…",
     "compactNothing": "Все още няма какво да се компресира — този чат е в бюджета от {{tokens}} последни токена.",
-    "contextEstimated": "приблизително",
     "contextRemaining": "Оставащо",
     "contextPending": "Чернова",
     "interrupted": "Отговорът е прекъснат",

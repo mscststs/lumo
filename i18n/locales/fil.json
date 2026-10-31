@@ -49,7 +49,6 @@
     "compactedHistory": "Compressed na kasaysayan",
     "compacting": "Kino-compress ang konteksto…",
     "compactNothing": "Wala pang ma-compress — ang chat na ito ay nasa badyet ng {{tokens}} pinakabagong token.",
-    "contextEstimated": "tantya",
     "contextRemaining": "Natitira",
     "contextPending": "Burador",
     "interrupted": "Naantala ang tugon",

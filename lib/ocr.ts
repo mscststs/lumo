@@ -10,7 +10,7 @@
  */
 
 import { generateText } from 'ai';
-import { createProvider } from '@/lib/ai';
+import { createProvider } from '@/lib/provider-runtime';
 import { resolveProviderSessionId } from '@/lib/provider-type';
 import { imageHash, ocrConfigHash, getOcrCache, setOcrCache } from '@/lib/ocr-cache';
 import type { OcrSettings, ProviderConfig, ModelConfig } from '@/types';
