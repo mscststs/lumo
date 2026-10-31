@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "Assistant de barre latérale du navigateur propulsé par l'IA",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Ouvrir la barre latérale Lumo",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

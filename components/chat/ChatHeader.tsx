@@ -87,15 +87,15 @@ export function ChatHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 shrink-0 mr-1"
+            className="h-7 w-7 shrink-0 me-1"
             onClick={onSplit}
             title={t('sidebar.splitWindow')}
           >
-            <PanelLeft className="h-4 w-4" />
+            <PanelLeft className="h-4 w-4 rtl:-scale-x-100" />
           </Button>
         )}
         <Select value={currentModelValue} onValueChange={onModelChange}>
-          <SelectTrigger className="h-8 text-xs font-medium w-auto min-w-0 mr-2 border-0 bg-transparent px-1.5 py-1 shadow-none hover:bg-muted/60 rounded-md transition-colors gap-1">
+          <SelectTrigger className="h-8 text-xs font-medium w-auto min-w-0 me-2 border-0 bg-transparent px-1.5 py-1 shadow-none hover:bg-muted/60 rounded-md transition-colors gap-1">
             <SelectValue placeholder={t('sidebar.selectModel')} />
           </SelectTrigger>
           <SelectContent className="min-w-[13rem] font-mono">

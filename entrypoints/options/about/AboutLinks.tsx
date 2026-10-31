@@ -24,9 +24,9 @@ export function AboutLinks() {
       {links.map(({ href, labelKey, icon: Icon }) => (
         <Button key={href} variant="outline" size="sm" asChild>
           <a href={href} target="_blank" rel="noreferrer">
-            <Icon className="mr-2 h-4 w-4 shrink-0" />
+            <Icon className="me-2 h-4 w-4 shrink-0" />
             <span className="truncate">{t(labelKey)}</span>
-            <ExternalLink className="ml-2 h-3 w-3 shrink-0 opacity-60" />
+            <ExternalLink className="ms-2 h-3 w-3 shrink-0 opacity-60" />
           </a>
         </Button>
       ))}

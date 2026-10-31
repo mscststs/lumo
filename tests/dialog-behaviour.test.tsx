@@ -13,6 +13,9 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+// The built-in close button's accessible name is translated, so the app's i18n
+// instance has to exist here; without it `t()` returns the raw key.
+import '@/i18n';
 import {
   Dialog,
   DialogContent,

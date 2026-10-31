@@ -165,7 +165,7 @@ export function Tool({ part, name, isStreaming = false, className }: ToolProps) 
       )}
     >
       <CollapsibleTrigger className="group/tool gap-1.5 px-2 py-1.5 hover:bg-muted/70 transition-colors min-w-0">
-        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/tool:rotate-90" />
+        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/tool:rotate-90 rtl:-scale-x-100" />
         <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-mono text-[0.6875rem] font-medium truncate shrink-0 max-w-[45%]">
           {name}
@@ -175,7 +175,7 @@ export function Tool({ part, name, isStreaming = false, className }: ToolProps) 
             {inputSummary}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1 shrink-0 pl-1">
+        <span className="ms-auto flex items-center gap-1 shrink-0 ps-1">
           <ToolStatusIcon state={state} />
           <span
             className={cn(

@@ -1,62 +1,66 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import { en } from './en';
-import { zh } from './zh';
+import en from './locales/en.json';
+import {
+  DEFAULT_LOCALE,
+  detectLanguage,
+  localeDirection,
+  resolveLanguage,
+  type LocaleTag,
+} from './locales';
+import { loadLocaleBundle, type LocaleBundle } from './load-locale';
+
+export {
+  DEFAULT_LOCALE,
+  LOCALE_TAGS,
+  detectLanguage,
+  localeDirection,
+  matchLocale,
+  normalizeLanguage,
+  resolveLanguage,
+  sortLocalesForPicker,
+  type LanguagePreference,
+  type LocaleDescriptor,
+  type LocaleTag,
+} from './locales';
 
 const resources = {
-  en: { translation: en },
-  zh: { translation: zh },
+  [DEFAULT_LOCALE]: { translation: en },
 };
-
-/** Supported concrete languages (everything except 'auto'). */
-const SUPPORTED_LANGS = Object.keys(resources);
-
-/**
- * Detect the best concrete language from the browser/OS locale.
- * Returns 'zh' for any Chinese variant, 'en' otherwise.
- */
-export function detectLanguage(): 'en' | 'zh' {
-  let raw: string = 'en';
-  if (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage) {
-    raw = chrome.i18n.getUILanguage();
-  } else if (typeof navigator !== 'undefined' && navigator.language) {
-    raw = navigator.language;
-  }
-  const base = (raw.split('-')[0] ?? 'en').toLowerCase();
-  return SUPPORTED_LANGS.includes(base) ? (base as 'en' | 'zh') : 'en';
-}
-
-/**
- * Resolve the stored language setting to a concrete language code.
- * 'auto' (or any falsy/unrecognised value) triggers browser detection.
- */
-export function resolveLanguage(language: string | undefined): 'en' | 'zh' {
-  if (language && language !== 'auto' && SUPPORTED_LANGS.includes(language)) {
-    return language as 'en' | 'zh';
-  }
-  return detectLanguage();
-}
 
 i18n.use(initReactI18next).init({
   resources,
+  // Intentionally the detected tag even though only `en` is loaded at this
+  // point: `bootstrapPage()` awaits `applyLanguage()` before React mounts, so
+  // the active bundle is in place before the first frame. Starting at `en`
+  // instead would make the first `applyLanguage()` a no-op for English users
+  // with a stored non-English preference.
   lng: detectLanguage(),
-  fallbackLng: 'en',
-  interpolation: {
-    escapeValue: false,
-  },
+  fallbackLng: DEFAULT_LOCALE,
+  // React renders outside Suspense; returning a key while a bundle is loading
+  // would flash raw dots across the UI.
+  react: { useSuspense: false },
+  interpolation: { escapeValue: false },
 });
 
-/** Keep <html lang> in sync with the active language so the browser
- *  never mistakes the UI for a foreign-language page (translate prompt). */
-const HTML_LANG: Record<string, string> = { en: 'en', zh: 'zh-CN' };
-
-function syncDocumentLang(lng: string) {
+/** Keep `<html lang>` and `<html dir>` in sync with the active language. */
+function syncDocumentLang(tag: string) {
   if (typeof document === 'undefined') return;
-  document.documentElement.lang = HTML_LANG[lng] ?? lng;
+  document.documentElement.lang = tag;
+  document.documentElement.dir = localeDirection(tag);
 }
 
 i18n.on('languageChanged', syncDocumentLang);
 syncDocumentLang(i18n.language);
+
+const loaded = new Set<string>([DEFAULT_LOCALE]);
+
+async function ensureBundle(tag: LocaleTag): Promise<void> {
+  if (loaded.has(tag)) return;
+  const bundle: LocaleBundle = await loadLocaleBundle(tag);
+  i18n.addResourceBundle(tag, 'translation', bundle, true, true);
+  loaded.add(tag);
+}
 
 export default i18n;
 
@@ -68,12 +72,24 @@ export default i18n;
  * `lib/page-bootstrap.ts` reads that record once and distributes it. Two
  * independent reads on the critical path was the previous shape, and it made the
  * cold-start latency the sum of both round trips.
+ *
+ * The bundle is awaited *before* `changeLanguage` so i18next never emits a
+ * language change that React renders against an empty bundle. i18next's
+ * `fallbackLng` would cover that gap, but the UI would visibly swap from English
+ * to the chosen language one frame later.
  */
-export async function applyLanguage(language: string | undefined): Promise<void> {
-  const resolved = resolveLanguage(language);
-  if (resolved === i18n.language) return;
+export async function applyLanguage(language: unknown): Promise<void> {
+  const tag = resolveLanguage(language);
   try {
-    await i18n.changeLanguage(resolved);
+    await ensureBundle(tag);
+    if (tag !== i18n.language) {
+      await i18n.changeLanguage(tag);
+    } else {
+      // Same tag, but the bundle may have just been added (the initial
+      // `detectLanguage()` chosen at init has no bundle yet). Keep the DOM in
+      // sync without forcing a redundant languageChanged round trip.
+      syncDocumentLang(tag);
+    }
   } catch (error) {
     // Keep the default language rather than blocking the render on a bad value.
     console.error('[Lumo] Failed to apply stored language:', error);
@@ -85,12 +101,9 @@ export function watchLanguageChanges(): void {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (!('uiSettings' in changes)) return;
-    const newSettings = changes.uiSettings?.newValue as { language?: string } | undefined;
-    if (newSettings?.language) {
-      const resolved = resolveLanguage(newSettings.language);
-      if (resolved !== i18n.language) {
-        i18n.changeLanguage(resolved);
-      }
+    const newSettings = changes.uiSettings?.newValue as { language?: unknown } | undefined;
+    if (newSettings && 'language' in newSettings) {
+      void applyLanguage(newSettings.language);
     }
   });
 }

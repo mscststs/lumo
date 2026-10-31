@@ -367,7 +367,7 @@ export function McpSettings() {
 
       {loading ? (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <Loader2 className="h-5 w-5 animate-spin me-2" />
           <span>{t('common.loading')}</span>
         </div>
       ) : (
@@ -400,7 +400,7 @@ export function McpSettings() {
                 size="sm"
                 onClick={() => setShowAddForm(true)}
               >
-                <Plus className="h-3.5 w-3.5 mr-1" />
+                <Plus className="h-3.5 w-3.5 me-1" />
                 {t('options.mcp.addServer')}
               </Button>
             </div>
@@ -462,7 +462,7 @@ export function McpSettings() {
                 size="sm"
                 onClick={() => setShowAddExtension((value) => !value)}
               >
-                <Plus className="h-3.5 w-3.5 mr-1" />
+                <Plus className="h-3.5 w-3.5 me-1" />
                 {t('options.mcp.extensions.add')}
               </Button>
             </div>
@@ -589,6 +589,7 @@ function AddExtensionForm({
           value={id}
           onChange={(event) => setId(event.target.value)}
           placeholder={t('options.mcp.extensions.idPlaceholder')}
+          dir="ltr"
           className="font-mono text-xs"
           spellCheck={false}
           autoFocus
@@ -608,7 +609,7 @@ function AddExtensionForm({
           {t('common.cancel')}
         </Button>
         <Button type="submit" size="sm" disabled={submitting || !id.trim()}>
-          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin me-1" />}
           {t('options.mcp.extensions.add')}
         </Button>
       </div>
@@ -660,7 +661,7 @@ function ExtensionProviderCard({
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0" />
+          <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
         )}
 
         <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />
@@ -843,7 +844,7 @@ function WebMcpSection({
           >
             {loading ? (
               <div className="flex items-center justify-center py-4 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <Loader2 className="h-4 w-4 animate-spin me-2" />
                 <span className="text-xs">{t('common.loading')}</span>
               </div>
             ) : activeTabs.length === 0 ? (
@@ -889,7 +890,7 @@ function WebMcpTabCard({
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0" />
+          <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
         )}
 
         <Globe2 className="h-4 w-4 shrink-0 text-emerald-500" />
@@ -1083,6 +1084,7 @@ function AddServerForm({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder={t('options.mcp.serverUrlPlaceholder')}
+          dir="ltr"
           required
         />
       </div>
@@ -1111,6 +1113,7 @@ function AddServerForm({
           value={headersText}
           onChange={(e) => setHeadersText(e.target.value)}
           placeholder={t('options.mcp.headersPlaceholder')}
+          dir="ltr"
           rows={2}
         />
       </div>
@@ -1129,7 +1132,7 @@ function AddServerForm({
           {t('common.cancel')}
         </Button>
         <Button type="submit" size="sm" disabled={submitting || !name.trim() || !url.trim()}>
-          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin me-1" />}
           {t('options.mcp.addServer')}
         </Button>
       </div>
@@ -1161,7 +1164,7 @@ function McpServerCard({
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0" />
+          <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
         )}
 
         <ServerIcon transport={state.info.transport} />
@@ -1225,7 +1228,7 @@ function ExternalServerCard({
         {expanded ? (
           <ChevronDown className="h-4 w-4 shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0" />
+          <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
         )}
 
         <ServerIcon transport={state.info.transport} />

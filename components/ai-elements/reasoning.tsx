@@ -92,7 +92,7 @@ export function Reasoning({
       className={cn('rounded-lg border border-border/60 bg-muted/25 overflow-hidden w-full min-w-0', className)}
     >
       <CollapsibleTrigger className="group/reasoning gap-1.5 px-2 py-1.5 hover:bg-muted/60 transition-colors min-w-0">
-        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/reasoning:rotate-90" />
+        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/reasoning:rotate-90 rtl:-scale-x-100" />
         <Brain
           className={cn(
             'h-3 w-3 shrink-0 text-muted-foreground',

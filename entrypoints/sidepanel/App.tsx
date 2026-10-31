@@ -4,6 +4,7 @@ import { FontSizeInit } from '@/lib/font-size';
 import { emitEvent } from '@/lib/event-bus';
 import { WindowIdContext, useWindowIdInit } from '@/lib/window-id';
 import { SplitView } from '@/components/chat/SplitView';
+import { AppDirection } from '@/components/direction-provider';
 
 /**
  * Sidepanel root — sets up theme and hands the chat UI to SplitView.
@@ -40,6 +41,7 @@ export default function App() {
   }, []);
 
   return (
+    <AppDirection>
     <WindowIdContext.Provider value={windowId}>
       <div className="h-screen w-full bg-background overflow-hidden">
         <ThemeInit />
@@ -47,5 +49,6 @@ export default function App() {
         <SplitView />
       </div>
     </WindowIdContext.Provider>
+    </AppDirection>
   );
 }

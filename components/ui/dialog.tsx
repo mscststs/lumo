@@ -1,6 +1,7 @@
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
@@ -46,7 +47,9 @@ interface DialogContentProps
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, showCloseButton = true, ...props }, ref) => (
+>(({ className, children, showCloseButton = true, ...props }, ref) => {
+  const { t } = useTranslation();
+  return (
   <DialogPrimitive.Portal>
     <DialogOverlay />
     {/*
@@ -77,8 +80,8 @@ const DialogContent = React.forwardRef<
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
-            className="absolute right-3.5 top-3.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Close"
+            className="absolute end-3.5 top-3.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label={t('common.close')}
           >
             <X className="h-4 w-4" />
           </DialogPrimitive.Close>
@@ -86,11 +89,12 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Content>
     </div>
   </DialogPrimitive.Portal>
-));
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1 pr-8', className)} {...props} />;
+  return <div className={cn('flex flex-col gap-1 pe-8', className)} {...props} />;
 }
 
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

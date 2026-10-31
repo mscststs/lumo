@@ -1,0 +1,277 @@
+{
+  "am": {
+    "name": "Lumo",
+    "description": "በAI የተጎለበተ የአሳሽ ጎን ፓነል ረዳት",
+    "actionTitle": "የLumo ጎን ፓነል ክፈት"
+  },
+  "ar": {
+    "name": "Lumo",
+    "description": "مساعد الشريط الجانبي للمتصفح المدعوم بالذكاء الاصطناعي",
+    "actionTitle": "افتح الشريط الجانبي لـ Lumo"
+  },
+  "bg": {
+    "name": "Lumo",
+    "description": "AI помощник в страничния панел на браузъра",
+    "actionTitle": "Отвори страничния панел на Lumo"
+  },
+  "bn": {
+    "name": "Lumo",
+    "description": "AI-চালিত ব্রাউজার সাইডবার সহায়ক",
+    "actionTitle": "Lumo সাইডবার খুলুন"
+  },
+  "ca": {
+    "name": "Lumo",
+    "description": "Assistent de barra lateral del navegador amb IA",
+    "actionTitle": "Obre la barra lateral del Lumo"
+  },
+  "cs": {
+    "name": "Lumo",
+    "description": "AI asistent v postranním panelu prohlížeče",
+    "actionTitle": "Otevřít postranní panel Lumo"
+  },
+  "da": {
+    "name": "Lumo",
+    "description": "AI-drevet sidepanel-assistent til browseren",
+    "actionTitle": "Åbn Lumo-sidepanelet"
+  },
+  "de": {
+    "name": "Lumo",
+    "description": "KI-gestützter Seitenleisten-Assistent für den Browser",
+    "actionTitle": "Lumo-Seitenleiste öffnen"
+  },
+  "el": {
+    "name": "Lumo",
+    "description": "Βοηθός πλαϊνής γραμμής περιηγητή με AI",
+    "actionTitle": "Άνοιγμα πλαϊνής γραμμής Lumo"
+  },
+  "en": {
+    "name": "Lumo",
+    "description": "AI-powered browser sidebar assistant",
+    "actionTitle": "Open Lumo Sidebar"
+  },
+  "en_AU": {
+    "name": "Lumo",
+    "description": "AI-powered browser sidebar assistant",
+    "actionTitle": "Open Lumo Sidebar"
+  },
+  "en_GB": {
+    "name": "Lumo",
+    "description": "AI-powered browser sidebar assistant",
+    "actionTitle": "Open Lumo Sidebar"
+  },
+  "en_US": {
+    "name": "Lumo",
+    "description": "AI-powered browser sidebar assistant",
+    "actionTitle": "Open Lumo Sidebar"
+  },
+  "es": {
+    "name": "Lumo",
+    "description": "Asistente de barra lateral del navegador con IA",
+    "actionTitle": "Abrir la barra lateral de Lumo"
+  },
+  "es_419": {
+    "name": "Lumo",
+    "description": "Asistente de barra lateral del navegador con IA",
+    "actionTitle": "Abrir la barra lateral de Lumo"
+  },
+  "et": {
+    "name": "Lumo",
+    "description": "AI-põhine brauseri külgpaneele abiline",
+    "actionTitle": "Ava Lumo külgpaan"
+  },
+  "fa": {
+    "name": "Lumo",
+    "description": "دستیار نوار کناری مرورگر با هوش مصنوعی",
+    "actionTitle": "باز کردن نوار کناری Lumo"
+  },
+  "fi": {
+    "name": "Lumo",
+    "description": "Tekoälyavusteinen selaimen sivupaneeliavustaja",
+    "actionTitle": "Avaa Lumon sivupaneeli"
+  },
+  "fil": {
+    "name": "Lumo",
+    "description": "Katulong sa side panel ng browser na pinapagana ng AI",
+    "actionTitle": "Buksan ang Lumo Sidebar"
+  },
+  "fr": {
+    "name": "Lumo",
+    "description": "Assistant de barre latérale du navigateur propulsé par l'IA",
+    "actionTitle": "Ouvrir la barre latérale Lumo"
+  },
+  "gu": {
+    "name": "Lumo",
+    "description": "AI આધારિત બ્રાઉઝર સાઇડબાર સહાયક",
+    "actionTitle": "Lumo સાઇડબાર ખોલો"
+  },
+  "he": {
+    "name": "Lumo",
+    "description": "עוזר סרגל צד לדפדפן מבוסס AI",
+    "actionTitle": "פתח את סרגל הצד של Lumo"
+  },
+  "hi": {
+    "name": "Lumo",
+    "description": "AI-संचालित ब्राउज़र साइडबार सहायक",
+    "actionTitle": "Lumo साइडबार खोलें"
+  },
+  "hr": {
+    "name": "Lumo",
+    "description": "AI pomoćnik u bočnoj traci preglednika",
+    "actionTitle": "Otvori Lumo bočnu traku"
+  },
+  "hu": {
+    "name": "Lumo",
+    "description": "AI-vezérelt böngésző oldalsáv-segéd",
+    "actionTitle": "Lumo oldalsáv megnyitása"
+  },
+  "id": {
+    "name": "Lumo",
+    "description": "Asisten bilah samping browser bertenaga AI",
+    "actionTitle": "Buka Sidebar Lumo"
+  },
+  "it": {
+    "name": "Lumo",
+    "description": "Assistente della barra laterale del browser basato sull'IA",
+    "actionTitle": "Apri la barra laterale di Lumo"
+  },
+  "ja": {
+    "name": "Lumo",
+    "description": "AI を活用したブラウザのサイドバーアシスタント",
+    "actionTitle": "Lumo サイドバーを開く"
+  },
+  "kn": {
+    "name": "Lumo",
+    "description": "AI ಚಾಲಿತ ಬ್ರೌಸರ್ ಸೈಡ್‌ಬಾರ್ ಸಹಾಯಕ",
+    "actionTitle": "Lumo ಸೈಡ್‌ಬಾರ್ ತೆರೆಯಿರಿ"
+  },
+  "ko": {
+    "name": "Lumo",
+    "description": "AI 기반 브라우저 사이드바 어시스턴트",
+    "actionTitle": "Lumo 사이드바 열기"
+  },
+  "lt": {
+    "name": "Lumo",
+    "description": "AI pagrįstas naršyklės šoninės juostos asistentas",
+    "actionTitle": "Atidaryti „Lumo“ šoninę juostą"
+  },
+  "lv": {
+    "name": "Lumo",
+    "description": "AI darbināms pārlūka sānjoslas asistents",
+    "actionTitle": "Atvērt Lumo sānjoslu"
+  },
+  "ml": {
+    "name": "Lumo",
+    "description": "AI അടിസ്ഥാനമാക്കിയ ബ്രൗസർ സൈഡ്ബാർ അസിസ്റ്റന്റ്",
+    "actionTitle": "Lumo സൈഡ്ബാർ തുറക്കുക"
+  },
+  "mr": {
+    "name": "Lumo",
+    "description": "AI-आधारित ब्राउझर साइडबार सहाय्यक",
+    "actionTitle": "Lumo साइडबार उघडा"
+  },
+  "ms": {
+    "name": "Lumo",
+    "description": "Pembantu bar sisi pelayar dikuasakan AI",
+    "actionTitle": "Buka Bar Sisi Lumo"
+  },
+  "nl": {
+    "name": "Lumo",
+    "description": "AI-aangedreven zijbalkassistent voor de browser",
+    "actionTitle": "Lumo-zijbalk openen"
+  },
+  "no": {
+    "name": "Lumo",
+    "description": "AI-drevet sidepanel-assistent for nettleseren",
+    "actionTitle": "Åpne Lumo-sidepanelet"
+  },
+  "pl": {
+    "name": "Lumo",
+    "description": "Asystent panelu bocznego przeglądarki oparty na AI",
+    "actionTitle": "Otwórz panel boczny Lumo"
+  },
+  "pt_BR": {
+    "name": "Lumo",
+    "description": "Assistente de barra lateral do navegador com IA",
+    "actionTitle": "Abrir a barra lateral do Lumo"
+  },
+  "pt_PT": {
+    "name": "Lumo",
+    "description": "Assistente de barra lateral do navegador com IA",
+    "actionTitle": "Abrir a barra lateral do Lumo"
+  },
+  "ro": {
+    "name": "Lumo",
+    "description": "Asistent de bară laterală a browserului bazat pe AI",
+    "actionTitle": "Deschide bara laterală Lumo"
+  },
+  "ru": {
+    "name": "Lumo",
+    "description": "ИИ-помощник в боковой панели браузера",
+    "actionTitle": "Открыть боковую панель Lumo"
+  },
+  "sk": {
+    "name": "Lumo",
+    "description": "AI asistent v bočnom paneli prehliadača",
+    "actionTitle": "Otvoriť bočný panel Lumo"
+  },
+  "sl": {
+    "name": "Lumo",
+    "description": "AI pomočnik v stranski vrstici brskalnika",
+    "actionTitle": "Odpri stransko vrstico Lumo"
+  },
+  "sr": {
+    "name": "Lumo",
+    "description": "AI помоћник у бочној траци прегледача",
+    "actionTitle": "Отвори Lumo бочну траку"
+  },
+  "sv": {
+    "name": "Lumo",
+    "description": "AI-driven sidopanelassistent för webbläsaren",
+    "actionTitle": "Öppna Lumos sidopanel"
+  },
+  "sw": {
+    "name": "Lumo",
+    "description": "Msaidizi wa paneli ya pembeni ya kivinjari unaoendeshwa na AI",
+    "actionTitle": "Fungua Paneli ya Lumo"
+  },
+  "ta": {
+    "name": "Lumo",
+    "description": "AI இயக்கும் உலாவி பக்கப்பட்டி உதவியாளர்",
+    "actionTitle": "Lumo பக்கப்பட்டியைத் திற"
+  },
+  "te": {
+    "name": "Lumo",
+    "description": "AI ఆధారిత బ్రౌజర్ సైడ్‌బార్ సహాయకుడు",
+    "actionTitle": "Lumo సైడ్‌బార్ తెరవండి"
+  },
+  "th": {
+    "name": "Lumo",
+    "description": "ผู้ช่วยแถบด้านข้างของเบราว์เซอร์ที่ขับเคลื่อนด้วย AI",
+    "actionTitle": "เปิดแถบด้านข้าง Lumo"
+  },
+  "tr": {
+    "name": "Lumo",
+    "description": "AI destekli tarayıcı kenar çubuğu asistanı",
+    "actionTitle": "Lumo kenar çubuğunu aç"
+  },
+  "uk": {
+    "name": "Lumo",
+    "description": "ШІ-помічник у бічній панелі браузера",
+    "actionTitle": "Відкрити бічну панель Lumo"
+  },
+  "vi": {
+    "name": "Lumo",
+    "description": "Trợ lý thanh bên trình duyệt hỗ trợ AI",
+    "actionTitle": "Mở thanh bên Lumo"
+  },
+  "zh_CN": {
+    "name": "Lumo",
+    "description": "AI 驱动的浏览器侧边栏助手",
+    "actionTitle": "打开 Lumo 侧边栏"
+  },
+  "zh_TW": {
+    "name": "Lumo",
+    "description": "AI 驅動的瀏覽器側邊欄助手",
+    "actionTitle": "開啟 Lumo 側邊欄"
+  }
+}

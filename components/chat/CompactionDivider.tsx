@@ -32,7 +32,7 @@ export function CompactionDivider({ compaction, className }: CompactionDividerPr
       <CollapsibleTrigger className="group/compaction w-full items-center gap-2 py-0.5">
         <span className="h-px flex-1 bg-border/70" aria-hidden />
         <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground transition-colors hover:bg-muted/70">
-          <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-data-[state=open]/compaction:rotate-90" />
+          <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-data-[state=open]/compaction:rotate-90 rtl:-scale-x-100" />
           <Archive className="h-3 w-3 shrink-0" />
           <span className="truncate">{t('sidebar.compactedHistory')}</span>
           <span className="shrink-0 tabular-nums text-muted-foreground/70">

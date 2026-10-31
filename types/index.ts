@@ -1,4 +1,5 @@
 import type { UIMessagePart, UIDataTypes, UITools } from 'ai';
+import type { LanguagePreference } from '@/i18n/locales';
 import type { ReasoningEffort } from '@/lib/reasoning-effort';
 import type { TurnNotificationMode } from '@/lib/turn-notification';
 
@@ -203,7 +204,8 @@ export interface CompactionNotice {
 }
 
 export interface UISettings {
-  language: 'auto' | 'en' | 'zh';
+  /** `auto` follows the browser UI language; otherwise a shipped BCP-47 tag. */
+  language: LanguagePreference;
   theme: Theme;
   /** Global UI font size in pixels. Default is 14. */
   fontSize: FontSize;

@@ -64,6 +64,7 @@ import {
   DEFAULT_TURN_NOTIFICATION,
   normalizeTurnNotification,
 } from '@/lib/turn-notification';
+import { normalizeLanguage } from '@/i18n/locales';
 
 // ---------------------------------------------------------------------------
 // 1. Schema: all possible storage keys and their value types
@@ -189,6 +190,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     exportable: true,
     normalize: (raw) => ({
       ...raw,
+      // A stale config may carry a language this build no longer ships (or the
+      // pre-registry `'zh'`). Normalise it here so neither the picker nor
+      // i18next ever sees an unloadable bundle name.
+      language: normalizeLanguage(raw.language),
       // Guards configs exported by a build that knows a theme this one does not
       // (and pre-field configs). An unrecognised value would otherwise reach
       // `data-theme`, match no token block, and silently leave light tokens.

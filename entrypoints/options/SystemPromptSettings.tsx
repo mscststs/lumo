@@ -107,7 +107,7 @@ export function SystemPromptSettingsPage() {
             {t('options.systemPrompt.revert')}
           </Button>
           <Button variant="ghost" onClick={handleReset} disabled={isDefault}>
-            <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+            <RotateCcw className="h-3.5 w-3.5 me-1.5" />
             {t('options.systemPrompt.reset')}
           </Button>
 

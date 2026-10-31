@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "ผู้ช่วยแถบด้านข้างของเบราว์เซอร์ที่ขับเคลื่อนด้วย AI",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "เปิดแถบด้านข้าง Lumo",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

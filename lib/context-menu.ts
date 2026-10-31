@@ -11,8 +11,6 @@
  * menu item was clicked.
  */
 
-import { en } from '@/i18n/en';
-import { zh } from '@/i18n/zh';
 import {
   QUICK_ACTIONS,
   QUICK_ACTION_PARENT_IDS,
@@ -22,6 +20,8 @@ import {
   type QuickActionDefinition,
   type QuickActionScope,
 } from '@/lib/quick-actions';
+import { loadLocaleBundle, type LocaleBundle } from '@/i18n/load-locale';
+import { resolveLanguage } from '@/i18n/locales';
 import type { PageContext } from '@/lib/page-context';
 
 // ─── Pending payload contract ────────────────────────────────────────────────
@@ -65,23 +65,24 @@ export interface ContextMenuPendingData {
 // ─── i18n without React ──────────────────────────────────────────────────────
 
 /**
- * The background has no i18next instance, so it reads the locale objects
- * directly. Resolution mirrors `i18n/index.ts`: the stored language, falling
- * back to English.
+ * The background has no live i18next instance (and no React), so it loads the
+ * same JSON bundle the UI does, resolved from the same stored preference. This
+ * keeps the right-click menu in the language the user picked instead of the
+ * old hard-coded `en`/`zh` fork.
  */
-async function loadLocale(): Promise<typeof en> {
+async function loadLocale(): Promise<LocaleBundle> {
   try {
     const result = await chrome.storage.local.get('uiSettings');
-    const lang = (result.uiSettings as { language?: string } | undefined)?.language ?? 'en';
-    if (lang === 'zh') return zh;
+    const language = (result.uiSettings as { language?: unknown } | undefined)?.language;
+    return await loadLocaleBundle(resolveLanguage(language));
   } catch {
-    // Fall through to English.
+    // Fall through to English; the menu must still be usable.
+    return loadLocaleBundle('en');
   }
-  return en;
 }
 
 /** Resolves a dotted i18n path against a locale object. */
-function resolvePath(locale: typeof en, path: string): string | undefined {
+function resolvePath(locale: LocaleBundle, path: string): string | undefined {
   const value = path
     .split('.')
     .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], locale);
@@ -102,12 +103,16 @@ export function registerContextMenus() {
   // Listen for clicks
   chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
 
-  // Re-create menus when language changes so titles stay in sync
+  // Re-create menus when the *language* changes so titles stay in sync. Theme
+  // and font edits also rewrite `uiSettings`; rebuilding on those would tear
+  // down and recreate every menu item for no visible reason.
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
-    if ('uiSettings' in changes) {
-      rebuildMenus();
-    }
+    const change = changes.uiSettings;
+    if (!change) return;
+    const before = (change.oldValue as { language?: unknown } | undefined)?.language;
+    const after = (change.newValue as { language?: unknown } | undefined)?.language;
+    if (before !== after) rebuildMenus();
   });
 }
 

@@ -48,7 +48,7 @@ export function Field({ label, hint, error, required, className, children }: Fie
     <div className={cn('flex flex-col gap-1.5', className)}>
       <Label htmlFor={controlId} className="text-xs text-muted-foreground">
         {label}
-        {required && <span className="ml-0.5 text-destructive">*</span>}
+        {required && <span className="ms-0.5 text-destructive">*</span>}
       </Label>
 
       {children({

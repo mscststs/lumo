@@ -13,6 +13,7 @@ import {
   ScanEye,
 } from 'lucide-react';
 import { ThemeInit } from '@/lib/theme';
+import { AppDirection } from '@/components/direction-provider';
 import { FontSizeInit } from '@/lib/font-size';
 import { ModelSettings } from './ModelSettings';
 import { UISettingsPage } from './UISettings';
@@ -99,11 +100,12 @@ export default function App() {
   const { activeNav, navigate } = useHashNav();
 
   return (
+    <AppDirection>
     <div className="flex h-screen w-full bg-background">
       <ThemeInit />
       <FontSizeInit />
       {/* Left Navigation */}
-      <nav className="w-56 shrink-0 border-r border-border bg-card flex flex-col">
+      <nav className="w-56 shrink-0 border-e border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
           <h1 className="text-lg font-semibold text-foreground truncate">{t('options.title')}</h1>
         </div>
@@ -150,6 +152,7 @@ export default function App() {
         {activeNav === 'about' && <AboutPage />}
       </main>
     </div>
+    </AppDirection>
   );
 }
 

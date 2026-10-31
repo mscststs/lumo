@@ -18,6 +18,7 @@ import { code } from '@streamdown/code';
 import { cjk } from '@streamdown/cjk';
 import { cn } from '@/lib/utils';
 import { ThemeInit } from '@/lib/theme';
+import { AppDirection } from '@/components/direction-provider';
 import { FontSizeInit } from '@/lib/font-size';
 import { useEvent } from '@/lib/event-bus';
 import { selectAllRootProps, useSelectAllScope } from '@/lib/use-select-all-scope';
@@ -268,6 +269,7 @@ export default function App() {
   }, [metadata, showModeSwitch, viewMode]);
 
   return (
+    <AppDirection>
     <div className="flex flex-col h-screen w-full bg-background">
       <ThemeInit />
       <FontSizeInit />
@@ -295,7 +297,7 @@ export default function App() {
                   className={cn(file.name === fileName && 'bg-accent')}
                 >
                   <span className="truncate">{file.name}</span>
-                  <span className="ml-auto pl-3 text-[10px] text-muted-foreground shrink-0">
+                  <span className="ms-auto ps-3 text-[10px] text-muted-foreground shrink-0">
                     {file.mimeType.split('/')[1]}
                   </span>
                 </DropdownMenuItem>
@@ -303,7 +305,7 @@ export default function App() {
             </DropdownMenuContent>
           </DropdownMenu>
           {metadata && (
-            <span className="text-xs text-muted-foreground ml-1 shrink-0">
+            <span className="text-xs text-muted-foreground ms-1 shrink-0">
               {metadata.mimeType}
             </span>
           )}
@@ -312,7 +314,7 @@ export default function App() {
             <button
               onClick={() => handleSave()}
               disabled={saving}
-              className="flex items-center gap-1 h-5 rounded px-1.5 ml-2 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 h-5 rounded px-1.5 ms-2 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
             >
               <Save className="h-3 w-3" />
               <span>{saving ? t('common.saving') : t('options.preview.unsaved')}</span>
@@ -418,6 +420,7 @@ export default function App() {
         )}
       </main>
     </div>
+    </AppDirection>
   );
 }
 
@@ -562,6 +565,7 @@ function TextPreview({
  * Limitations: WebGL is unavailable (Chrome restricts it on opaque origins).
  */
 function HtmlPreview({ content }: { content: string }) {
+  const { t } = useTranslation();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const readyRef = useRef(false);
 
@@ -607,7 +611,7 @@ function HtmlPreview({ content }: { content: string }) {
       ref={iframeRef}
       src={sandboxUrl}
       className="w-full h-full border-none bg-background"
-      title="HTML Preview"
+      title={t('options.preview.sandboxTitle')}
     />
   );
 }

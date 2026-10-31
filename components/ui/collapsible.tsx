@@ -86,7 +86,7 @@ export function CollapsibleTrigger({
         onClick?.(event);
         if (!event.defaultPrevented) toggle();
       }}
-      className={cn('flex w-full items-center text-left', className)}
+      className={cn('flex w-full items-center text-start', className)}
       {...props}
     >
       {children}

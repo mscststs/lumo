@@ -163,7 +163,7 @@ export function OcrSettingsPage() {
               onClick={handleResetPrompt}
               disabled={!settings.enabled || settings.prompt === DEFAULT_OCR_PROMPT}
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              <RotateCcw className="h-3.5 w-3.5 me-1.5" />
               {t('options.ocr.resetPrompt')}
             </Button>
           </div>

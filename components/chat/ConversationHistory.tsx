@@ -25,9 +25,11 @@ export function ConversationHistory({
   onClearAll,
   onClose,
 }: ConversationHistoryProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  // Slide in from the inline-start edge, which is the right side under RTL.
+  const slideX = i18n.dir() === 'rtl' ? 12 : -12;
 
   // Already ordered by the store (most recently updated first).
   const filtered = useMemo(() => {
@@ -48,9 +50,9 @@ export function ConversationHistory({
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -12 }}
+      initial={{ opacity: 0, x: slideX }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -12 }}
+      exit={{ opacity: 0, x: slideX }}
       transition={{ duration: 0.15, ease: 'easeOut' }}
       className="absolute inset-0 z-20 flex flex-col bg-background"
     >
@@ -106,12 +108,12 @@ export function ConversationHistory({
       {conversations.length > 0 && (
         <div className="px-3 pt-2 shrink-0">
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 pointer-events-none" />
+            <Search className="absolute start-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 pointer-events-none" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('sidebar.history.search')}
-              className="h-8 text-xs pl-7 bg-muted/50 border-0 shadow-none"
+              className="h-8 text-xs ps-7 bg-muted/50 border-0 shadow-none"
             />
           </div>
         </div>

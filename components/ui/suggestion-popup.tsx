@@ -65,7 +65,7 @@ export function SuggestionPopup({
           exit={{ opacity: 0, y: 4 }}
           transition={{ duration: 0.12, ease: 'easeOut' }}
           className={cn(
-            'absolute bottom-full left-0 right-0 z-30 mb-1.5',
+            'absolute bottom-full inset-x-0 z-30 mb-1.5',
             'overflow-hidden rounded-xl border border-border bg-card/95 shadow-lg backdrop-blur-sm',
             className,
           )}
@@ -97,7 +97,7 @@ export function SuggestionPopup({
                   }}
                   onMouseEnter={() => onHover(index)}
                   className={cn(
-                    'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-start transition-colors',
                     active ? 'bg-accent text-accent-foreground' : 'text-foreground',
                   )}
                 >

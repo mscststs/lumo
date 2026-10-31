@@ -189,6 +189,7 @@ export function ModelDialog({
                       if (shouldMirror && errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
                     }}
                     placeholder={t('options.models.modelIdPlaceholder')}
+                    dir="ltr"
                     spellCheck={false}
                     className="font-mono text-xs"
                   />

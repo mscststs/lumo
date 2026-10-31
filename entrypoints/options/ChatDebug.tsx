@@ -635,11 +635,11 @@ function EmptyState() {
 // ─── Debug Card ─────────────────────────────────────────────────────────────────
 
 const ENTRY_STYLES: Record<DebugEntry['type'], { icon: React.ElementType; label: string; borderClass: string }> = {
-  'system-prompt': { icon: FileText, label: 'options.chatDebug.systemPrompt', borderClass: 'border-l-purple-500' },
-  'user': { icon: User, label: 'options.chatDebug.userMessage', borderClass: 'border-l-blue-500' },
-  'assistant-text': { icon: Bot, label: 'options.chatDebug.assistantMessage', borderClass: 'border-l-green-500' },
-  'assistant-reasoning': { icon: Brain, label: 'options.chatDebug.reasoningPart', borderClass: 'border-l-amber-500' },
-  'tool-call': { icon: Wrench, label: 'options.chatDebug.toolCall', borderClass: 'border-l-orange-500' },
+  'system-prompt': { icon: FileText, label: 'options.chatDebug.systemPrompt', borderClass: 'border-s-purple-500' },
+  'user': { icon: User, label: 'options.chatDebug.userMessage', borderClass: 'border-s-blue-500' },
+  'assistant-text': { icon: Bot, label: 'options.chatDebug.assistantMessage', borderClass: 'border-s-green-500' },
+  'assistant-reasoning': { icon: Brain, label: 'options.chatDebug.reasoningPart', borderClass: 'border-s-amber-500' },
+  'tool-call': { icon: Wrench, label: 'options.chatDebug.toolCall', borderClass: 'border-s-orange-500' },
 };
 
 function DebugCard({ entry }: { entry: DebugEntry }) {
@@ -667,25 +667,25 @@ function DebugCard({ entry }: { entry: DebugEntry }) {
   return (
     <div
       className={cn(
-        'rounded-lg border border-border bg-card overflow-hidden border-l-4 transition-colors',
+        'rounded-lg border border-border bg-card overflow-hidden border-s-4 transition-colors',
         style.borderClass,
       )}
     >
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-start hover:bg-muted/50 transition-colors"
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="text-xs font-medium text-foreground truncate">
           {t(style.label)}
           {isToolCall && entry.toolPart && (
-            <span className="ml-1 font-mono text-muted-foreground">
+            <span className="ms-1 font-mono text-muted-foreground">
               {toolPartName(entry.toolPart)}
             </span>
           )}
         </span>
-        <span className="ml-auto flex items-center gap-1.5 shrink-0">
+        <span className="ms-auto flex items-center gap-1.5 shrink-0">
           <Clock className="h-3 w-3 text-muted-foreground/60" />
           <span className="text-[0.625rem] text-muted-foreground/70 tabular-nums">
             {formatTime(entry.timestamp)}
@@ -740,7 +740,7 @@ function TextContent({
         {content}
       </pre>
       {!expanded && needsExpand && (
-        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-card to-transparent pointer-events-none" />
       )}
     </div>
   );
@@ -830,7 +830,7 @@ function TokenUsageBadge({ usage, label }: { usage: TokenUsageStats; label?: str
     <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 space-y-1">
       {/* Header row */}
       <button
-        className="w-full flex items-center gap-2 text-left"
+        className="w-full flex items-center gap-2 text-start"
         onClick={() => hasSteps && setExpanded(!expanded)}
         disabled={!hasSteps}
       >
@@ -874,7 +874,7 @@ function TokenUsageBadge({ usage, label }: { usage: TokenUsageStats; label?: str
         {hasSteps && (
           <ChevronDown
             className={cn(
-              'ml-auto h-3 w-3 text-muted-foreground/60 transition-transform shrink-0',
+              'ms-auto h-3 w-3 text-muted-foreground/60 transition-transform shrink-0',
               expanded && 'rotate-180',
             )}
           />

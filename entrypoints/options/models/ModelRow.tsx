@@ -86,7 +86,7 @@ export function ModelRow({
           : 'border-transparent shadow-none hover:border-border',
       )}
     >
-      <div className="flex items-center gap-1 pr-1.5">
+      <div className="flex items-center gap-1 pe-1.5">
         <button
           type="button"
           // `onPointerDown` starts the drag; `touch-none` stops the browser from
@@ -113,7 +113,7 @@ export function ModelRow({
           // `min-w-0` lets the truncating children actually shrink; without it
           // the flex item keeps its content width and pushes the row wider than
           // the narrow layouts allow.
-          className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-1 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2 py-2 pe-1 text-start"
         >
           <span className="truncate text-sm font-medium text-foreground">
             {model.displayName}

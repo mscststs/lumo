@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "Pembantu bar sisi pelayar dikuasakan AI",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Buka Bar Sisi Lumo",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

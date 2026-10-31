@@ -127,7 +127,7 @@ function ContextUsagePanel({
       <div className="text-[0.625rem] font-mono tabular-nums text-muted-foreground">
         {`${formatContextTokens(usage.tokens)} / ${formatContextTokens(usage.contextWindow)}`}
         {usage.estimated && (
-          <span className="ml-1.5 text-muted-foreground/70">
+          <span className="ms-1.5 text-muted-foreground/70">
             {t('sidebar.contextEstimated')}
           </span>
         )}

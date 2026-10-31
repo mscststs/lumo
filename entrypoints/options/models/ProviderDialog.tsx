@@ -187,6 +187,7 @@ export function ProviderDialog({
                 value={value.baseUrl ?? ''}
                 onChange={(e) => patch({ baseUrl: e.target.value }, 'baseUrl')}
                 placeholder={providerBaseUrlPlaceholder(vendor, value.type)}
+                dir="ltr"
                 spellCheck={false}
                 className="font-mono text-xs"
               />
@@ -206,16 +207,17 @@ export function ProviderDialog({
                   value={value.apiKey}
                   onChange={(e) => patch({ apiKey: e.target.value }, 'apiKey')}
                   placeholder={t('options.models.apiKeyPlaceholder')}
+                  dir="ltr"
                   spellCheck={false}
                   autoComplete="off"
-                  className="pr-9 font-mono text-xs"
+                  className="pe-9 font-mono text-xs"
                 />
                 <button
                   type="button"
                   onClick={() => setRevealKey((prev) => !prev)}
                   aria-label={t('options.models.apiKey')}
                   aria-pressed={revealKey}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="absolute end-1 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   {revealKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>

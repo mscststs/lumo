@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "AI આધારિત બ્રાઉઝર સાઇડબાર સહાયક",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Lumo સાઇડબાર ખોલો",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

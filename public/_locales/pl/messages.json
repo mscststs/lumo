@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "Asystent panelu bocznego przeglądarki oparty na AI",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Otwórz panel boczny Lumo",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}

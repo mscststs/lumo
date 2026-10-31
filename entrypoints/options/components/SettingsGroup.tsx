@@ -17,7 +17,7 @@ export function SettingsGroup({
       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h3>
-      <div className="space-y-5 pl-0.5">{children}</div>
+      <div className="space-y-5 ps-0.5">{children}</div>
     </section>
   );
 }

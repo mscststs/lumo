@@ -336,7 +336,7 @@ export function FileManager() {
         {/* File List */}
         {loading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            <Loader2 className="h-5 w-5 animate-spin me-2" />
             <span>{t('common.loading')}</span>
           </div>
         ) : files.length === 0 ? (
@@ -352,7 +352,7 @@ export function FileManager() {
               <span>{t('options.files.size')}</span>
               <span>{t('options.files.source')}</span>
               <span>{t('options.files.createdAt')}</span>
-              <span className="text-right">{t('options.files.actions')}</span>
+              <span className="text-end">{t('options.files.actions')}</span>
             </div>
 
             {/* Entries: Folder Groups & Standalone Files */}
@@ -436,7 +436,7 @@ function FolderGroupRow({
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className="shrink-0"
           >
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground rtl:-scale-x-100" />
           </motion.div>
           <Folder className="h-4 w-4 text-amber-500 shrink-0" />
           <span className="text-sm font-medium truncate" title={group.prefix}>
@@ -550,7 +550,7 @@ function FileRow({
 
   return (
     <div
-      className={`grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 items-center hover:bg-accent/30 transition-colors ${canDragToSidePanel ? 'active:cursor-grabbing' : ''} ${indent ? 'pl-10' : ''}`}
+      className={`grid grid-cols-[1fr_80px_120px_140px_100px] gap-2 p-3 items-center hover:bg-accent/30 transition-colors ${canDragToSidePanel ? 'active:cursor-grabbing' : ''} ${indent ? 'ps-10' : ''}`}
       draggable={canDragToSidePanel}
       onDragStart={handleDragStart}
       title={canDragToSidePanel ? t('options.files.dragHint') : undefined}

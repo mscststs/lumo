@@ -219,7 +219,7 @@ function ClearButton({
       )}
       {/* The icon carries the action on narrow panes; the words appear when
           there is room for them. */}
-      <span className="ml-2 hidden truncate lg:inline">{label}</span>
+      <span className="ms-2 hidden truncate lg:inline">{label}</span>
     </Button>
   );
 }

@@ -1,14 +1,14 @@
 {
   "extName": {
     "message": "Lumo",
-    "description": "扩展的显示名称。"
+    "description": "The display name of the extension."
   },
   "extDescription": {
     "message": "AI 驱动的浏览器侧边栏助手",
-    "description": "在 Chrome 应用商店和扩展管理页面展示的描述。"
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
   },
   "actionTitle": {
     "message": "打开 Lumo 侧边栏",
-    "description": "鼠标悬停在工具栏图标上时显示的提示文字。"
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
   }
 }

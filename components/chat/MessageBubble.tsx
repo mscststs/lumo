@@ -224,6 +224,7 @@ interface VariantSwitcherProps {
  * `undefined` means the latest is active (displayed as the last slot).
  */
 function VariantSwitcher({ variants, activeVariantIndex, onSwitch }: VariantSwitcherProps) {
+  const { t } = useTranslation();
   const total = variants.length + 1;
   // Active slot: undefined / >= variants.length → last slot (latest)
   const currentSlot = activeVariantIndex !== undefined && activeVariantIndex < variants.length
@@ -240,9 +241,9 @@ function VariantSwitcher({ variants, activeVariantIndex, onSwitch }: VariantSwit
         className="h-6 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
         disabled={!canPrev}
         onClick={() => canPrev && onSwitch(currentSlot - 1)}
-        aria-label="Previous variant"
+        aria-label={t('sidebar.previousVariant')}
       >
-        <ChevronLeft className="size-3" />
+        <ChevronLeft className="size-3 rtl:-scale-x-100" />
       </button>
       <span className="text-xs tabular-nums text-muted-foreground select-none min-w-[2rem] text-center">
         {displayIndex}/{total}
@@ -251,9 +252,9 @@ function VariantSwitcher({ variants, activeVariantIndex, onSwitch }: VariantSwit
         className="h-6 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
         disabled={!canNext}
         onClick={() => canNext && onSwitch(currentSlot + 1)}
-        aria-label="Next variant"
+        aria-label={t('sidebar.nextVariant')}
       >
-        <ChevronRight className="size-3" />
+        <ChevronRight className="size-3 rtl:-scale-x-100" />
       </button>
     </div>
   );
@@ -451,7 +452,7 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         )}
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground/70 truncate flex-1 text-left">
+        <span className="text-xs text-muted-foreground/70 truncate flex-1 text-start">
           {attachment.preview}
         </span>
         {expanded ? (

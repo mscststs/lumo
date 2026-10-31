@@ -30,11 +30,12 @@ import { PasteThresholdField } from './components/PasteThresholdField';
 import { MaxStepsField } from './components/MaxStepsField';
 import { ReserveField } from './components/ReserveField';
 import { TokenBudgetField } from './components/TokenBudgetField';
+import { LanguagePicker } from '@/components/ui/language-picker';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
 import { SettingsHeader } from './components/SettingsHeader';
 import type { SendKey, Theme, FontSize, UISettings, MessageToolbarSettings, MessageActionVisibility, MessageActionToggle, CompactionSettings } from '@/types';
-import { resolveLanguage } from '@/i18n';
+import { applyLanguage } from '@/i18n';
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -117,12 +118,11 @@ export function UISettingsPage() {
     });
   }, []);
 
-  const handleLanguageChange = async (val: string) => {
-    const lang = val as UISettings['language'];
-    setLanguage(lang);
-    await i18n.changeLanguage(resolveLanguage(lang));
+  const handleLanguageChange = async (value: UISettings['language']) => {
+    setLanguage(value);
+    await applyLanguage(value);
     const settings = await storage.getUISettings();
-    await storage.setUISettings({ ...settings, language: lang });
+    await storage.setUISettings({ ...settings, language: value });
   };
 
   const handleThemeChange = async (val: string) => {
@@ -203,16 +203,7 @@ export function UISettingsPage() {
         {/* Extension-wide: applies everywhere Lumo renders. */}
         <SettingsGroup title={t('options.ui.groupGeneral')}>
           <SettingRow label={t('options.ui.language')}>
-            <Select value={language} onValueChange={handleLanguageChange}>
-              <SelectTrigger className="w-40" aria-label={t('options.ui.language')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">{t('options.ui.languageAuto')}</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="zh">中文</SelectItem>
-              </SelectContent>
-            </Select>
+            <LanguagePicker value={language} onChange={handleLanguageChange} />
           </SettingRow>
 
           <SettingRow label={t('options.ui.theme')}>

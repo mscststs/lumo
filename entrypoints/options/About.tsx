@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { applyLanguage } from '@/i18n';
 import { Download, RefreshCw, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/lib/theme';
@@ -50,7 +51,7 @@ export function AboutPage() {
         await storage.importConfig(config);
         // Apply imported UI preferences (language/theme) immediately.
         const settings = await storage.getUISettings();
-        await i18n.changeLanguage(settings.language);
+        await applyLanguage(settings.language);
         await setTheme(settings.theme);
         void usage.refresh(true);
         alert(t('options.about.importExport.importSuccess'));
@@ -72,7 +73,7 @@ export function AboutPage() {
             onClick={() => void usage.refresh()}
             disabled={usage.loading}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${usage.loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`me-2 h-4 w-4 ${usage.loading ? 'animate-spin' : ''}`} />
             {t('options.about.refresh')}
           </Button>
         }
@@ -92,11 +93,11 @@ export function AboutPage() {
         <SettingsGroup title={t('options.about.importExport.title')}>
           <div className="flex gap-3">
             <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
+              <Download className="me-2 h-4 w-4" />
               {t('options.about.importExport.exportConfig')}
             </Button>
             <Button variant="outline" onClick={handleImport}>
-              <Upload className="mr-2 h-4 w-4" />
+              <Upload className="me-2 h-4 w-4" />
               {t('options.about.importExport.importConfig')}
             </Button>
           </div>

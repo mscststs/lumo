@@ -40,13 +40,13 @@ export function ConversationHistoryItem({
       <button
         type="button"
         onClick={() => onSelect(conversation.id)}
-        className="w-full text-left px-2.5 py-2 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
+        className="w-full text-start px-2.5 py-2 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
       >
         {/* pr leaves room for the hover actions so long titles never sit under them */}
         <div
           className={cn(
             'flex items-baseline justify-between gap-2 transition-[padding] duration-200',
-            isConfirming ? 'pr-14' : 'pr-7',
+            isConfirming ? 'pe-14' : 'pe-7',
           )}
         >
           <span className="text-xs font-medium truncate min-w-0">
@@ -60,7 +60,7 @@ export function ConversationHistoryItem({
           <p
             className={cn(
               'text-[11px] text-muted-foreground truncate mt-0.5 transition-[padding] duration-200',
-              isConfirming ? 'pr-14' : 'pr-7',
+              isConfirming ? 'pe-14' : 'pe-7',
             )}
           >
             {preview}
@@ -68,7 +68,7 @@ export function ConversationHistoryItem({
         )}
       </button>
 
-      <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
+      <div className="absolute top-1.5 end-1.5 flex items-center gap-0.5">
         {isConfirming ? (
           <>
             <Button

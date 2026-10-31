@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Lumo",
+    "description": "The display name of the extension."
+  },
+  "extDescription": {
+    "message": "AI അടിസ്ഥാനമാക്കിയ ബ്രൗസർ സൈഡ്ബാർ അസിസ്റ്റന്റ്",
+    "description": "The description of the extension shown in the Chrome Web Store and extension management page."
+  },
+  "actionTitle": {
+    "message": "Lumo സൈഡ്ബാർ തുറക്കുക",
+    "description": "Tooltip shown when hovering the extension's toolbar icon."
+  }
+}
