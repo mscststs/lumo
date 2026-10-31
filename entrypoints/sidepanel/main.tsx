@@ -4,7 +4,7 @@ import App from './App';
 import '@/assets/globals.css';
 import '@/i18n';
 import { bootstrapPage } from '@/lib/page-bootstrap';
-import { initBuiltinMcpServers } from '@/lib/mcp';
+import { initBuiltinMcpServers, retryExtensionProviders } from '@/lib/mcp';
 
 /**
  * Last-resort visibility for rejections nothing else caught.
@@ -29,6 +29,24 @@ window.addEventListener('unhandledrejection', (event) => {
  */
 void initBuiltinMcpServers().catch((error) => {
   console.error('[Lumo] Failed to initialize MCP servers:', error);
+});
+
+/**
+ * Approving an extension provider happens in that extension's own settings tab.
+ * When the user returns to the panel, retry providers that are still in an
+ * error state so the tool list recovers without a manual Reconnect. Throttled
+ * so focus/visibility churn cannot spam probes.
+ */
+let lastExtensionRetry = 0;
+const retryExtensions = () => {
+  const now = Date.now();
+  if (now - lastExtensionRetry < 5000) return;
+  lastExtensionRetry = now;
+  retryExtensionProviders();
+};
+window.addEventListener('focus', retryExtensions);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') retryExtensions();
 });
 
 // The legacy `conversations` key is dropped by the background script, which runs

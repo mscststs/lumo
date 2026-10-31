@@ -16,6 +16,10 @@ import {
   Trash2,
   Power,
   PowerOff,
+  Puzzle,
+  Copy,
+  Check,
+  X,
   Radio,
   RadioTower,
   ExternalLink,
@@ -25,15 +29,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import type { McpServerState, McpToolDefinition, McpHttpServerConfig, WebMcpTabState } from '@/lib/mcp/types';
+import type { McpServerState, McpToolDefinition, McpHttpServerConfig, McpExtensionProviderConfig, WebMcpTabState } from '@/lib/mcp/types';
 import {
   mcpRegistry,
   initBuiltinMcpServers,
   registerExternalServer,
   unregisterExternalServer,
   ExternalMcpServer,
+  refreshExtensionProvider,
   WEBMCP_SESSION_KEY,
 } from '@/lib/mcp';
+import { isExtensionId } from '@/lib/mcp/extension-protocol';
+import type { McpSettings as McpSettingsRecord } from '@/lib/mcp/types';
 import { serverDisplayName, serverDisplayDescription } from '@/lib/mcp/server-labels';
 import { storage } from '@/store/storage';
 import { SettingsHeader } from './components/SettingsHeader';
@@ -142,6 +149,43 @@ function useExternalServers() {
   return { configs, addServer, removeServer, toggleServer, refresh: loadConfigs };
 }
 
+/**
+ * Whole-record access for preferences that are not an external HTTP server
+ * (instruction injection + the installed-extension list).
+ */
+function useMcpPreferences() {
+  const [settings, setSettings] = useState<McpSettingsRecord | null>(null);
+
+  useEffect(() => {
+    void storage.getMcpSettings().then(setSettings);
+
+    // Keep the instruction toggle and provider list in sync with edits made in
+    // another options tab or the side panel.
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ) => {
+      if (areaName !== 'local' || !changes.mcpSettings) return;
+      const next = changes.mcpSettings.newValue as McpSettingsRecord | undefined;
+      if (next) setSettings(next);
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, []);
+
+  const update = useCallback(
+    async (patch: Partial<McpSettingsRecord>) => {
+      const current = settings ?? (await storage.getMcpSettings());
+      const next = { ...current, ...patch };
+      setSettings(next);
+      await storage.setMcpSettings(next);
+    },
+    [settings],
+  );
+
+  return { settings, update };
+}
+
 function useWebMcpSettings() {
   const [enabled, setEnabled] = useState(false);
   const [tabStates, setTabStates] = useState<WebMcpTabState[]>([]);
@@ -212,11 +256,58 @@ export function McpSettings() {
   const { states, loading, refresh } = useInitMcpServers();
   const { configs, addServer, removeServer, toggleServer } = useExternalServers();
   const webmcp = useWebMcpSettings();
+  const mcpPrefs = useMcpPreferences();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddExtension, setShowAddExtension] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
 
   const builtinStates = states.filter((s) => s.info.builtin && s.info.id !== 'webmcp');
-  const externalStates = states.filter((s) => !s.info.builtin);
+  const externalStates = states.filter(
+    (s) => !s.info.builtin && s.info.transport !== 'extension',
+  );
+  const extensionConfigs = mcpPrefs.settings?.extensionProviders ?? [];
+  const extensionEntries = extensionConfigs.map((config) => ({
+    config,
+    state: states.find((s) => s.info.id === `ext:${config.id}`),
+  }));
+
+  const copyExtensionId = async () => {
+    try {
+      await navigator.clipboard.writeText(chrome.runtime.id);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied; the ID stays selectable.
+    }
+  };
+
+  const addExtension = async (id: string) => {
+    const current = mcpPrefs.settings;
+    if (!current) return;
+    if (current.extensionProviders.some((provider) => provider.id === id)) return;
+    await mcpPrefs.update({
+      extensionProviders: [...current.extensionProviders, { id, enabled: true }],
+    });
+  };
+
+  const removeExtension = async (id: string) => {
+    const current = mcpPrefs.settings;
+    if (!current) return;
+    await mcpPrefs.update({
+      extensionProviders: current.extensionProviders.filter((provider) => provider.id !== id),
+    });
+  };
+
+  const toggleExtension = async (id: string, enabled: boolean) => {
+    const current = mcpPrefs.settings;
+    if (!current) return;
+    await mcpPrefs.update({
+      extensionProviders: current.extensionProviders.map((provider) =>
+        provider.id === id ? { ...provider, enabled } : provider,
+      ),
+    });
+  };
 
   const toggleExpanded = (id: string) => {
     setExpandedServers((prev) => {
@@ -360,6 +451,83 @@ export function McpSettings() {
             )}
           </section>
 
+          {/* Extension Providers Section */}
+          <section className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                {t('options.mcp.extensions.title')}
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddExtension((value) => !value)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                {t('options.mcp.extensions.add')}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t('options.mcp.extensions.description')}
+            </p>
+
+            <div className="mb-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
+              <span>{t('options.mcp.extensions.thisExtension')}</span>
+              <code className="max-w-[22ch] truncate rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono">
+                {chrome.runtime.id}
+              </code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                onClick={() => void copyExtensionId()}
+                aria-label={t('options.mcp.extensions.copyId')}
+              >
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            </div>
+
+            <AnimatePresence>
+              {showAddExtension && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <AddExtensionForm
+                    onAdd={async (id) => {
+                      await addExtension(id);
+                      setShowAddExtension(false);
+                    }}
+                    onCancel={() => setShowAddExtension(false)}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {extensionEntries.length === 0 && !showAddExtension ? (
+              <p className="py-4 text-center text-sm text-muted-foreground border border-dashed border-border rounded-lg">
+                {t('options.mcp.extensions.empty')}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {extensionEntries.map(({ config, state }) => (
+                  <ExtensionProviderCard
+                    key={config.id}
+                    config={config}
+                    state={state}
+                    expanded={expandedServers.has(`ext:${config.id}`)}
+                    onToggle={() => toggleExpanded(`ext:${config.id}`)}
+                    onToggleEnabled={(enabled) => void toggleExtension(config.id, enabled)}
+                    onRefresh={() => void refreshExtensionProvider(config.id)}
+                    onRemove={() => void removeExtension(config.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
           {/* WebMCP Section */}
           <WebMcpSection
             enabled={webmcp.enabled}
@@ -369,6 +537,239 @@ export function McpSettings() {
           />
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Extension Provider Components
+// ============================================================================
+
+function AddExtensionForm({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (id: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const [id, setId] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = id.trim();
+    if (!isExtensionId(value)) {
+      setError(t('options.mcp.extensions.invalidId'));
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onAdd(value);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="border border-border rounded-lg p-4 mb-3 bg-card space-y-3"
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="extension-id" className="text-xs">
+          {t('options.mcp.extensions.idLabel')}
+        </Label>
+        <Input
+          id="extension-id"
+          value={id}
+          onChange={(event) => setId(event.target.value)}
+          placeholder={t('options.mcp.extensions.idPlaceholder')}
+          className="font-mono text-xs"
+          spellCheck={false}
+          autoFocus
+          required
+        />
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 p-2 rounded-md bg-destructive/10 text-destructive text-xs">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" size="sm" disabled={submitting || !id.trim()}>
+          {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+          {t('options.mcp.extensions.add')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ExtensionProviderCard({
+  config,
+  state,
+  expanded,
+  onToggle,
+  onToggleEnabled,
+  onRefresh,
+  onRemove,
+}: {
+  config: McpExtensionProviderConfig;
+  state?: McpServerState;
+  expanded: boolean;
+  onToggle: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
+  onRefresh: () => void;
+  onRemove: () => void;
+}) {
+  const { t } = useTranslation();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+  // The registry registers a provider as soon as its config lands, but a render
+  // can still happen one tick earlier; a fallback keeps the card stable.
+  const current: McpServerState = state ?? {
+    info: {
+      id: `ext:${config.id}`,
+      name: config.label ?? `Extension ${config.id.slice(0, 8)}`,
+      description: '',
+      transport: 'extension',
+      builtin: false,
+      enabled: config.enabled,
+    },
+    status: 'disconnected',
+    tools: [],
+  };
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div
+        className="flex items-center gap-2 p-3 bg-card cursor-pointer hover:bg-accent/50 transition-colors"
+        onClick={onToggle}
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        )}
+
+        <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />
+
+        <span className="font-medium text-sm flex-1 truncate">{current.info.name}</span>
+
+        <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0 uppercase">
+          {t('options.mcp.extensions.badge')}
+        </span>
+
+        {config.enabled ? (
+          <StatusBadge status={current.status} />
+        ) : (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+            <PowerOff className="h-3 w-3" />
+            <span className="hidden sm:inline">{t('options.mcp.disabled')}</span>
+          </span>
+        )}
+
+        <span className="text-xs text-muted-foreground shrink-0">
+          {t('options.mcp.toolCount', { count: current.tools.length })}
+        </span>
+
+        <div onClick={(event) => event.stopPropagation()} className="shrink-0">
+          <Switch
+            checked={config.enabled}
+            onCheckedChange={(checked) => onToggleEnabled(checked)}
+          />
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRefresh();
+          }}
+          aria-label={t('options.mcp.extensions.refresh')}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+          onClick={(event) => {
+            event.stopPropagation();
+            setConfirmingRemove(true);
+          }}
+          aria-label={t('options.mcp.extensions.remove')}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <AnimatePresence>
+        {confirmingRemove && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-3 py-2 bg-destructive/5 border-t border-border">
+              <span className="text-xs text-destructive">
+                {t('options.mcp.extensions.removeConfirm')}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => setConfirmingRemove(false)}
+                >
+                  {t('options.mcp.cancelDelete')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => {
+                    onRemove();
+                    setConfirmingRemove(false);
+                  }}
+                >
+                  {t('options.mcp.confirmDelete')}
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <ServerExpandedContent state={current} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1017,6 +1418,8 @@ function ServerIcon({ transport }: { transport: string }) {
       return <RadioTower className="h-4 w-4 shrink-0 text-orange-500" />;
     case 'webmcp':
       return <Globe2 className="h-4 w-4 shrink-0 text-emerald-500" />;
+    case 'extension':
+      return <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />;
     default:
       return <Server className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }

@@ -493,6 +493,22 @@ export const en = {
         file: 'File Manager',
         fileDesc: 'Read, write, edit, and preview files stored in the extension',
       },
+      extensions: {
+        title: 'Extensions',
+        description:
+          'Installed extensions that expose a standard MCP endpoint over the runtime transport.',
+        thisExtension: 'This extension',
+        copyId: 'Copy extension ID',
+        add: 'Add extension',
+        idLabel: 'Extension ID',
+        idPlaceholder: '32-character extension ID',
+        invalidId: 'Enter a 32-character Chromium extension ID.',
+        empty: 'No extension providers added yet.',
+        badge: 'Extension',
+        refresh: 'Reconnect',
+        remove: 'Remove provider',
+        removeConfirm: 'Stop using this extension\u2019s tools?',
+      },
       webmcpSection: {
         title: 'WebMCP',
         description: 'Discover and use tools exposed by web pages via the WebMCP protocol.',

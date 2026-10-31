@@ -6,7 +6,7 @@ export type AnyTool = Tool<any, any, any>;
 /**
  * MCP Server transport types - extensible for future protocols
  */
-export type McpTransportType = 'builtin' | 'http-stream' | 'sse' | 'webmcp';
+export type McpTransportType = 'builtin' | 'http-stream' | 'sse' | 'webmcp' | 'extension';
 
 /**
  * MCP Server status
@@ -99,6 +99,18 @@ export interface WebMcpTabState {
 }
 
 /**
+ * Configuration for an extension provider (an installed extension that speaks
+ * the L0 probe + standard MCP over a runtime Port).
+ */
+export interface McpExtensionProviderConfig {
+  /** Chrome extension ID. */
+  id: string;
+  enabled: boolean;
+  /** User-visible override; the provider's self-reported name is the default. */
+  label?: string;
+}
+
+/**
  * MCP settings stored in chrome.storage
  */
 export interface McpSettings {
@@ -108,6 +120,8 @@ export interface McpSettings {
   disabledBuiltins: string[];
   /** Whether WebMCP discovery and injection is enabled */
   webmcpEnabled: boolean;
+  /** Installed extensions that expose an MCP endpoint. */
+  extensionProviders: McpExtensionProviderConfig[];
 }
 
 /**

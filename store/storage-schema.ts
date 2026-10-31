@@ -34,6 +34,7 @@ import type {
 } from '@/types';
 import { DEFAULT_OCR_SETTINGS } from '@/types';
 import type { McpSettings } from '@/lib/mcp/types';
+import { DEFAULT_MCP_SETTINGS, normalizeMcpSettings } from '@/lib/mcp/settings';
 import { normalizeProvider } from '@/lib/provider-type';
 import { DEFAULT_SYSTEM_PROMPT_SETTINGS } from '@/lib/system-prompt';
 import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme-registry';
@@ -167,12 +168,6 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   turnNotification: DEFAULT_TURN_NOTIFICATION,
 };
 
-const DEFAULT_MCP_SETTINGS: McpSettings = {
-  servers: [],
-  disabledBuiltins: [],
-  webmcpEnabled: false,
-};
-
 /**
  * Central registry of all storage fields.
  *
@@ -227,8 +222,12 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     key: 'systemPrompt',
     defaultValue: DEFAULT_SYSTEM_PROMPT_SETTINGS,
     exportable: true,
+    // Explicit allowlist: configs written before the fields existed, and
+    // hand-edited exports carrying unknown keys, are trimmed to the shape the
+    // prompt composer actually reads.
     normalize: (raw) => ({
-      ...raw,
+      enabled: raw.enabled ?? true,
+      prompt: raw.prompt ?? DEFAULT_SYSTEM_PROMPT_SETTINGS.prompt,
       injectCurrentTime: raw.injectCurrentTime ?? true,
     }),
   },
@@ -251,6 +250,7 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
     key: 'mcpSettings',
     defaultValue: DEFAULT_MCP_SETTINGS,
     exportable: true,
+    normalize: (raw) => normalizeMcpSettings(raw),
   },
   ocrSettings: {
     key: 'ocrSettings',

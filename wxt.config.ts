@@ -59,6 +59,9 @@ export default defineConfig({
       // "preloaded but not used" 警告。扩展资源是本地读取，modulepreload
       // 省不下网络 RTT，且各入口的 chunk 均为直接静态依赖，故直接关闭。
       modulePreload: false,
+      // 侧边栏/设置页本地加载 CodeMirror、Shiki 等大依赖；单个入口超过默认
+      // 500 kB 属预期，不应在每次构建时输出“错误感”的警告。
+      chunkSizeWarningLimit: 1200,
     },
     resolve: {
       alias: {

@@ -7,6 +7,9 @@ export { DevToolsAdvancedMcpServer } from './devtools-advanced-server';
 export { FileMcpServer } from './file-server';
 export { ExternalMcpServer } from './external-server';
 export { WebMcpServer } from './webmcp-server';
+export { ExtensionMcpServer } from './extension-server';
+export { refreshExtensionProvider, retryExtensionProviders } from './extension-registry';
+export { MCP_PORT_NAME, PROBE_CHANNEL, PROBE_VERSION } from './extension-protocol';
 export { fileStorage } from './file-storage';
 export type { FileMetadata, StoredFile } from './file-storage';
 export { inferMimeType, getPreviewCategory, getLanguageFromMime, isLikelyTextContent } from './file-storage';
@@ -29,6 +32,8 @@ import { FileMcpServer } from './file-server';
 import { ExternalMcpServer } from './external-server';
 import { WebMcpServer } from './webmcp-server';
 import { storage } from '@/store/storage';
+import { initExtensionProviders, syncExtensionProviders } from './extension-registry';
+import { normalizeMcpSettings } from './settings';
 import type { McpHttpServerConfig, McpExternalServerConfig } from './types';
 
 /**
@@ -60,6 +65,11 @@ export async function initBuiltinMcpServers(): Promise<void> {
 
   // Load and register external MCP servers from storage
   await initExternalMcpServers();
+
+  // Register installed extension providers. They are connected by the same
+  // `connectAll()` pass as every other source; the provider probe happens in
+  // `ExtensionMcpServer.connect()`.
+  initExtensionProviders(settings);
 
   await mcpRegistry.connectAll();
 
@@ -123,13 +133,15 @@ function setupMcpStorageSync(): void {
     if (!changes.mcpSettings) return;
 
     const newSettings = changes.mcpSettings.newValue as
-      | { servers: McpExternalServerConfig[]; disabledBuiltins: string[]; webmcpEnabled?: boolean }
+      | Parameters<typeof normalizeMcpSettings>[0]
       | undefined;
 
     if (!newSettings) return;
 
-    syncExternalServers(newSettings.servers ?? []);
-    syncWebMcpServer(newSettings.webmcpEnabled ?? false);
+    const settings = normalizeMcpSettings(newSettings);
+    syncExternalServers(settings.servers);
+    syncWebMcpServer(settings.webmcpEnabled);
+    syncExtensionProviders(settings);
   });
 }
 
@@ -149,8 +161,10 @@ async function syncExternalServers(
   // 1. Handle servers that currently exist in the registry
   for (const server of mcpRegistry.getAllServers()) {
     const info = server.getInfo();
-    // Skip built-in servers
-    if (info.builtin) continue;
+    // Skip built-in servers and extension providers: the former are not in
+    // `mcpSettings.servers`, and the latter are reconciled by
+    // `syncExtensionProviders`.
+    if (info.builtin || info.transport === 'extension') continue;
 
     const latestConfig = latestById.get(info.id);
 

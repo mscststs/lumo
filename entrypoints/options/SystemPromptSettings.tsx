@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { storage } from '@/store/storage';
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { SettingsHeader } from './components/SettingsHeader';
+import { SettingRow } from './components/SettingRow';
 import type { SystemPromptSettings } from '@/types';
 
 export function SystemPromptSettingsPage() {
@@ -69,34 +70,28 @@ export function SystemPromptSettingsPage() {
       />
 
       <div className="space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Label className="text-sm">{t('options.systemPrompt.enabled')}</Label>
-            <p className="text-xs text-muted-foreground mt-1 break-words">
-              {t('options.systemPrompt.enabledDesc')}
-            </p>
-          </div>
+        <SettingRow
+          label={t('options.systemPrompt.enabled')}
+          description={t('options.systemPrompt.enabledDesc')}
+        >
           <Switch
             checked={settings.enabled}
             onCheckedChange={handleToggle}
-            className="shrink-0 mt-0.5"
+            aria-label={t('options.systemPrompt.enabled')}
           />
-        </div>
+        </SettingRow>
 
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Label className="text-sm">{t('options.systemPrompt.injectTime')}</Label>
-            <p className="text-xs text-muted-foreground mt-1 break-words">
-              {t('options.systemPrompt.injectTimeDesc')}
-            </p>
-          </div>
+        <SettingRow
+          label={t('options.systemPrompt.injectTime')}
+          description={t('options.systemPrompt.injectTimeDesc')}
+        >
           <Switch
             checked={settings.injectCurrentTime ?? true}
             onCheckedChange={handleToggleInjectTime}
             disabled={!settings.enabled}
-            className="shrink-0 mt-0.5"
+            aria-label={t('options.systemPrompt.injectTime')}
           />
-        </div>
+        </SettingRow>
 
         <SystemPromptEditor
           value={draft}

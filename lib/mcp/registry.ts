@@ -223,11 +223,24 @@ class McpRegistry {
    */
   getAllAITools(context?: McpToolExecutionContext): Record<string, AnyTool> {
     const allTools: Record<string, AnyTool> = {};
-    
+    // `McpRegistry` merges every server into one flat name space, so a later
+    // server could silently replace an earlier tool (or a built-in). Track the
+    // owner and skip duplicates instead.
+    const owners = new Map<string, string>();
+
     for (const server of this.getAllServers()) {
       if (server.getStatus() === 'connected' && server.getInfo().enabled) {
+        const owner = server.getInfo().id;
         const tools = server.getAITools(context);
         for (const [name, t] of Object.entries(tools)) {
+          const previous = owners.get(name);
+          if (previous) {
+            console.warn(
+              `[MCP] Tool "${name}" from ${owner} collides with ${previous}; keeping the first registration.`,
+            );
+            continue;
+          }
+          owners.set(name, owner);
           allTools[name] = wrapToolExecute(t);
         }
       }

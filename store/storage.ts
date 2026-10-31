@@ -195,7 +195,8 @@ export const storage = {
     return getField('mcpSettings');
   },
   async setMcpSettings(settings: McpSettings): Promise<void> {
-    await setField('mcpSettings', settings);
+    const field = STORAGE_FIELDS.mcpSettings;
+    await setField('mcpSettings', field.normalize ? field.normalize(settings) : settings);
   },
 
   // ----- OCR Settings -----
