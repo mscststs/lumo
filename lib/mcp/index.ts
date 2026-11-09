@@ -57,11 +57,10 @@ import { fileStorage } from './file-storage';
 import { initExtensionProviders, syncExtensionProviders } from './extension-registry';
 import { normalizeMcpSettings } from './settings';
 import { deleteCredentials, normalizeOAuthCredentials } from './oauth';
-import type { McpHttpServerConfig, McpExternalServerConfig } from './types';
+import type { IMcpServer, McpHttpServerConfig, McpExternalServerConfig, McpSettings } from './types';
 
 /**
- * Initialize all built-in MCP servers and connect them.
- * Safe to call multiple times - will skip if servers are already registered.
+ * Built-in servers, keyed by id so a second pass cannot register a duplicate.
  *
  * Every trusted context (background, side panel, options) needs its own
  * registry: tools execute in whichever context runs the chat, so the tool
@@ -69,32 +68,78 @@ import type { McpHttpServerConfig, McpExternalServerConfig } from './types';
  * `session-store`; the event listeners that produce it are registered once in
  * the background by `registerMcpCollectors`.
  */
-export async function initBuiltinMcpServers(): Promise<void> {
-  if (mcpRegistry.getAllServers().length > 0) return;
+const BUILTIN_SERVERS: ReadonlyArray<readonly [string, () => IMcpServer]> = [
+  ['browser', () => new BrowserMcpServer()],
+  ['page-interact', () => new PageInteractMcpServer()],
+  ['network-monitor', () => new NetworkMonitorMcpServer()],
+  ['devtools-advanced', () => new DevToolsAdvancedMcpServer()],
+  ['file', () => new FileMcpServer()],
+];
 
-  mcpRegistry.register(new BrowserMcpServer());
-  mcpRegistry.register(new PageInteractMcpServer());
-  mcpRegistry.register(new NetworkMonitorMcpServer());
-  mcpRegistry.register(new DevToolsAdvancedMcpServer());
-  mcpRegistry.register(new FileMcpServer());
+/** The one registration pass per context, so concurrent callers share it. */
+let registration: Promise<void> | undefined;
+/** `chrome.storage.onChanged` listeners are installed exactly once. */
+let storageSyncInstalled = false;
 
-  // Register WebMCP server (reads tab states from session storage)
-  // It's always registered but only provides tools when webmcpEnabled is on
-  const settings = await storage.getMcpSettings();
-  if (settings.webmcpEnabled) {
-    const webmcpServer = new WebMcpServer(() => mcpRegistry.notifyChange());
-    mcpRegistry.register(webmcpServer);
+/**
+ * Register every server this context knows about, without connecting anything.
+ *
+ * Registration is local work — constructors plus one settings read — and it is
+ * what makes a server *exist* for the UI. Connecting is network I/O and belongs
+ * to `connectAllInBackground()`. Keeping the two apart is the whole point: a
+ * page that awaits registration merely needs the card list, while a page that
+ * awaits a connection is at the mercy of the slowest endpoint.
+ *
+ * Safe to call from anywhere and as often as needed: the pass is single-flight,
+ * so a second caller joins the first instead of observing a half-built registry
+ * (which is what the old `servers.length > 0` guard did, leaving out the servers
+ * that had not been registered yet).
+ */
+export function initMcpRegistry(): Promise<void> {
+  registration ??= registerAll().catch((error) => {
+    // A failed pass must stay retryable: a transient storage error should not
+    // leave the context permanently without built-in servers.
+    registration = undefined;
+    throw error;
+  });
+  return registration;
+}
+
+async function registerAll(): Promise<void> {
+  for (const [id, create] of BUILTIN_SERVERS) {
+    if (!mcpRegistry.getServer(id)) mcpRegistry.register(create());
   }
 
-  // Load and register external MCP servers from storage
-  await initExternalMcpServers();
+  let settings: McpSettings | undefined;
+  try {
+    settings = await storage.getMcpSettings();
+  } catch (error) {
+    // Built-ins are registered and the storage listener below will repair the
+    // rest once it can read settings, so this is a degraded start, not a dead one.
+    console.error('Failed to load MCP settings:', error);
+  }
 
-  // Register installed extension providers. They are connected by the same
-  // `connectAll()` pass as every other source; the provider probe happens in
-  // `ExtensionMcpServer.connect()`.
-  initExtensionProviders(settings);
+  if (settings) {
+    // Register WebMCP server (reads tab states from session storage)
+    // It's always registered but only provides tools when webmcpEnabled is on
+    if (settings.webmcpEnabled && !mcpRegistry.getServer('webmcp')) {
+      mcpRegistry.register(new WebMcpServer(() => mcpRegistry.notifyChange()));
+    }
 
-  await mcpRegistry.connectAll();
+    // Load and register external MCP servers from storage
+    initExternalMcpServers(settings);
+
+    // Register installed extension providers. They are connected by the same
+    // connect pass as every other source; the provider probe happens in
+    // `ExtensionMcpServer.connect()`.
+    initExtensionProviders(settings);
+  }
+
+  // Start listening for cross-context storage changes to keep registry in sync
+  if (!storageSyncInstalled) {
+    setupMcpStorageSync();
+    storageSyncInstalled = true;
+  }
 
   // One-time data repair plus scratch-file retention. Both are storage
   // concerns that used to be smuggled into the shell's VFS refresh path.
@@ -103,22 +148,51 @@ export async function initBuiltinMcpServers(): Promise<void> {
     .then(() => fileStorage.pruneTempFiles())
     .catch((error) => console.warn('[lumo] file housekeeping failed:', error));
 
-  // Start listening for cross-context storage changes to keep registry in sync
-  setupMcpStorageSync();
+  mcpRegistry.notifyChange();
 }
 
 /**
- * Load external MCP server configurations from storage and register them.
+ * Register everything, then wait for every enabled server to finish connecting.
+ *
+ * Kept for callers that want the connected state in hand (the background worker
+ * logs it once at startup). Any *page* should prefer the split:
+ * `await initMcpRegistry()` before the first frame, `connectAllInBackground()`
+ * after it. Awaiting connections in a render path is what held the options page
+ * on a spinner for as long as a remote server took to fail.
+ *
+ * Safe to call multiple times — registration is single-flight and `connect()` is
+ * itself serialised per server.
  */
-async function initExternalMcpServers(): Promise<void> {
-  try {
-    const settings = await storage.getMcpSettings();
-    for (const serverConfig of settings.servers) {
-      if (serverConfig.transport === 'webmcp') continue; // WebMCP handled separately
-      registerExternalServer(serverConfig);
-    }
-  } catch (err) {
-    console.error('Failed to load external MCP servers:', err);
+export async function initBuiltinMcpServers(): Promise<void> {
+  await initMcpRegistry();
+  await mcpRegistry.connectAll();
+}
+
+/**
+ * Open every enabled server without awaiting the result.
+ *
+ * This is the only connection entry point a page may use. Progress and failure
+ * reach the UI through `mcpRegistry.subscribe`, per server, so one stalled
+ * endpoint can neither delay the first frame nor blank the whole list.
+ */
+export function connectAllInBackground(): void {
+  void mcpRegistry.connectAll().catch((error) => {
+    // `connectAll` settles every promise individually; this only catches a
+    // synchronous throw from a server's `connect()`.
+    console.warn('[lumo] MCP connect pass failed:', error);
+  });
+}
+
+/**
+ * Register the external MCP servers of a settings record.
+ *
+ * Takes the record the caller already read so a context start pays one storage
+ * round trip, not two.
+ */
+function initExternalMcpServers(settings: McpSettings): void {
+  for (const serverConfig of settings.servers) {
+    if (serverConfig.transport === 'webmcp') continue; // WebMCP handled separately
+    registerExternalServer(serverConfig);
   }
 }
 

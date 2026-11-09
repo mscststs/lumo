@@ -73,7 +73,9 @@ function fakeClient(overrides: Record<string, unknown> = {}) {
       serverInfo: { name: 'exa-search-server', version: '3.5.0' },
     },
     listTools: async () => ({ tools: [{ name: 'web_search_exa', inputSchema: { type: 'object' } }] }),
-    tools: async () => ({ web_search_exa: {} }),
+    // The server builds the AI SDK tools from the pages it already listed, so
+    // the fake has to expose the same two calls a real `MCPClient` does.
+    toolsFromDefinitions: () => ({ web_search_exa: {} }),
     close: async () => {},
     ...overrides,
   };

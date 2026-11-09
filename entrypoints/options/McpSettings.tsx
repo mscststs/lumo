@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, Loader2, Plus, Server, Wifi, Wrench } from 'lucide-react';
+import { Check, Copy, Plus, Server, Wifi, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { mcpRegistry, refreshExtensionProvider } from '@/lib/mcp';
 import type { McpExtensionProviderConfig, McpHttpServerConfig } from '@/lib/mcp/types';
@@ -24,10 +24,16 @@ import { useWebMcpSettings } from './mcp/useWebMcpSettings';
  * "which draft is open" flags plus the shared expansion state. Adding a server or
  * an extension opens a dialog rather than pushing an inline form into the list,
  * so the list never reflows and the empty state keeps a single call to action.
+ *
+ * There is no page-level loading state on purpose. The registry is registered
+ * before the first frame, so the list is complete on the first paint; what is
+ * still in flight is each server's *connection*, and that is a per-row state
+ * (`connecting`/`authorizing`) carried by the card. Gating the page on it meant
+ * one slow remote endpoint hid every other server behind a spinner.
  */
 export function McpSettings() {
   const { t } = useTranslation();
-  const { states, loading } = useMcpRegistry();
+  const states = useMcpRegistry();
   const { configs, addServer, removeServer, toggleServer } = useExternalServers();
   const webmcp = useWebMcpSettings();
   const mcpPrefs = useMcpPreferences();
@@ -159,129 +165,120 @@ export function McpSettings() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin me-2" />
-          <span>{t('common.loading')}</span>
+      <section className="mb-8">
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">
+          {t('options.mcp.builtinSection')}
+        </h3>
+        <div className="space-y-2">
+          {builtinStates.map((serverState) => (
+            <McpServerCard
+              key={serverState.info.id}
+              state={serverState}
+              expanded={expandedServers.has(serverState.info.id)}
+              onToggle={() => toggleExpanded(serverState.info.id)}
+            />
+          ))}
         </div>
-      ) : (
-        <>
-          <section className="mb-8">
-            <h3 className="text-sm font-medium text-muted-foreground mb-3">
-              {t('options.mcp.builtinSection')}
-            </h3>
-            <div className="space-y-2">
-              {builtinStates.map((serverState) => (
-                <McpServerCard
-                  key={serverState.info.id}
-                  state={serverState}
-                  expanded={expandedServers.has(serverState.info.id)}
-                  onToggle={() => toggleExpanded(serverState.info.id)}
-                />
-              ))}
-            </div>
-          </section>
+      </section>
 
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                {t('options.mcp.externalSection')}
-              </h3>
-              <Button variant="outline" size="sm" onClick={() => setServerDraft(createServerDraft())}>
-                <Plus className="h-3.5 w-3.5 me-1" />
-                {t('options.mcp.addServer')}
-              </Button>
-            </div>
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            {t('options.mcp.externalSection')}
+          </h3>
+          <Button variant="outline" size="sm" onClick={() => setServerDraft(createServerDraft())}>
+            <Plus className="h-3.5 w-3.5 me-1" />
+            {t('options.mcp.addServer')}
+          </Button>
+        </div>
 
-            {externalStates.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
-                {t('options.mcp.noExternalServers')}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {externalStates.map((serverState) => (
-                  <ExternalServerCard
-                    key={serverState.info.id}
-                    state={serverState}
-                    config={configs.find((c) => c.id === serverState.info.id)}
-                    expanded={expandedServers.has(serverState.info.id)}
-                    onToggle={() => toggleExpanded(serverState.info.id)}
-                    onReconnect={() => void handleReconnect(serverState.info.id)}
-                    onAuthorize={() => handleAuthorize(serverState.info.id)}
-                    onSignOut={() => handleSignOut(serverState.info.id)}
-                    onDelete={() => void removeServer(serverState.info.id)}
-                    onToggleEnabled={(enabled) => void toggleServer(serverState.info.id, enabled)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+        {externalStates.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-lg">
+            {t('options.mcp.noExternalServers')}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {externalStates.map((serverState) => (
+              <ExternalServerCard
+                key={serverState.info.id}
+                state={serverState}
+                config={configs.find((c) => c.id === serverState.info.id)}
+                expanded={expandedServers.has(serverState.info.id)}
+                onToggle={() => toggleExpanded(serverState.info.id)}
+                onReconnect={() => void handleReconnect(serverState.info.id)}
+                onAuthorize={() => handleAuthorize(serverState.info.id)}
+                onSignOut={() => handleSignOut(serverState.info.id)}
+                onDelete={() => void removeServer(serverState.info.id)}
+                onToggleEnabled={(enabled) => void toggleServer(serverState.info.id, enabled)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                {t('options.mcp.extensions.title')}
-              </h3>
-              <Button variant="outline" size="sm" onClick={() => setExtensionDraft({ id: '' })}>
-                <Plus className="h-3.5 w-3.5 me-1" />
-                {t('options.mcp.extensions.add')}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              {t('options.mcp.extensions.description')}
-            </p>
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            {t('options.mcp.extensions.title')}
+          </h3>
+          <Button variant="outline" size="sm" onClick={() => setExtensionDraft({ id: '' })}>
+            <Plus className="h-3.5 w-3.5 me-1" />
+            {t('options.mcp.extensions.add')}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          {t('options.mcp.extensions.description')}
+        </p>
 
-            {/* The host's own id, one copy away: it is what the provider has to
-                allowlist before the probe can succeed. */}
-            <div className="mb-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
-              <span>{t('options.mcp.extensions.thisExtension')}</span>
-              <code className="max-w-[22ch] truncate rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono">
-                {chrome.runtime.id}
-              </code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0"
-                onClick={() => void copyExtensionId()}
-                aria-label={t('options.mcp.extensions.copyId')}
-              >
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </Button>
-            </div>
+        {/* The host's own id, one copy away: it is what the provider has to
+            allowlist before the probe can succeed. */}
+        <div className="mb-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
+          <span>{t('options.mcp.extensions.thisExtension')}</span>
+          <code className="max-w-[22ch] truncate rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono">
+            {chrome.runtime.id}
+          </code>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0"
+            onClick={() => void copyExtensionId()}
+            aria-label={t('options.mcp.extensions.copyId')}
+          >
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          </Button>
+        </div>
 
-            {extensionEntries.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground border border-dashed border-border rounded-lg">
-                {t('options.mcp.extensions.empty')}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {extensionEntries.map(({ config, state }) => (
-                  <ExtensionProviderCard
-                    key={config.id}
-                    config={config}
-                    state={state}
-                    expanded={expandedServers.has(`ext:${config.id}`)}
-                    onToggle={() => toggleExpanded(`ext:${config.id}`)}
-                    onToggleEnabled={(enabled) => void toggleExtension(config.id, enabled)}
-                    onRefresh={() => void refreshExtensionProvider(config.id)}
-                    // Registry ids are namespaced; the raw extension id is only
-                    // for `refreshExtensionProvider`, which keys by provider.
-                    onAuthorize={() => handleAuthorize(`ext:${config.id}`)}
-                    onRemove={() => void removeExtension(config.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+        {extensionEntries.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground border border-dashed border-border rounded-lg">
+            {t('options.mcp.extensions.empty')}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {extensionEntries.map(({ config, state }) => (
+              <ExtensionProviderCard
+                key={config.id}
+                config={config}
+                state={state}
+                expanded={expandedServers.has(`ext:${config.id}`)}
+                onToggle={() => toggleExpanded(`ext:${config.id}`)}
+                onToggleEnabled={(enabled) => void toggleExtension(config.id, enabled)}
+                onRefresh={() => void refreshExtensionProvider(config.id)}
+                // Registry ids are namespaced; the raw extension id is only
+                // for `refreshExtensionProvider`, which keys by provider.
+                onAuthorize={() => handleAuthorize(`ext:${config.id}`)}
+                onRemove={() => void removeExtension(config.id)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-          <WebMcpSection
-            enabled={webmcp.enabled}
-            tabStates={webmcp.tabStates}
-            loading={webmcp.loading}
-            onToggleEnabled={webmcp.toggleEnabled}
-          />
-        </>
-      )}
+      <WebMcpSection
+        enabled={webmcp.enabled}
+        tabStates={webmcp.tabStates}
+        loading={webmcp.loading}
+        onToggleEnabled={webmcp.toggleEnabled}
+      />
 
       <ServerDialog
         draft={serverDraft}

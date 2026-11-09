@@ -1,4 +1,4 @@
-import { createMCPClient, type MCPClient } from '@ai-sdk/mcp';
+import { createMCPClient, type ListToolsResult, type MCPClient } from '@ai-sdk/mcp';
 import { stripSseNotifications } from './transports/sse-notification-filter';
 import { classifyDiscoveryError } from './protocol-era';
 import { forgetEra, rememberEra, resolveEra } from './protocol-era-store';
@@ -98,6 +98,12 @@ export class ExternalMcpServer implements IMcpServer {
     // worker, side panel, options page). Serialising the attempt means the later
     // ones see what the first learned — a token, or a remembered challenge —
     // instead of each spending its own round of requests.
+    //
+    // The wait for the lock is deliberately unbounded, and it is bounded in
+    // practice by everything inside it: the era probe (6s), the handshake (30s),
+    // `tools/list` (15s) and the client teardown (2s). A wait timeout would turn a
+    // perfectly normal "another context is connecting" into a red card, and the
+    // browser releases a lock with the context that held it.
     this.connectPromise = withServerLock(
       this.config.id,
       () => this.doConnect(),
@@ -220,21 +226,58 @@ export class ExternalMcpServer implements IMcpServer {
   private async openConnection(): Promise<void> {
     await this.closeClient();
 
-    this.client = await this.createClient();
+    const client = await this.createClient();
+    this.client = client;
 
     // The negotiated revision is the one the server answered with, which for a
     // legacy server may be older than what we asked for.
-    this.protocolVersion = this.client.initializeResult?.protocolVersion;
+    this.protocolVersion = client.initializeResult?.protocolVersion;
 
-    const toolsResult = await this.client.listTools();
+    const toolsResult = await this.listAllTools(client);
     this.toolDefinitions = toolsResult.tools.map((t) => ({
       name: t.name,
       description: t.description ?? '',
       inputSchema: (t.inputSchema as Record<string, unknown>) ?? {},
     }));
 
-    // Get AI SDK compatible tools
-    this.aiTools = await this.client.tools();
+    // Build the AI SDK tools from the pages already fetched. `client.tools()`
+    // would list the surface a second time — the connection used to pay for two
+    // full `tools/list` rounds, and the second one had no deadline at all.
+    this.aiTools = client.toolsFromDefinitions(toolsResult) as Record<string, AnyTool>;
+  }
+
+  /**
+   * Every `tools/list` page, under one total deadline.
+   *
+   * `@ai-sdk/mcp` only bounds a request when a timeout is passed with it:
+   * `initializationOptions.timeout` covers the handshake, `listTools()` covers
+   * nothing. A server that accepts a connection and then stops answering
+   * `tools/list` (a gateway holding the socket, an SSE stream that never yields)
+   * therefore left `connect()` pending forever — which is what showed up as a
+   * page stuck on "loading", and would otherwise be a card stuck on
+   * "connecting".
+   *
+   * The budget is for the call as a whole, not per page, so a chatty server
+   * cannot multiply it by paginating.
+   */
+  private async listAllTools(client: MCPClient): Promise<ListToolsResult> {
+    const deadline = Date.now() + TOOLS_TIMEOUT_MS;
+    const remaining = () => Math.max(0, deadline - Date.now());
+
+    let page = await client.listTools({ options: { timeout: remaining() } });
+    const tools = [...page.tools];
+    let cursor = page.nextCursor;
+
+    for (let pages = 1; cursor != null; pages += 1) {
+      if (pages >= MAX_TOOL_PAGES) {
+        throw new Error(`Server listed more than ${MAX_TOOL_PAGES} pages of tools`);
+      }
+      page = await client.listTools({ params: { cursor }, options: { timeout: remaining() } });
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+    }
+
+    return { ...page, tools };
   }
 
   /**
@@ -490,10 +533,23 @@ export class ExternalMcpServer implements IMcpServer {
     if (!this.client) return;
     const client = this.client;
     this.client = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await client.close();
+      // A legacy session is terminated with a `DELETE` that `MCPClient.close()`
+      // sends without a signal, so a stalled endpoint can hold this await — and
+      // this runs *inside* the cross-context connection lock, where it would
+      // block every other context's attempt. Cap the wait and let the socket die
+      // with the dropped reference.
+      await Promise.race([
+        client.close().catch(() => {}),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, CLOSE_TIMEOUT_MS);
+        }),
+      ]);
     } catch {
       // ignore close errors
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -562,6 +618,23 @@ const CONNECT_RETRY_DELAYS_MS = [250, 1_000];
 
 /** Upper bound for opening a client, so a stalled endpoint cannot hang the card. */
 const CONNECT_TIMEOUT_MS = 30_000;
+
+/**
+ * Total budget for `tools/list` (all pages).
+ *
+ * A server that answers the handshake and then stalls while listing is either
+ * broken or behind a proxy that dropped the stream; fifteen seconds is long
+ * enough for a large remote catalogue and short enough that the card lands on
+ * "error" while the user is still looking at it. Raised per request, because
+ * that is the only place the SDK reads it.
+ */
+const TOOLS_TIMEOUT_MS = 15_000;
+
+/** Hard stop on pagination: a cursor that never ends is a server bug. */
+const MAX_TOOL_PAGES = 50;
+
+/** Upper bound for discarding a client, which may terminate a session over HTTP. */
+const CLOSE_TIMEOUT_MS = 2_000;
 
 /** How long a sign-in waits for an in-flight connection before starting anyway. */
 const AUTHORIZE_WAIT_FOR_CONNECT_MS = 2_000;

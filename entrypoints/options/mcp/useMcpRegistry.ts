@@ -1,38 +1,29 @@
-import { useCallback, useEffect, useState } from 'react';
-import { mcpRegistry, initBuiltinMcpServers } from '@/lib/mcp';
+import { useSyncExternalStore } from 'react';
+import { mcpRegistry } from '@/lib/mcp';
 import type { McpServerState } from '@/lib/mcp/types';
 
 /**
  * Live registry snapshot for the options page.
  *
- * `refresh` is the only way to hydrate the list: built-in servers are
- * registered once per trusted context, so the page cannot assume another
- * surface already ran `initBuiltinMcpServers`.
+ * Deliberately a *projection* and nothing else: no `useState`, no fetching, no
+ * effect. Registration happens before the first frame (`entrypoints/options/
+ * main.tsx` awaits `initMcpRegistry()`, which is local work — one settings read
+ * and a handful of constructors), and connections are started there too, without
+ * being awaited. Both used to live in this hook, behind a `loading` flag that
+ * stayed true for as long as the slowest remote server took to connect — which
+ * is why one unreachable MCP endpoint blanked the entire page.
+ *
+ * `useSyncExternalStore` rather than `useState` + `subscribe`: the registry is
+ * the store, its snapshot is stable by identity, and a mutation that lands
+ * between subscribe and the first read can no longer be missed (the tearing case
+ * the hand-rolled version silently had).
  */
-export function useMcpRegistry() {
-  const [states, setStates] = useState<McpServerState[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (mcpRegistry.getAllServers().length === 0) {
-        await initBuiltinMcpServers();
-      }
-      setStates(mcpRegistry.getAllStates());
-    } catch (err) {
-      console.error('Failed to refresh MCP states:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    // Every status/tool change flows through the registry, so one subscription
-    // keeps the whole page live without polling.
-    return mcpRegistry.subscribe(() => setStates(mcpRegistry.getAllStates()));
-  }, [refresh]);
-
-  return { states, loading, refresh };
+export function useMcpRegistry(): McpServerState[] {
+  return useSyncExternalStore(
+    (listener) => mcpRegistry.subscribe(listener),
+    () => mcpRegistry.getSnapshot(),
+    // No server-side renderer here, but React requires the third argument when
+    // it cannot detect a browser; the same snapshot is the honest answer.
+    () => mcpRegistry.getSnapshot(),
+  );
 }

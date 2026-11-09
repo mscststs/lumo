@@ -146,6 +146,16 @@ function wrapToolExecute(originalTool: AnyTool): AnyTool {
 class McpRegistry {
   private servers: Map<string, IMcpServer> = new Map();
   private listeners: Set<() => void> = new Set();
+  /**
+   * Cached projection for `useSyncExternalStore`.
+   *
+   * React compares snapshots by identity on every render, so a freshly built
+   * array would both re-render forever and defeat tearing detection. The cache
+   * is invalidated by `notifyListeners()`, which every mutation already funnels
+   * through, so the cost of keeping it is one boolean.
+   */
+  private snapshot: McpServerState[] = [];
+  private snapshotStale = true;
 
   /**
    * Register an MCP server instance
@@ -183,9 +193,31 @@ class McpRegistry {
   }
 
   /**
-   * Get all server states (for UI display)
+   * Get all server states (for UI display).
+   *
+   * A fresh array every call — callers are free to sort or filter it. React
+   * consumers must use `getSnapshot()` instead.
    */
   getAllStates(): McpServerState[] {
+    return this.buildStates();
+  }
+
+  /**
+   * Stable snapshot of every server state, for `useSyncExternalStore`.
+   *
+   * Returns the same array until something actually changed, which is the
+   * contract React requires: identity is what tells it a re-render is needed.
+   * Treat the result as read-only; mutate a copy.
+   */
+  getSnapshot(): McpServerState[] {
+    if (this.snapshotStale) {
+      this.snapshot = this.buildStates();
+      this.snapshotStale = false;
+    }
+    return this.snapshot;
+  }
+
+  private buildStates(): McpServerState[] {
     return this.getAllServers().map((server) => {
       const authError = server.getAuthError?.();
       return {
@@ -291,6 +323,7 @@ class McpRegistry {
   }
 
   private notifyListeners(): void {
+    this.snapshotStale = true;
     this.listeners.forEach((listener) => listener());
   }
 }

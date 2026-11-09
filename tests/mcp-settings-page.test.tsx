@@ -41,6 +41,10 @@ vi.mock('@/lib/mcp', () => ({
   mcpRegistry: {
     getAllServers: () => [],
     getAllStates: () => states,
+    // The page reads the registry through `useSyncExternalStore`, so the mock
+    // has to answer the same two calls the real registry does: a stable
+    // snapshot and a subscription.
+    getSnapshot: () => states,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

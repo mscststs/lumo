@@ -60,7 +60,7 @@ const TOOLS_RESULT =
 function fakeClient(overrides: Record<string, unknown> = {}) {
   return {
     listTools: async () => ({ tools: [] }),
-    tools: async () => ({}),
+    toolsFromDefinitions: () => ({}),
     close: async () => {},
     ...overrides,
   };
@@ -103,7 +103,7 @@ describe('ExternalMcpServer notification handling', () => {
         listTools: async () => ({
           tools: [{ name: 'get_config', description: 'Config', inputSchema: { type: 'object' } }],
         }),
-        tools: async () => ({ get_config: {} }),
+        toolsFromDefinitions: () => ({ get_config: {} }),
       });
     });
 
