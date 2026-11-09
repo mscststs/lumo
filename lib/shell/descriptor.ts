@@ -35,26 +35,34 @@ export const SHELL_INPUT_SCHEMA = z.object({
     .describe('Wall-clock limit in milliseconds. Omit for no limit.'),
 });
 
+/**
+ * The `sh` description: syntax and environment limits, in that order.
+ *
+ * It stops there on purpose. Strategy (pipeline before program) lives in the
+ * programmatic-mode system prompt, and the capability map lives in
+ * `lib/mcp/capability-index.ts`; duplicating either here only spends tokens
+ * twice and pushes the model toward whichever copy is longest.
+ */
 export const SHELL_TOOL_DESCRIPTION = [
-  'Execute a bash script. The filesystem is shared with file_read/file_write/file_edit.',
-  'Supports pipes, redirections, variables, functions, loops, globs, grep/sed/awk/jq,',
-  'curl, tar, zip/unzip, yq, iconv, and JavaScript via `node` (timers, Buffer,',
-  'crypto hashes, zlib, fetch, require of builtins and relative files, ESM syntax,',
-  'child_process.exec, MCP tools).',
-  '',
-  'Not available in a browser extension: sockets (http/net/dns), processes,',
-  'synchronous fs/exec, python3, sqlite3, symlinks. `fs.*Sync` fails with the',
-  '`await` form to use instead.',
+  'Execute a bash script. The filesystem is shared with file_read/file_write/file_edit',
+  '(`/notes.md` and `notes.md` are the same file).',
   '',
   'MCP tools are shell commands:',
   '  mcp list',
+  '  mcp find <keyword>',
   '  mcp tools <server>',
   '  mcp describe <server>.<tool>',
-  "  mcp call <server>.<tool> '<json>' [--output path] [--raw]",
+  "  mcp call <server>.<tool> '<json>' [--output <path>] [--raw] [--json]",
   '',
-  'Use mcp tools/describe to discover parameters; do not guess schemas.',
-  'Images are written under tmp/ and can be read with file_read.',
-  'Large output is truncated; the full text path is reported.',
+  'Pipes, redirections, variables, loops, globs and the usual tools work: rg, grep,',
+  'sed, awk, jq, sort, uniq, cut, xargs, curl, tar, zip/unzip, yq, iconv.',
+  '`node -e` runs JavaScript for what a pipeline cannot express.',
+  '',
+  'Not available in a browser extension: sockets (http/net/dns), processes, python3,',
+  'sqlite3, symlinks. `fs.*Sync` fails; use the `await` form.',
+  '',
+  'Output past 2000 lines / 50 KB is truncated and the full text is written to tmp/.',
+  'MCP images land in tmp/ and can be read with file_read.',
 ].join('\n');
 
 /**

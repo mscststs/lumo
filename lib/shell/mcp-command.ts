@@ -1,16 +1,20 @@
 /**
  * `mcp` — the shell's window onto every MCP server.
  *
- * The command is deliberately a *discovery* interface first:
+ * The command is deliberately a *discovery* interface:
  *
  *   mcp list
+ *   mcp find <keyword>
  *   mcp tools <server>
  *   mcp describe <server>.<tool>
  *   mcp call <server>.<tool> '<json>' [--output path] [--quiet] [--raw] [--json]
  *
- * Tool schemas are never injected into the system prompt. The model asks for the
- * one it needs, which keeps 31 built-ins plus every external server from turning
- * into tens of thousands of prompt tokens.
+ * Tool schemas are never injected into the system prompt; `mcp describe` prints
+ * the one the model needs, which keeps 31 built-ins plus every external server
+ * from turning into tens of thousands of prompt tokens. Tool *names* are a
+ * different budget and do get injected — see `lib/mcp/capability-index.ts`, which
+ * is what keeps a session from starting with `mcp list` → `mcp tools` →
+ * `mcp describe` before it can open a tab.
  *
  * Resolution, normalization and invocation live in the {@link ToolGateway}; this
  * command only parses arguments and formats the answer. Images are written into
@@ -80,11 +84,74 @@ function firstLine(value: string): string {
   return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }
 
+/** One search hit, flattened so the caller does not need the server object. */
+interface ToolMatch {
+  server: string;
+  name: string;
+  description: string;
+  score: number;
+}
+
+/** How many hits `mcp find` prints before it stops. */
+const FIND_LIMIT = 8;
+
+function scoreMatch(
+  server: string,
+  tool: { name: string; description: string },
+  terms: string[],
+): number {
+  const name = tool.name.toLowerCase();
+  const description = tool.description.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (name === term) score += 100;
+    else if (name.startsWith(term)) score += 40;
+    // A term that is a whole identifier segment (`tabs` in `browser_tabs`) is a
+    // much stronger signal than one that only appears inside a longer word.
+    else if (name.split(/[^a-z0-9]+/).includes(term)) score += 30;
+    else if (name.includes(term)) score += 20;
+    if (description.includes(term)) score += 6;
+  }
+  if (server.toLowerCase().includes(terms.join(' '))) score += 4;
+  return score;
+}
+
+/**
+ * Rank tools by how well their name and description match a query.
+ *
+ * Deliberately not a search index: `mcp list` and the capability index already
+ * name everything, so this only has to beat scanning a list by eye when the model
+ * remembers "the thing that compares screenshots" without the tool name.
+ */
+function findTools(gateway: ToolGateway, query: string): ToolMatch[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const matches: ToolMatch[] = [];
+  for (const server of gateway.listServers()) {
+    if (!server.enabled || server.toolCount === 0) continue;
+    for (const tool of gateway.listTools(server.id)) {
+      const score = scoreMatch(server.id, tool, terms);
+      if (score === 0) continue;
+      matches.push({ server: server.id, name: tool.name, description: tool.description, score });
+    }
+  }
+
+  return matches
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        `${a.server}.${a.name}`.localeCompare(`${b.server}.${b.name}`),
+    )
+    .slice(0, FIND_LIMIT);
+}
+
 function help(): ExecResult {
   return {
     stdout: [
       'Usage:',
       '  mcp list [--json]',
+      '  mcp find <keyword> [--json]',
       '  mcp tools <server> [--json]',
       '  mcp describe <server>.<tool>',
       '  mcp call <server>.<tool> [<json>] [--params <json>] [--output <path>] [--quiet] [--raw] [--json]',
@@ -448,6 +515,27 @@ export function createMcpCommand(options: McpCommandOptions = {}) {
       const rows = servers.map(
         (server) =>
           `${server.id.padEnd(20)} ${server.status.padEnd(14)} ${String(server.toolCount).padStart(3)}  ${server.name}`,
+      );
+      return { stdout: `${rows.join('\n')}\n`, stderr: '', exitCode: 0 };
+    }
+
+    if (subcommand === 'find' || subcommand === 'search') {
+      const query = rest.filter((arg) => !arg.startsWith('-')).join(' ').trim();
+      if (!query) return { stdout: '', stderr: 'mcp find: expected a keyword\n', exitCode: 2 };
+      const matches = findTools(gateway, query);
+      if (matches.length === 0) {
+        return {
+          stdout: '',
+          stderr: `mcp find: no tool matches "${query}" (try: mcp list)\n`,
+          exitCode: 1,
+        };
+      }
+      if (rest.includes('--json')) {
+        return { stdout: JSON.stringify(matches, null, 2) + '\n', stderr: '', exitCode: 0 };
+      }
+      const rows = matches.map(
+        (match) =>
+          `${`${match.server}.${match.name}`.padEnd(42)} ${firstLine(match.description)}`,
       );
       return { stdout: `${rows.join('\n')}\n`, stderr: '', exitCode: 0 };
     }

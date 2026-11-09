@@ -54,7 +54,9 @@ vi.mock('@/lib/ai', () => ({
   chatStream: (opts: Parameters<typeof chatStream>[0]) => chatStream(opts),
 }));
 
-vi.mock('@/lib/system-prompt', () => ({ resolveSystemPrompt: () => undefined }));
+vi.mock('@/lib/turn-prompt', () => ({
+  buildTurnSystemPrompt: async () => undefined,
+}));
 
 vi.mock('@/store/storage', () => ({
   storage: {

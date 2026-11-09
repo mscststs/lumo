@@ -65,7 +65,9 @@ vi.mock('@/lib/ai', () => ({
   },
 }));
 
-vi.mock('@/lib/system-prompt', () => ({ resolveSystemPrompt: () => undefined }));
+vi.mock('@/lib/turn-prompt', () => ({
+  buildTurnSystemPrompt: async () => undefined,
+}));
 vi.mock('@/store/storage', () => ({
   storage: {
     getSystemPrompt: async () => ({ enabled: false, prompt: '' }),

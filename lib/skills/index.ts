@@ -21,6 +21,7 @@
  * `files:changed` event.
  */
 import { onEvent } from '@/lib/event-bus';
+import { composeSystemPrompt } from '@/lib/system-prompt';
 import {
   baseName,
   fileStorage,
@@ -207,20 +208,29 @@ export function formatSkillsIndex(index: SkillIndex): string {
 }
 
 /**
- * Append the skills index to the turn's system prompt.
+ * The skills section of the system prompt, or `undefined` when nothing is
+ * routable.
  *
  * Failures are swallowed on purpose: storage being unavailable must not fail the
  * turn, and the user's own prompt is still valid without a capability index.
  */
+export async function skillsPromptSection(): Promise<string | undefined> {
+  try {
+    return formatSkillsIndex(await getSkillIndex()) || undefined;
+  } catch (error) {
+    console.error('[lumo] Failed to build the skills index:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Append the skills index to a turn's system prompt.
+ *
+ * Kept for callers that hold a single prompt string; the turn runner composes the
+ * whole system prompt from sections instead (see `composeSystemPrompt`).
+ */
 export async function appendSkillsIndex(
   systemPrompt: string | undefined,
 ): Promise<string | undefined> {
-  try {
-    const section = formatSkillsIndex(await getSkillIndex());
-    if (!section) return systemPrompt;
-    return systemPrompt ? `${systemPrompt}\n\n${section}` : section;
-  } catch (error) {
-    console.error('[lumo] Failed to build the skills index:', error);
-    return systemPrompt;
-  }
+  return composeSystemPrompt(systemPrompt, [await skillsPromptSection()]);
 }

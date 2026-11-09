@@ -275,7 +275,7 @@
       "enabled": "Enable system prompt",
       "enabledDesc": "When off, no system instructions are sent and the model relies solely on tool schemas.",
       "injectTime": "Inject current time",
-      "injectTimeDesc": "Prepend the current local time to the system prompt so the model is aware of the time context.",
+      "injectTimeDesc": "Report the current local time with every request, so relative dates (\"tomorrow\", \"last week\") resolve against the real clock.",
       "prompt": "Prompt",
       "placeholder": "Describe how the assistant should behave...",
       "charCount": "{{count}} characters",

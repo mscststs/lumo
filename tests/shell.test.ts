@@ -303,6 +303,23 @@ describe('mcp command', () => {
     expect(described.stdout).toContain('"type": "object"');
   });
 
+  it('finds a tool by keyword instead of walking the server list', async () => {
+    const bash = await shell();
+
+    // Name segment: `shot` is its own identifier segment in `caption-shot`.
+    const byName = await bash.exec('mcp find shot');
+    expect(byName.exitCode).toBe(0);
+    expect(byName.stdout).toContain('shell-test.shot');
+    expect(byName.stdout).toContain('shell-test.caption-shot');
+
+    const asJson = await bash.exec('mcp find echo --json');
+    expect(JSON.parse(asJson.stdout)[0]).toMatchObject({ server: 'shell-test', name: 'echo' });
+
+    const missing = await bash.exec('mcp find antidisestablishmentarianism');
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain('no tool matches');
+  });
+
   it('calls a tool with positional JSON and with stdin', async () => {
     const bash = await shell();
     const positional = await bash.exec("mcp call shell-test.echo '{\"msg\":\"hi\"}'");

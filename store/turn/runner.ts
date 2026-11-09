@@ -36,9 +36,8 @@ import { buildUserMessage } from '@/lib/user-message';
 import { classifyError, toError } from '@/lib/provider-error';
 import { MAX_RETRIES, retryDelay } from '@/lib/retry-policy';
 import { decideStreamFailure } from '@/lib/stream-failure';
-import { resolveSystemPrompt } from '@/lib/system-prompt';
-import { appendSkillsIndex } from '@/lib/skills';
-import { PROGRAMMATIC_TOOLS_PROMPT } from '@/lib/shell/prompt';
+import { resolveSystemPrompt, stripLegacyTimestamp } from '@/lib/system-prompt';
+import { buildTurnSystemPrompt } from '@/lib/turn-prompt';
 import { compactTurn, type SummarizeMessages } from '@/lib/turn-compaction';
 import { notifyTurnComplete } from '@/lib/turn-notifier';
 import { TurnPersistence } from '@/store/turn/persistence';
@@ -218,21 +217,17 @@ export class TurnRunner {
 
   private async prepare(): Promise<void> {
     const conversation = this.input.conversation;
-    const base =
-      conversation.systemPrompt !== undefined
-        ? conversation.systemPrompt
-        : resolveSystemPrompt(await storage.getSystemPrompt());
-    if (conversation.systemPrompt !== undefined) {
-      this.persistence.adopt(conversation);
-    } else {
-      this.persistence.adopt({ ...conversation, systemPrompt: base ?? undefined });
-    }
-    // The skills index is rebuilt for every turn instead of being snapshotted
-    // with the user's prompt. The snapshot exists so a resumed run replays what
-    // was sent; the index is not part of the message history, and installing or
-    // deleting a skill has to take effect on the next message — not on the next
-    // conversation. See `lib/skills/index.ts`.
-    this.system = await appendSkillsIndex(base);
+    // One read of the prompt settings: it carries both the editable text and the
+    // runtime-context switches, and the conversation snapshot overrides the text
+    // alone.
+    const promptSettings = await storage.getSystemPrompt();
+    const base = stripLegacyTimestamp(
+      conversation.systemPrompt ?? resolveSystemPrompt(promptSettings),
+    );
+    // Always adopt the resolved base: a snapshot written before the runtime
+    // context existed carries a frozen timestamp, and this is where it is
+    // dropped from storage instead of being replayed forever.
+    this.persistence.adopt({ ...conversation, systemPrompt: base ?? undefined });
 
     // Read per turn so a cap or budget changed in the options page applies to
     // the next message instead of the next reload.
@@ -243,9 +238,14 @@ export class TurnRunner {
     this.turnNotification = settings.turnNotification;
     this.ocrAvailable = await isOcrAvailable();
 
-    if (this.programmaticTools) {
-      this.system = [this.system, PROGRAMMATIC_TOOLS_PROMPT].filter(Boolean).join('\n\n') || undefined;
-    }
+    // Everything derived — capabilities, programmatic rules, skills, runtime
+    // context — is rebuilt here every turn; only `base` is snapshotted into the
+    // conversation. See `lib/turn-prompt.ts` for the order and the reasons.
+    this.system = await buildTurnSystemPrompt({
+      ...(base ? { base } : {}),
+      programmatic: this.programmaticTools,
+      injectCurrentTime: promptSettings.injectCurrentTime !== false,
+    });
   }
 
   private async execute(

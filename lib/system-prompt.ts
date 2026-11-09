@@ -25,20 +25,58 @@ export const DEFAULT_SYSTEM_PROMPT_SETTINGS: SystemPromptSettings = {
   injectCurrentTime: true,
 };
 
-/** The prompt to actually send, or `undefined` when disabled or blank. */
+/**
+ * Join the sections a turn sends, dropping the empty ones.
+ *
+ * The one place section order is decided. Callers pass the user's prompt first
+ * and the derived sections in the order they should be read; everything else
+ * (capabilities, programmatic rules, skills, runtime context) is produced by the
+ * module that owns it.
+ */
+export function composeSystemPrompt(
+  base: string | undefined,
+  sections: ReadonlyArray<string | undefined>,
+): string | undefined {
+  const parts = [base, ...sections]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join('\n\n') : undefined;
+}
+
+/**
+ * The timestamp `resolveSystemPrompt` used to prepend.
+ *
+ * Matching the exact shape (`YYYY-MM-DD HH:MM:SS` followed by a blank line)
+ * rather than the label alone keeps a user who deliberately wrote
+ * "CurrentTime:" in their own prompt intact.
+ */
+const LEGACY_TIMESTAMP = /^CurrentTime: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\n\n/;
+
+/**
+ * Drop a timestamp frozen into a stored prompt snapshot.
+ *
+ * Conversations created before the runtime context existed carry the clock of
+ * their *first* message in `Conversation.systemPrompt`, and would now disagree
+ * with the real one in the runtime section. Stripping it on read folds those
+ * conversations back onto the current behaviour instead of migrating storage.
+ */
+export function stripLegacyTimestamp(prompt: string | undefined): string | undefined {
+  if (prompt === undefined) return undefined;
+  const stripped = prompt.replace(LEGACY_TIMESTAMP, '');
+  return stripped.length > 0 ? stripped : undefined;
+}
+
+/**
+ * The user's own prompt, or `undefined` when disabled or blank.
+ *
+ * Carries no derived content: the timestamp moved to
+ * `lib/runtime-context.ts`, so a conversation snapshot of this value stays valid
+ * for the whole conversation instead of freezing the first message's clock.
+ */
 export function resolveSystemPrompt(
   settings: SystemPromptSettings | undefined,
 ): string | undefined {
   if (!settings?.enabled) return undefined;
   const prompt = settings.prompt.trim();
-  if (prompt.length === 0) return undefined;
-
-  if (settings.injectCurrentTime) {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    return `CurrentTime: ${timestamp}\n\n${prompt}`;
-  }
-
-  return prompt;
+  return prompt.length === 0 ? undefined : prompt;
 }

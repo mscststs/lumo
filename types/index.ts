@@ -326,7 +326,11 @@ export interface SystemPromptSettings {
   enabled: boolean;
   /** Raw system prompt text. Sent verbatim, no templating. */
   prompt: string;
-  /** When true, prepend `CurrentTime: <local time>` to the resolved prompt. */
+  /**
+   * When true, every request carries `CurrentTime: <local time>` in its runtime
+   * context section. The value is derived per turn, never snapshotted into the
+   * conversation. See `lib/runtime-context.ts`.
+   */
   injectCurrentTime?: boolean;
 }
 
