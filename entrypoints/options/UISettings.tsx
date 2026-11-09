@@ -17,6 +17,7 @@ import {
   normalizeBusySend,
   type BusySendBehavior,
 } from '@/lib/busy-send';
+import { DEFAULT_MESSAGE_TOOLBAR, normalizeMessageToolbar } from '@/lib/message-toolbar';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
@@ -33,6 +34,7 @@ import type {
   MessageToolbarSettings,
   MessageActionVisibility,
   MessageActionToggle,
+  MetricVisibility,
 } from '@/types';
 import { applyLanguage } from '@/i18n';
 
@@ -86,12 +88,12 @@ export function UISettingsPage() {
   const [busySend, setBusySend] = useState<BusySendBehavior>(DEFAULT_BUSY_SEND);
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(true);
-  const [messageToolbar, setMessageToolbar] = useState<MessageToolbarSettings>({
-    copy: 'all',
-    regenerate: 'show',
-    delete: 'all',
-    usage: 'show',
-  });
+  const [ttftVisibility, setTtftVisibility] = useState<MetricVisibility>('streaming');
+  const [throughputVisibility, setThroughputVisibility] =
+    useState<MetricVisibility>('streaming');
+  const [messageToolbar, setMessageToolbar] = useState<MessageToolbarSettings>(
+    DEFAULT_MESSAGE_TOOLBAR,
+  );
 
   useEffect(() => {
     storage.getUISettings().then((settings) => {
@@ -102,12 +104,9 @@ export function UISettingsPage() {
       setBusySend(settings.busySend ?? DEFAULT_BUSY_SEND);
       setPasteThreshold(settings.pasteThreshold);
       setAutoCollapseReasoning(settings.autoCollapseReasoning);
-      setMessageToolbar(settings.messageToolbar ?? {
-        copy: 'all',
-        regenerate: 'show',
-        delete: 'all',
-        usage: 'show',
-      });
+      setTtftVisibility(settings.ttftVisibility ?? 'streaming');
+      setThroughputVisibility(settings.throughputVisibility ?? 'streaming');
+      setMessageToolbar(normalizeMessageToolbar(settings.messageToolbar));
     });
   }, []);
 
@@ -160,6 +159,17 @@ export function UISettingsPage() {
     setAutoCollapseReasoning(checked);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, autoCollapseReasoning: checked });
+  };
+
+  const handleMetricVisibilityChange = async (
+    key: 'ttftVisibility' | 'throughputVisibility',
+    value: string,
+  ) => {
+    const visibility = value as MetricVisibility;
+    if (key === 'ttftVisibility') setTtftVisibility(visibility);
+    else setThroughputVisibility(visibility);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, [key]: visibility });
   };
 
   const handleToolbarChange = async <K extends keyof MessageToolbarSettings>(
@@ -352,6 +362,58 @@ export function UISettingsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="show">{t('options.ui.visibilityShow')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.toolbarTime')}>
+            <Select
+              value={messageToolbar.time}
+              onValueChange={(val) => handleToolbarChange('time', val as MessageActionVisibility)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.toolbarTime')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('options.ui.visibilityAll')}</SelectItem>
+                <SelectItem value="assistant">{t('options.ui.visibilityAssistant')}</SelectItem>
+                <SelectItem value="user">{t('options.ui.visibilityUser')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.ttftVisibility')}>
+            <Select
+              value={ttftVisibility}
+              onValueChange={(val) => handleMetricVisibilityChange('ttftVisibility', val)}
+            >
+              <SelectTrigger className="w-40" aria-label={t('options.ui.ttftVisibility')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="streaming">{t('options.ui.visibilityStreaming')}</SelectItem>
+                <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow label={t('options.ui.throughputVisibility')}>
+            <Select
+              value={throughputVisibility}
+              onValueChange={(val) =>
+                handleMetricVisibilityChange('throughputVisibility', val)
+              }
+            >
+              <SelectTrigger
+                className="w-40"
+                aria-label={t('options.ui.throughputVisibility')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="streaming">{t('options.ui.visibilityStreaming')}</SelectItem>
                 <SelectItem value="hidden">{t('options.ui.visibilityHidden')}</SelectItem>
               </SelectContent>
             </Select>

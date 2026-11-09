@@ -18,7 +18,9 @@ import type { ChatMessage, ChatMessagePart } from '@/types';
 // Labels are asserted through their i18n keys, so the test does not restate the
 // copy and stays valid when the wording changes.
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  // `MessageTimestamp` formats through `Intl` with the active locale, so the
+  // mock carries the language the real hook always provides.
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
 
 const { toolDisplayState } = await import('@/components/ai-elements/tool');

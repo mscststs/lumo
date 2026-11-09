@@ -298,6 +298,10 @@ export class TurnRunner {
           const liveUsage: LiveUsage = { usage, coveredPartCount };
           this.ports.dispatch({ type: 'usage', liveUsage });
         },
+        onMetrics: (metrics) => {
+          if (!this.session.isCurrent()) return;
+          this.ports.dispatch({ type: 'metrics', metrics });
+        },
         onCompaction: (event) => this.handleCompactionEvent(event),
         // Mid-turn delivery: the user's message is folded into the prompt at the
         // step boundary the loop is about to continue past, and the segment it

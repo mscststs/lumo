@@ -1,6 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, ArrowDown, ArrowUp, Zap } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Gauge, Timer, Zap } from 'lucide-react';
+import {
+  METRIC_LABELS,
+  formatTps,
+  formatTtft,
+  stepThroughput,
+} from '@/lib/step-metrics';
 import {
   Tooltip,
   TooltipContent,
@@ -13,6 +19,10 @@ import type { TokenUsageStats, TokenUsageStep } from '@/types';
 
 interface TokenUsageTooltipProps {
   usage: TokenUsageStats;
+  /** Show time to first token on each step row. From UISettings. */
+  showTtft?: boolean;
+  /** Show output speed on each step row. From UISettings. */
+  showThroughput?: boolean;
 }
 
 /**
@@ -31,7 +41,11 @@ interface TokenUsageTooltipProps {
  * Portalled to `body` so the fixed position cannot be captured by an animating
  * ancestor (`motion.div` sets a transform) and clipped by the message scroller.
  */
-export function TokenUsageTooltip({ usage }: TokenUsageTooltipProps) {
+export function TokenUsageTooltip({
+  usage,
+  showTtft = true,
+  showThroughput = true,
+}: TokenUsageTooltipProps) {
   const { t } = useTranslation();
 
   return (
@@ -55,7 +69,11 @@ export function TokenUsageTooltip({ usage }: TokenUsageTooltipProps) {
             collisionPadding={8}
             className="z-50 flex max-h-[var(--radix-tooltip-content-available-height)] flex-col overflow-hidden rounded-lg border border-border bg-popover px-3 py-2.5 shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
-            <UsagePanel usage={usage} />
+            <UsagePanel
+              usage={usage}
+              showTtft={showTtft}
+              showThroughput={showThroughput}
+            />
           </TooltipContent>
         </TooltipPortal>
       </Tooltip>
@@ -69,7 +87,15 @@ export function TokenUsageTooltip({ usage }: TokenUsageTooltipProps) {
  * Exported so the height/scroll contract can be asserted without going through
  * Radix's hover machinery (the content only mounts while open).
  */
-export function UsagePanel({ usage }: { usage: TokenUsageStats }) {
+export function UsagePanel({
+  usage,
+  showTtft = true,
+  showThroughput = true,
+}: {
+  usage: TokenUsageStats;
+  showTtft?: boolean;
+  showThroughput?: boolean;
+}) {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement | null>(null);
   const steps = usage.steps ?? [];
@@ -83,7 +109,10 @@ export function UsagePanel({ usage }: { usage: TokenUsageStats }) {
   }, [steps.length]);
 
   return (
-    <div className="flex min-h-0 min-w-[180px] flex-col gap-1.5 overflow-hidden">
+    // Wide enough for a full step row (tokens + TTFT + speed) on one line: the
+    // panel widens instead of wrapping the timing metrics, which read as a
+    // continuation of the call rather than a second entry.
+    <div className="flex min-h-0 min-w-[17rem] flex-col gap-1.5 overflow-hidden">
       {/* Everything above the ledger keeps its size; the ledger gives way. */}
       <div className="shrink-0 space-y-1.5">
         <div className="text-[0.6875rem] font-medium text-foreground">
@@ -124,8 +153,10 @@ export function UsagePanel({ usage }: { usage: TokenUsageStats }) {
         </div>
       </div>
 
-      {/* Per-step breakdown (only if multi-step) */}
-      {steps.length > 1 && (
+      {/* Per-step breakdown. Rendered even for a single step: this is the only
+          place the step's TTFT and output speed are visible once the turn has
+          settled, so hiding it for 1-step replies would hide them entirely. */}
+      {steps.length > 0 && (
         <div className="flex min-h-0 flex-col border-t border-border/50 pt-1">
           <div className="flex shrink-0 items-baseline justify-between pb-0.5 text-[0.6rem] uppercase tracking-wide text-muted-foreground/70">
             <span>{t('sidebar.tokenSteps')}</span>
@@ -138,7 +169,12 @@ export function UsagePanel({ usage }: { usage: TokenUsageStats }) {
           >
             <div className="space-y-0.5 py-0.5">
               {steps.map((step) => (
-                <StepRow key={step.step} step={step} />
+                <StepRow
+                  key={step.step}
+                  step={step}
+                  showTtft={showTtft}
+                  showThroughput={showThroughput}
+                />
               ))}
             </div>
           </div>
@@ -157,11 +193,26 @@ export function UsagePanel({ usage }: { usage: TokenUsageStats }) {
  * styles. Each metric keeps its name in `title` so the icon is not the only
  * carrier of meaning.
  */
-function StepRow({ step }: { step: TokenUsageStep }) {
+function StepRow({
+  step,
+  showTtft,
+  showThroughput,
+}: {
+  step: TokenUsageStep;
+  showTtft: boolean;
+  showThroughput: boolean;
+}) {
   const { t } = useTranslation();
+  const ttft =
+    showTtft && step.ttftMs != null ? formatTtft(step.ttftMs) : null;
+  const throughput = showThroughput ? stepThroughput(step) : null;
+  const tps = throughput != null ? formatTps(throughput) : null;
 
   return (
-    <div className="flex items-center gap-1.5 text-[0.6rem] font-mono tabular-nums text-muted-foreground">
+    // One row per call. `whitespace-nowrap` + `flex-nowrap` are explicit so the
+    // timing pair can never drop to a second line; the panel's min width gives
+    // it room instead.
+    <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap text-[0.6rem] font-mono tabular-nums text-muted-foreground">
       <span className="min-w-[2.5ch] shrink-0 text-end text-muted-foreground/60">
         #{step.step + 1}
       </span>
@@ -183,6 +234,26 @@ function StepRow({ step }: { step: TokenUsageStep }) {
           className="text-green-600 dark:text-green-400"
         />
       )}
+      {(ttft || tps) && (
+        <span
+          aria-hidden="true"
+          className="mx-0.5 h-2.5 w-px shrink-0 bg-border/60"
+        />
+      )}
+      {ttft && (
+        <Metric
+          icon={<Timer className="size-2.5" aria-hidden="true" />}
+          label={METRIC_LABELS.ttft}
+          value={ttft}
+        />
+      )}
+      {tps && (
+        <Metric
+          icon={<Gauge className="size-2.5" aria-hidden="true" />}
+          label={METRIC_LABELS.tps}
+          value={tps}
+        />
+      )}
     </div>
   );
 }
@@ -195,7 +266,7 @@ function Metric({
 }: {
   icon: ReactNode;
   label: string;
-  value: number;
+  value: number | string;
   className?: string;
 }) {
   return (
@@ -204,7 +275,9 @@ function Metric({
       title={label}
     >
       <span className="shrink-0 text-muted-foreground/50">{icon}</span>
-      <span className={className}>{value.toLocaleString()}</span>
+      <span className={className}>
+        {typeof value === 'number' ? value.toLocaleString() : value}
+      </span>
     </span>
   );
 }

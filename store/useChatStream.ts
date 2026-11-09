@@ -6,6 +6,7 @@ import { deriveConversationTitle } from '@/lib/conversation-title';
 import { buildUserMessage } from '@/lib/user-message';
 import type { AssistantTurn } from '@/lib/conversation-turn';
 import type { LiveUsage } from '@/lib/context-usage';
+import type { StepMetrics } from '@/lib/step-metrics';
 import { classifyError, toError, type ChatErrorInfo } from '@/lib/provider-error';
 import { compactTurn } from '@/lib/turn-compaction';
 import { storage } from '@/store/storage';
@@ -67,6 +68,8 @@ export interface UseChatStreamReturn {
    * first token to the last.
    */
   liveUsage: LiveUsage | null;
+  /** Live TTFT/TPS of the in-flight generation, when one is being measured. */
+  liveMetrics: StepMetrics | null;
   /**
    * Messages composed while a turn was streaming, waiting to be delivered.
    *
@@ -140,6 +143,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     turn: streamingTurn,
     parts: streamingParts,
     liveUsage,
+    liveMetrics,
     error: chatError,
   } = stream;
 
@@ -953,6 +957,7 @@ export function useChatStream(options?: UseChatStreamOptions): UseChatStreamRetu
     isRetrying,
     retryAttempt,
     liveUsage,
+    liveMetrics,
     queuedInputs,
     handleSend,
     handleRetry,

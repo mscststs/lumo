@@ -41,6 +41,8 @@ import { mcpRegistry } from '@/lib/mcp';
 import { buildProgrammaticToolSet } from '@/lib/shell/tool';
 import { buildConversionToolSet } from '@/lib/tools/catalog';
 import { DEFAULT_MAX_STEPS, stepAllowed } from '@/lib/max-steps';
+import { StepTimingRecorder, type StepMetrics } from '@/lib/step-metrics';
+import { gatewayReasoningTransform } from '@/lib/gateway-reasoning';
 import { projectImagesForNonVision, buildImageFallbackMessage, filterToolsByVision, isOcrAvailable } from '@/lib/image-projection';
 
 /** Placeholder used when image payloads are stripped from the model prompt. */
@@ -495,6 +497,13 @@ export interface ChatStreamOptions {
   /** Called after each step with the cumulative token usage so far. */
   onUsage?: (usage: TokenUsageStats, processedPartCount: number) => void;
   /**
+   * Live timing of the step currently streaming, emitted on the first output
+   * chunk and then at most every {@link LIVE_METRICS_INTERVAL_MS}, plus once
+   * with the provider-exact value when the step ends. See `lib/step-metrics.ts`
+   * for why the live value is an estimate over cumulative characters.
+   */
+  onMetrics?: (metrics: StepMetrics) => void;
+  /**
    * Automatic compaction between tool steps. When omitted (or disabled) the
    * loop keeps whatever prompt it was given, which is the historical behaviour.
    */
@@ -553,6 +562,7 @@ export async function chatStream({
   resume,
   onStepComplete,
   onUsage,
+  onMetrics,
   compaction,
   onCompaction,
   onCompactBeforeStep,
@@ -583,7 +593,12 @@ export async function chatStream({
     // A session id the vendor can route on must be derived before the model is
     // built, because it rides the transport headers rather than the body.
     const sessionId = await resolveProviderSessionId(provider, conversationId);
-    const { model: aiModel, providerOptions, reasoning } = createProvider(provider, model, {
+    const {
+      model: aiModel,
+      providerOptions,
+      reasoning,
+      rawReasoning,
+    } = createProvider(provider, model, {
       sessionId,
     });
 
@@ -633,6 +648,7 @@ export async function chatStream({
       model: aiModel,
       providerOptions,
       reasoning,
+      gatewayReasoning: rawReasoning,
       tools,
       system: trimmedSystem,
       messages: modelMessages,
@@ -658,6 +674,7 @@ export async function chatStream({
       onError: failOnce,
       onStepComplete,
       onUsage,
+      onMetrics,
       onCompaction,
       pullQueuedInput,
       onInputInjected,
@@ -689,6 +706,13 @@ export interface RunAgentLoopOptions {
    * travels in `providerOptions` instead.
    */
   reasoning?: UnifiedReasoningEffort;
+  /**
+   * Recover thinking from raw provider chunks (see `lib/gateway-reasoning.ts`).
+   *
+   * Set for the Chat-Completions shape, where the SDK's parser drops the
+   * `reasoning_content` / `reasoning` deltas that compatible gateways stream.
+   */
+  gatewayReasoning?: boolean;
   tools?: ToolSet;
   system?: string;
   messages: ModelMessage[];
@@ -728,6 +752,8 @@ export interface RunAgentLoopOptions {
    * anchor without ever double-counting the step's own output.
    */
   onUsage?: (usage: TokenUsageStats, processedPartCount: number) => void;
+  /** Live TTFT/TPS of the streaming step. See {@link ChatStreamOptions.onMetrics}. */
+  onMetrics?: (metrics: StepMetrics) => void;
   /** Between-step compaction configuration. Absent leaves the prompt untouched. */
   compaction?: WireCompactionConfig;
   /** Raised while a between-step compaction runs. */
@@ -788,6 +814,7 @@ export async function runAgentLoop({
   model,
   providerOptions,
   reasoning,
+  gatewayReasoning = false,
   tools = {},
   system,
   messages,
@@ -800,6 +827,7 @@ export async function runAgentLoop({
   onError,
   onStepComplete,
   onUsage,
+  onMetrics,
   compaction,
   onCompaction,
   onCompactBeforeStep,
@@ -864,6 +892,11 @@ export async function runAgentLoop({
     };
 
     const promptMessageCount = modelMessages.length;
+    // Owns this step's TTFT origin, live estimate, debounce and throttle. The
+    // recorder starts its clock immediately, before the request goes out, and
+    // `finish` reads it again once the stream ends — pi's `turn_start →
+    // message_end` window.
+    const timing = new StepTimingRecorder(step, onMetrics);
     const result = streamText({
       model,
       messages: modelMessages,
@@ -882,6 +915,23 @@ export async function runAgentLoop({
       // `tool-error`, which spends one of this loop's steps on a call the model
       // meant correctly.
       ...(hasTools ? { tools, stopWhen: isStepCount(1), repairToolCall } : {}),
+      // Thinking that compatible gateways stream outside the fields the SDK's
+      // chat parser reads. `rawChunks` re-exposes the parsed SSE events and the
+      // transform rewrites their reasoning deltas into `reasoning` parts, so
+      // the thinking is visible AND the live speed counts the same output the
+      // settled usage bills (otherwise a ¾-invisible step reads ~100 T/s while
+      // streaming and jumps to ~400 T/s when it settles).
+      ...(gatewayReasoning
+        ? {
+            include: { rawChunks: true },
+            experimental_transform: gatewayReasoningTransform(),
+          }
+        : {}),
+      // The model call's own end, fired after the response is parsed and before
+      // any client-side tool execution. The timing window closes here — waiting
+      // for the UI stream to drain would charge the tool's runtime to the
+      // model's tokens. This is pi's assistant `message_end`.
+      onLanguageModelCallEnd: () => timing.markModelCallEnd(),
     });
 
     // `textStream` would drop every tool/reasoning chunk, so consume the full
@@ -903,12 +953,19 @@ export async function runAgentLoop({
     for await (const uiMessage of uiStream) {
       const stepParts = uiMessage.parts as ChatMessagePart[];
       latestParts = [...latestParts.slice(0, stepStartIndex), ...stepParts];
+
+      // Live TTFT/TPS. The recorder counts text, reasoning and streamed tool
+      // arguments — the same characters pi counts as deltas. Tool *outputs*
+      // arriving later must not move the number.
+      timing.observe(stepParts);
       onUpdate?.(segmentParts());
     }
 
     if (errored) return { parts: segmentParts(), stoppedReason: 'error', usage: buildUsage() };
 
-    // Collect token usage for this step.
+    // Collect this step's token usage. The timings come from the recorder, not
+    // from the SDK's `StepResult.performance`: its window opens before any delta
+    // Lumo sees. See `StepTimingRecorder.finish`.
     const stepUsage = await result.usage;
     const stepCacheRead = stepUsage.inputTokenDetails?.cacheReadTokens ?? 0;
     const stepCacheWrite = stepUsage.inputTokenDetails?.cacheWriteTokens ?? 0;
@@ -922,6 +979,10 @@ export async function runAgentLoop({
     totalCacheWrite += stepCacheWrite;
     totalReasoning += stepReasoningTokens;
 
+    // The live value was an estimate; publish the exact one before the step's
+    // metrics settle into the transcript, so the UI swaps once and stops.
+    const timingFields = timing.finish(stepOutputTokens);
+
     usageSteps.push({
       step,
       inputTokens: stepInputTokens,
@@ -930,6 +991,7 @@ export async function runAgentLoop({
       ...(stepCacheRead > 0 ? { cacheReadTokens: stepCacheRead } : {}),
       ...(stepCacheWrite > 0 ? { cacheWriteTokens: stepCacheWrite } : {}),
       ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
+      ...timingFields,
     });
 
     // The anchor is expressed in the *segment's* part space, because that is

@@ -128,6 +128,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     isRetrying,
     retryAttempt,
     liveUsage,
+    liveMetrics,
     queuedInputs,
     handleSend,
     handleRetry,
@@ -695,6 +696,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isStreaming={isStreaming}
         isCompacting={isCompacting}
         streamingMessage={streamingMessage}
+        liveMetrics={liveMetrics}
         chatError={chatError}
         isRetrying={isRetrying}
         retryAttempt={retryAttempt}

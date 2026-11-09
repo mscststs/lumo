@@ -68,6 +68,53 @@ describe('streamReducer', () => {
     expect(state.turn).toBe(TURN);
   });
 
+  it('replaces the metrics pair instead of mixing numbers across steps', () => {
+    const measured = streamReducer(streamingState(), {
+      type: 'metrics',
+      metrics: { step: 0, ttftMs: 1_200, tps: 45 },
+    });
+    expect(measured.liveMetrics).toEqual({ step: 0, ttftMs: 1_200, tps: 45 });
+
+    // A new step's first event has its own TTFT and no speed yet. The previous
+    // step's rate must not survive next to it — that pair never existed.
+    const warming = streamReducer(measured, {
+      type: 'metrics',
+      metrics: { step: 1, ttftMs: 900, tps: null },
+    });
+    expect(warming.liveMetrics).toEqual({ step: 1, ttftMs: 900, tps: null });
+
+    const swapped = streamReducer(warming, {
+      type: 'metrics',
+      metrics: { step: 1, ttftMs: 900, tps: 52 },
+    });
+    expect(swapped.liveMetrics).toEqual({ step: 1, ttftMs: 900, tps: 52 });
+  });
+
+  it('publishes the first step before any speed exists', () => {
+    const state = streamReducer(streamingState(), {
+      type: 'metrics',
+      metrics: { step: 0, ttftMs: 800, tps: null },
+    });
+    expect(state.liveMetrics).toEqual({ step: 0, ttftMs: 800, tps: null });
+  });
+
+  it('clears live metrics with the context anchor on every teardown', () => {
+    const live = {
+      ...streamingState(),
+      liveUsage: { usage: {} as never, coveredPartCount: 1 },
+      liveMetrics: { step: 0, ttftMs: 800, tps: 40 },
+    };
+    for (const action of [
+      { type: 'turn/resume', resume: true } as const,
+      { type: 'turn/stopped' } as const,
+      { type: 'turn/crashed', error: { message: 'x', category: 'server' }, clearParts: false } as const,
+    ]) {
+      const next = streamReducer(live, action);
+      expect(next.liveUsage).toBeNull();
+      expect(next.liveMetrics).toBeNull();
+    }
+  });
+
   it('settles into the idle state', () => {
     const state = streamReducer(
       { ...streamingState(), isCompacting: true, liveUsage: { usage: {} as never, coveredPartCount: 1 } },

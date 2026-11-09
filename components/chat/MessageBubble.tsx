@@ -12,6 +12,8 @@ import {
   MessageAction,
 } from '@/components/ai-elements/message';
 import { TokenUsageTooltip } from './TokenUsageTooltip';
+import { MessageTimestamp } from './MessageTimestamp';
+import { LiveStepMetrics } from './LiveStepMetrics';
 import { MessagePartList } from './MessagePartList';
 import { extractText, normalizeMessage } from '@/lib/message-parts';
 import {
@@ -23,6 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import type { StepMetrics } from '@/lib/step-metrics';
 import type { ChatMessage, ChatMessagePart, ChatMessageVariant, TextAttachment, MessageToolbarSettings } from '@/types';
 
 interface MessageBubbleProps {
@@ -39,6 +42,12 @@ interface MessageBubbleProps {
   toolbar?: MessageToolbarSettings;
   /** Collapse finished reasoning blocks. From UISettings. */
   autoCollapseReasoning?: boolean;
+  /** Show time to first token. From UISettings. */
+  showTtft?: boolean;
+  /** Show output speed. From UISettings. */
+  showThroughput?: boolean;
+  /** Live timing of the in-flight generation (streaming only). */
+  liveMetrics?: StepMetrics | null;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -51,6 +60,9 @@ export const MessageBubble = memo(function MessageBubble({
   deleteCount = 1,
   toolbar,
   autoCollapseReasoning = false,
+  showTtft = true,
+  showThroughput = true,
+  liveMetrics = null,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
@@ -66,6 +78,9 @@ export const MessageBubble = memo(function MessageBubble({
     : true;
   const showRegenerate = toolbar ? toolbar.regenerate === 'show' : true;
   const showUsage = toolbar ? toolbar.usage === 'show' : true;
+  const showTime = toolbar
+    ? (isUser ? (toolbar.time === 'all' || toolbar.time === 'user') : (toolbar.time === 'all' || toolbar.time === 'assistant'))
+    : true;
 
   // Resolve variant-aware metadata for the displayed version.
   const activeVariant =
@@ -77,6 +92,9 @@ export const MessageBubble = memo(function MessageBubble({
   const activeInterrupted = activeVariant ? activeVariant.interrupted : message.interrupted;
   const activeStopReason = activeVariant ? activeVariant.stopReason : message.stopReason;
   const activeUsage = activeVariant ? activeVariant.usage : message.usage;
+  // The timestamp follows the displayed variant, like the usage above it: an
+  // archived generation is dated when it ran, not when the newest one did.
+  const activeTimestamp = activeVariant ? activeVariant.timestamp : message.timestamp;
 
   const confirmDelete = useCallback(() => {
     setConfirmOpen(false);
@@ -114,7 +132,7 @@ export const MessageBubble = memo(function MessageBubble({
           {/* User text bubble */}
           <UserTextBubble parts={parts} textAttachments={message.textAttachments} />
 
-          {(showCopy || (onDelete && showDelete)) && (
+          {(showCopy || (onDelete && showDelete) || showTime) && (
             <MessageActions>
               {showCopy && (
                 <MessageAction
@@ -134,6 +152,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <Trash2 className="size-3" />
                 </MessageAction>
               )}
+              {showTime && <MessageTimestamp timestamp={message.timestamp} />}
             </MessageActions>
           )}
         </Message>
@@ -152,6 +171,18 @@ export const MessageBubble = memo(function MessageBubble({
             autoCollapseReasoning={autoCollapseReasoning}
           />
         </MessageContent>
+
+        {/* While streaming, the toolbar slot belongs to the live metrics: the
+            actions have nothing to act on yet, and the numbers are the only
+            thing that changes from chunk to chunk. Same row height, so the
+            hand-off on settle moves nothing below it. */}
+        {isStreaming && (showTtft || showThroughput) && (
+          <LiveStepMetrics
+            metrics={liveMetrics}
+            showTtft={showTtft}
+            showThroughput={showThroughput}
+          />
+        )}
 
         {/* Only meaningful once the turn has settled: while streaming, a reply
             being unfinished is the expected state, not something to flag. */}
@@ -197,8 +228,13 @@ export const MessageBubble = memo(function MessageBubble({
               </MessageAction>
             )}
             {showUsage && activeUsage && (
-              <TokenUsageTooltip usage={activeUsage} />
+              <TokenUsageTooltip
+                usage={activeUsage}
+                showTtft={showTtft}
+                showThroughput={showThroughput}
+              />
             )}
+            {showTime && <MessageTimestamp timestamp={activeTimestamp} />}
           </MessageActions>
         )}
       </Message>

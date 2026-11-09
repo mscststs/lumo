@@ -134,6 +134,17 @@ export type MessageActionVisibility = 'all' | 'assistant' | 'user' | 'hidden';
 export type MessageActionToggle = 'show' | 'hidden';
 
 /**
+ * Visibility of one per-step generation metric.
+ *
+ * `'streaming'` keeps the metric in the reply while it streams, and in the
+ * per-step token ledger afterwards. `'hidden'` removes it from both surfaces.
+ * There is no "only in the ledger" value on purpose: the live number is the
+ * whole point, and a metric that never shows while streaming is just noise in
+ * the breakdown.
+ */
+export type MetricVisibility = 'streaming' | 'hidden';
+
+/**
  * Per-action visibility settings for the message toolbar (actions below each message).
  */
 export interface MessageToolbarSettings {
@@ -141,6 +152,14 @@ export interface MessageToolbarSettings {
   regenerate: MessageActionToggle;
   delete: MessageActionVisibility;
   usage: MessageActionToggle;
+  /**
+   * The per-message timestamp shown after the usage button.
+   *
+   * Role-filtered like copy/delete because a transcript is often read for one
+   * side only: someone skimming their own prompts does not need a clock under
+   * every reply.
+   */
+  time: MessageActionVisibility;
 }
 
 /**
@@ -248,6 +267,10 @@ export interface UISettings {
    * finishes. See `components/ai-elements/reasoning.tsx`.
    */
   autoCollapseReasoning: boolean;
+  /** Show time to first token under a streaming reply and in the step ledger. */
+  ttftVisibility: MetricVisibility;
+  /** Show output speed under a streaming reply and in the step ledger. */
+  throughputVisibility: MetricVisibility;
   /** Per-action visibility for the message toolbar. */
   messageToolbar: MessageToolbarSettings;
   /** Automatic context compaction. See `lib/compaction.ts`. */
@@ -375,6 +398,29 @@ export interface TokenUsageStep {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   reasoningTokens?: number;
+  /**
+   * Milliseconds from the request start to this step's first output.
+   *
+   * Measured on what Lumo actually observes (text, reasoning or a tool-call
+   * argument delta, or a tool call that arrived whole), so it includes network
+   * and provider queueing but never the local prompt assembly. Absent on steps
+   * recorded before this field existed, and on steps whose provider produced no
+   * output at all.
+   */
+  ttftMs?: number;
+  /**
+   * Milliseconds from the first delta to the model-call end.
+   *
+   * The decode window behind the step's output speed: `outputTokens /
+   * (decodeMs / 1000)`, with no floor — a short window reports a high rate,
+   * as in pi's status line. The clock is read when the call settles
+   * (`message_end`), so a provider that flushes its output and then holds the
+   * stream open is charged for that time. Tool execution happens after the call
+   * ends, so it is structurally excluded. The 250ms debounce tests this span,
+   * which is why a call that finished within one burst has no speed. Absent
+   * when no delta ever streamed.
+   */
+  decodeMs?: number;
 }
 
 export interface ChatMessage {

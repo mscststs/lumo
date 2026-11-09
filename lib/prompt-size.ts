@@ -44,7 +44,13 @@ const IMAGE_DATA_URL_PREFIX = 'data:image/';
 /** Whether the prompt being measured replays an image or strips it. */
 export type ImageAccounting = 'replayed' | 'live';
 
-/** Convert measured characters to the token budget they consume. */
+/**
+ * Convert measured characters to the token budget they consume.
+ *
+ * Deliberately not CJK-aware: this prices a *prompt* (latin chars/4), which is
+ * the conservative budget the context ring and compaction share. Decode output
+ * is a different measurement — see `lib/step-metrics.ts`.
+ */
 export function estimateCharsToTokens(chars: number): number {
   return chars <= 0 ? 0 : Math.ceil(chars / CHARS_PER_TOKEN);
 }

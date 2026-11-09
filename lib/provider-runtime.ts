@@ -48,6 +48,16 @@ export interface ResolvedModel {
    * models that do not, using a capability table we have no access to.
    */
   reasoning?: UnifiedReasoningEffort;
+  /**
+   * Whether thinking has to be recovered from raw provider chunks.
+   *
+   * True for the Chat-Completions shape: `@ai-sdk/openai`'s parser drops
+   * `reasoning_content` / `reasoning` deltas that compatible gateways stream,
+   * so `lib/gateway-reasoning.ts` rewrites them back into `reasoning` parts.
+   * Absent for protocols that already map thinking themselves (Anthropic,
+   * the Responses API).
+   */
+  rawReasoning?: boolean;
 }
 
 export function createProvider(
@@ -108,6 +118,7 @@ export function createProvider(
   });
   return {
     model: openai.chat(model.modelId),
+    rawReasoning: true,
     ...reasoning,
   };
 }

@@ -82,13 +82,64 @@ describe('UsagePanel', () => {
     expect(titled).toContain('sidebar.tokenCacheRead');
   });
 
-  it('omits the ledger for a single-step turn', () => {
+  it('keeps the ledger for a single-step turn so its metrics stay reachable', () => {
     render(<UsagePanel usage={usageWithSteps(1)} />);
 
-    expect(screen.queryByTestId('token-usage-steps')).toBeNull();
-    expect(screen.queryByText('sidebar.tokenSteps')).toBeNull();
-    // The summary still renders.
+    // The step row is the only place TTFT / output speed exist once the turn
+    // settled; hiding the ledger for 1-step replies would hide them entirely.
+    expect(screen.getByTestId('token-usage-steps')).toBeTruthy();
+    expect(screen.getByText('#1')).toBeTruthy();
     expect(screen.getByText('sidebar.tokenTotal')).toBeTruthy();
+  });
+
+  it('renders TTFT and output speed on each step row', () => {
+    const usage = usageWithSteps(2);
+    usage.steps![0] = { ...usage.steps![0]!, ttftMs: 1200, decodeMs: 2000 };
+    usage.steps![1] = { ...usage.steps![1]!, ttftMs: 850, decodeMs: 4000 };
+    render(<UsagePanel usage={usage} />);
+
+    const ledger = screen.getByTestId('token-usage-steps');
+    // Step 0: 90 tokens over 2s = 45 T/s.
+    expect(ledger.textContent).toContain('1.2s');
+    expect(ledger.textContent).toContain('45.0 T/s');
+    // Step 1: 91 tokens over 4s = 22.75 → 22.8 T/s.
+    expect(ledger.textContent).toContain('850ms');
+    expect(ledger.textContent).toContain('22.8 T/s');
+
+    // The timings share the token row and the row refuses to wrap; the panel
+    // widens instead, which is what keeps them from dropping to a second line.
+    const row = screen.getByText('#1').parentElement!;
+    expect(row.contains(screen.getByText('1.2s'))).toBe(true);
+    expect(row.className).toContain('flex-nowrap');
+    expect(row.className).toContain('whitespace-nowrap');
+  });
+
+  it('hides each metric independently, leaving the token ledger', () => {
+    const usage = usageWithSteps(2);
+    usage.steps![0] = { ...usage.steps![0]!, ttftMs: 1200, decodeMs: 2000 };
+
+    const { unmount } = render(
+      <UsagePanel usage={usage} showTtft={false} showThroughput={false} />,
+    );
+    let ledger = screen.getByTestId('token-usage-steps');
+    expect(ledger.textContent).not.toContain('1.2s');
+    expect(ledger.textContent).not.toContain('T/s');
+    expect(ledger.textContent).toContain('#1');
+    unmount();
+
+    render(<UsagePanel usage={usage} showTtft={false} />);
+    ledger = screen.getByTestId('token-usage-steps');
+    expect(ledger.textContent).not.toContain('1.2s');
+    expect(ledger.textContent).toContain('45.0 T/s');
+  });
+
+  it('omits timings on legacy steps that carry none', () => {
+    render(<UsagePanel usage={usageWithSteps(2)} />);
+
+    const ledger = screen.getByTestId('token-usage-steps');
+    expect(ledger.textContent).not.toContain('T/s');
+    // Three token metrics, no timing glyphs.
+    expect(ledger.querySelectorAll('svg')).toHaveLength(6);
   });
 
   it('renders the summary even when the step list is absent', () => {

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -11,10 +11,10 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { CompactionDivider } from '@/components/chat/CompactionDivider';
 import { ChatError } from '@/components/chat/ChatError';
 import { MAX_RETRIES } from '@/lib/retry-policy';
-import { storage } from '@/store/storage';
-import { useStorageWatch } from '@/store/useStorageWatch';
+import { useMessageDisplaySettings } from '@/components/chat/useMessageDisplaySettings';
 import type { ChatErrorInfo } from '@/lib/provider-error';
-import type { ChatMessage, Conversation, UISettings, MessageToolbarSettings } from '@/types';
+import type { StepMetrics } from '@/lib/step-metrics';
+import type { ChatMessage, Conversation } from '@/types';
 
 interface ChatMessageListProps {
   currentConversation: Conversation | null;
@@ -23,6 +23,8 @@ interface ChatMessageListProps {
   isCompacting?: boolean;
   /** The in-flight assistant turn, or `null` when it has nothing to show yet. */
   streamingMessage: ChatMessage | null;
+  /** Live TTFT/TPS of the in-flight generation, if one is being measured. */
+  liveMetrics?: StepMetrics | null;
   chatError: ChatErrorInfo | null;
   isRetrying: boolean;
   retryAttempt: number;
@@ -38,6 +40,7 @@ export function ChatMessageList({
   isStreaming,
   isCompacting = false,
   streamingMessage,
+  liveMetrics = null,
   chatError,
   isRetrying,
   retryAttempt,
@@ -50,22 +53,8 @@ export function ChatMessageList({
   const { t } = useTranslation();
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
 
-  // ─── Message toolbar visibility settings ─────────────────────────────────
-  const DEFAULT_TOOLBAR: MessageToolbarSettings = { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' };
-  const [toolbar, setToolbar] = useState<MessageToolbarSettings>(DEFAULT_TOOLBAR);
-  const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(true);
-
-  useEffect(() => {
-    storage.getUISettings().then((s) => {
-      setToolbar(s.messageToolbar ?? DEFAULT_TOOLBAR);
-      setAutoCollapseReasoning(s.autoCollapseReasoning);
-    });
-  }, []);
-
-  useStorageWatch<UISettings>('uiSettings', (newVal) => {
-    if (newVal?.messageToolbar) setToolbar(newVal.messageToolbar);
-    setAutoCollapseReasoning(newVal?.autoCollapseReasoning !== false);
-  });
+  const { toolbar, autoCollapseReasoning, showTtft, showThroughput } =
+    useMessageDisplaySettings();
 
   const persisted = currentConversation?.messages ?? [];
   const compaction = currentConversation?.compaction;
@@ -147,6 +136,9 @@ export function ChatMessageList({
               deleteCount={rendered.length - idx}
               toolbar={toolbar}
               autoCollapseReasoning={autoCollapseReasoning}
+              showTtft={showTtft}
+              showThroughput={showThroughput}
+              liveMetrics={isStreaming && msg.id === pending?.id ? liveMetrics : null}
             />
             {compaction && compactionAnchorId === msg.id && (
               <CompactionDivider compaction={compaction} />

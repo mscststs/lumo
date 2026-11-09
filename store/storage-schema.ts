@@ -74,6 +74,10 @@ import {
 } from '@/lib/turn-notification';
 import { normalizeLanguage } from '@/i18n/locales';
 import { DEFAULT_BUSY_SEND, normalizeBusySend } from '@/lib/busy-send';
+import {
+  DEFAULT_MESSAGE_TOOLBAR,
+  normalizeMessageToolbar,
+} from '@/lib/message-toolbar';
 
 // ---------------------------------------------------------------------------
 // 1. Schema: all possible storage keys and their value types
@@ -176,6 +180,24 @@ export interface StorageFieldDef<K extends StorageKey> {
 // 4. The registry — THE place to add new settings
 // ---------------------------------------------------------------------------
 
+/**
+ * The pre-split setting. Kept as a read-only legacy probe: a config exported
+ * by an older build still carries it, and both new visibilities inherit it.
+ */
+function legacyMetricsHidden(raw: UISettings): boolean {
+  return (raw as unknown as { showStepMetrics?: unknown }).showStepMetrics === false;
+}
+
+/** Only an explicit `'hidden'` disables a metric; anything else keeps the default. */
+function normalizeMetricVisibility(
+  value: unknown,
+  legacyHidden: boolean,
+): UISettings['ttftVisibility'] {
+  if (value === 'hidden') return 'hidden';
+  if (value === 'streaming') return 'streaming';
+  return legacyHidden ? 'hidden' : 'streaming';
+}
+
 const DEFAULT_UI_SETTINGS: UISettings = {
   language: 'auto',
   theme: DEFAULT_THEME,
@@ -186,12 +208,9 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
   maxSteps: DEFAULT_MAX_STEPS,
   autoCollapseReasoning: true,
-  messageToolbar: {
-    copy: 'all',
-    regenerate: 'show',
-    delete: 'all',
-    usage: 'show',
-  },
+  ttftVisibility: 'streaming',
+  throughputVisibility: 'streaming',
+  messageToolbar: { ...DEFAULT_MESSAGE_TOOLBAR },
   compaction: DEFAULT_COMPACTION_SETTINGS,
   programmaticTools: false,
   turnNotification: DEFAULT_TURN_NOTIFICATION,
@@ -245,10 +264,26 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // means the expand-and-stay-open behaviour; everything else defaults to
       // the shipped auto-collapse-on setting.
       autoCollapseReasoning: raw.autoCollapseReasoning !== false,
+      // One switch used to govern both metrics (`showStepMetrics`). Existing
+      // installs and hand-edited exports may still carry it, so it seeds the
+      // two independent values: only an explicit `false` hides them.
+      ttftVisibility: normalizeMetricVisibility(
+        raw.ttftVisibility,
+        legacyMetricsHidden(raw),
+      ),
+      throughputVisibility: normalizeMetricVisibility(
+        raw.throughputVisibility,
+        legacyMetricsHidden(raw),
+      ),
       // Configs written before compaction existed, or with a nonsensical token
       // budget, land on the shipped defaults rather than on `0` — which would
       // make the checkpoint fire on every message.
       compaction: normalizeCompactionSettings(raw.compaction),
+      // The toolbar record predates `time`, and a hand-edited export can carry
+      // an unknown value. Normalising per field keeps an existing install's
+      // copy/delete settings while seeding the timestamp with its default;
+      // without it the bubble would read `undefined` as `hidden`.
+      messageToolbar: normalizeMessageToolbar(raw.messageToolbar),
       // Experimental shell mode. Only an explicit `true` enables it; an older
       // config (or a hand-edited one) stays on the stable tool-per-capability
       // behaviour.

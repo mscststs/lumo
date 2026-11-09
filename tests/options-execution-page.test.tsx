@@ -60,7 +60,9 @@ const settings = {
   pasteThreshold: 2000,
   maxSteps: DEFAULT_MAX_STEPS,
   autoCollapseReasoning: true,
-  messageToolbar: { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' },
+  ttftVisibility: 'streaming',
+  throughputVisibility: 'streaming',
+  messageToolbar: { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show', time: 'all' },
   compaction: { ...DEFAULT_COMPACTION_SETTINGS, enabled: true },
   turnNotification: DEFAULT_TURN_NOTIFICATION,
   programmaticTools: true,
@@ -112,6 +114,8 @@ describe('personalization page', () => {
     await screen.findByText('options.ui.title');
     // The composer rows it keeps, so a silent render failure cannot pass this.
     expect(screen.getByText('options.ui.sendKey')).toBeTruthy();
+    expect(screen.getByText('options.ui.ttftVisibility')).toBeTruthy();
+    expect(screen.getByText('options.ui.throughputVisibility')).toBeTruthy();
     for (const key of EXECUTION_KEYS) {
       expect(screen.queryByText(key)).toBeNull();
     }

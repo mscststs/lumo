@@ -16,6 +16,7 @@
 import type { ChatMessage, ChatMessagePart } from '@/types';
 import { hasRenderableParts } from '@/lib/message-parts';
 import type { LiveUsage } from '@/lib/context-usage';
+import type { StepMetrics } from '@/lib/step-metrics';
 import type { ChatErrorInfo } from '@/lib/provider-error';
 
 import type { AssistantTurn } from '@/lib/conversation-turn';
@@ -31,6 +32,14 @@ export interface StreamState {
   parts: ChatMessagePart[];
   /** Latest completed step of the in-flight turn, when available. */
   liveUsage: LiveUsage | null;
+  /**
+   * Timing of the step currently generating (or the last one that finished).
+   *
+   * Kept across a step boundary on purpose: while the loop runs tools or waits
+   * for the next request, the reply keeps showing the last measured numbers
+   * instead of blanking out and flickering.
+   */
+  liveMetrics: StepMetrics | null;
   error: ChatErrorInfo | null;
 }
 
@@ -42,6 +51,7 @@ export const initialStreamState: StreamState = {
   turn: null,
   parts: [],
   liveUsage: null,
+  liveMetrics: null,
   error: null,
 };
 
@@ -76,6 +86,8 @@ export type StreamAction =
   | { type: 'parts'; parts: ChatMessagePart[] }
   /** A step completed, giving the ring a real prompt size to anchor on. */
   | { type: 'usage'; liveUsage: LiveUsage }
+  /** Live (or step-final) timing of the current generation. */
+  | { type: 'metrics'; metrics: StepMetrics }
   /** A summarization call started or finished. */
   | { type: 'compacting'; value: boolean }
   /** A transient failure will be retried after a backoff. */
@@ -93,6 +105,13 @@ export type StreamAction =
   /** Abandon everything (new chat, switch conversation, teardown). */
   | { type: 'reset' };
 
+/**
+ * The two live fields describe the same in-flight generation. Clear them
+ * together so a transition cannot leave a stale context anchor or stale
+ * speed behind — the failure mode this reducer was introduced to remove.
+ */
+const LIVE_CLEARED = { liveUsage: null, liveMetrics: null } as const;
+
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
   switch (action.type) {
     case 'turn/start':
@@ -104,7 +123,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         isRetrying: false,
         retryAttempt: 0,
         error: null,
-        liveUsage: null,
+        ...LIVE_CLEARED,
         ...(action.resume ? {} : { turn: null, parts: [] }),
       };
     case 'turn/begin':
@@ -116,7 +135,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         parts: [],
         // The anchor described the closed segment's part list; the new segment
         // starts empty and re-anchors on its first completed step.
-        liveUsage: null,
+        ...LIVE_CLEARED,
       };
     case 'turn/settled':
       return {
@@ -131,7 +150,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         isRetrying: false,
         retryAttempt: 0,
         error: null,
-        liveUsage: null,
+        ...LIVE_CLEARED,
       };
     case 'turn/crashed':
       return {
@@ -139,6 +158,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         isStreaming: false,
         isRetrying: false,
         turn: null,
+        ...LIVE_CLEARED,
         error: action.error,
         parts: action.clearParts ? [] : state.parts,
       };
@@ -146,6 +166,13 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       return { ...state, parts: action.parts };
     case 'usage':
       return { ...state, liveUsage: action.liveUsage };
+    case 'metrics':
+      // Every event is a complete snapshot of one step, so it replaces the
+      // previous one wholesale. Never merge fields across steps: a new step's
+      // opening event carries its own TTFT and no speed yet, and pairing that
+      // TTFT with the previous step's rate would describe a window that never
+      // happened. The row keeps its height while the speed is absent.
+      return { ...state, liveMetrics: action.metrics };
     case 'compacting':
       return { ...state, isCompacting: action.value };
     case 'retrying':
@@ -168,7 +195,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'overflow/recovering':
       return { ...state, isRetrying: true, isCompacting: true };
     case 'overflow/recovered':
-      return { ...state, isRetrying: false, isCompacting: false, liveUsage: null };
+      return { ...state, isRetrying: false, isCompacting: false, ...LIVE_CLEARED };
     case 'overflow/failed':
       return {
         ...state,

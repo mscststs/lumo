@@ -37,7 +37,7 @@ vi.mock('@/store/storage', () => ({
       sendKey: 'enter',
       pasteThreshold: 0,
       maxSteps: 0,
-      messageToolbar: { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show' },
+      messageToolbar: { copy: 'all', regenerate: 'show', delete: 'all', usage: 'show', time: 'all' },
     }),
   },
 }));
