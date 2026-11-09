@@ -49,4 +49,16 @@ describe('serializeAttachmentForModel', () => {
       '[file attachment]\n[filename: report.pdf]\n-----\n',
     );
   });
+
+  it('sends a skill attachment verbatim, since its block names itself', () => {
+    const skill: TextAttachment = {
+      id: 's',
+      kind: 'skill',
+      mediaType: 'text/plain',
+      content: '<skill name="pdf-tools" location="skills/pdf-tools/SKILL.md">\nBody\n</skill>',
+      modelText: '<skill name="pdf-tools" location="skills/pdf-tools/SKILL.md">\nBody\n</skill>',
+      preview: 'pdf-tools',
+    };
+    expect(serializeAttachmentForModel(skill)).toBe(`${skill.modelText}\n-----\n`);
+  });
 });

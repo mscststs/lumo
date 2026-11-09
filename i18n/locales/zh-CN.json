@@ -30,6 +30,7 @@
     "pastedAttachment": "粘贴",
     "imageAttachment": "图片",
     "pageContextAttachment": "页面",
+    "skillAttachment": "技能",
     "dropHere": "拖放到此处以附加",
     "noModels": "未配置模型，请前往设置页面添加。",
     "copy": "复制",

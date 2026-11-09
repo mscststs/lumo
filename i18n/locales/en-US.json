@@ -30,6 +30,7 @@
     "pastedAttachment": "Pasted",
     "imageAttachment": "Image",
     "pageContextAttachment": "Page",
+    "skillAttachment": "Skill",
     "dropHere": "Drop here to attach",
     "noModels": "No models configured. Please go to Settings to add one.",
     "copy": "Copy",

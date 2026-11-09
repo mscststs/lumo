@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Square, ImagePlus, X, FileText, Globe, Clock } from 'lucide-react';
+import { Send, Square, ImagePlus, X, FileText, Globe, Clock, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,7 +11,7 @@ import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_FILE_REF_MIME, LUMO_IMAGE_DRAG_MIME, LUMO_INPUT_CHIP_MIME } from '@/lib/constants';
 import { DEFAULT_PASTE_THRESHOLD, shouldAttachPaste } from '@/lib/paste-threshold';
 import { createTextAttachment } from '@/lib/text-attachment';
-import { setFileRefDragData, parseFileRefContent } from '@/lib/file-drag';
+import { setFileRefDragData, parseFileRefContent, skillRefContent } from '@/lib/file-drag';
 import { findActiveTrigger, type ActiveTrigger } from '@/lib/input-trigger';
 import {
   COMMAND_PREFIX,
@@ -22,7 +22,7 @@ import {
   type BuiltinCommandAction,
 } from '@/lib/slash-commands';
 import { MENTION_PREFIX } from '@/lib/mention-commands';
-import { loadSkillCommandText, withSkillCommands } from '@/lib/skills/commands';
+import { loadSkillAttachment, skillCommandFallback, withSkillCommands } from '@/lib/skills/commands';
 import { useSuggestionMenu, type SuggestionOption } from '@/lib/use-suggestion-menu';
 import { useMentionResolver } from '@/lib/use-mention-resolver';
 import { storage } from '@/store/storage';
@@ -292,9 +292,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
  
   /** Hands a finished draft to the turn and clears the composer. */
   const sendDraft = useCallback(
-    (text: string) => {
-      if (!text && images.length === 0 && textAttachments.length === 0) return;
-      onSend(text, images, textAttachments);
+    (text: string, extraAttachments: TextAttachment[] = []) => {
+      if (!text && images.length === 0 && textAttachments.length === 0 && extraAttachments.length === 0) {
+        return;
+      }
+      onSend(text, images, [...textAttachments, ...extraAttachments]);
       setInput('');
       setCaret(0);
       setImages([]);
@@ -304,8 +306,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   );
 
   /**
-   * Set while a skill command is being expanded. The expansion is a storage
-   * read, so without this a second Enter would send the same skill twice.
+   * Set while a skill command is being loaded. The load is a storage read, so
+   * without this a second Enter would send the same skill twice.
    */
   const expandingSkillRef = useRef(false);
 
@@ -316,9 +318,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
    * - Built-in commands report their action to the panel and leave any trailing
    *   text (and every attachment) in the box, so `/new hello` starts a new chat
    *   with "hello" still ready to edit rather than silently dropping it.
-   * - Skill commands load the skill's own instructions and send them ahead of
-   *   the user's request, which is how a skill can be used in a conversation
-   *   that is already running.
+   * - Skill commands load the skill's instructions *as an attachment* and send
+   *   whatever the user typed after the trigger as the prompt — the shape an
+   *   `@` mention already produces, so the chip, the transcript card and the
+   *   drag payload come out identical.
    */
   const handleSend = () => {
     // Commands are recognised only when the draft *starts* with the trigger —
@@ -341,8 +344,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       if (expandingSkillRef.current) return;
       expandingSkillRef.current = true;
       const { command, rest } = invocation;
-      void loadSkillCommandText(command, rest)
-        .then(sendDraft)
+      void loadSkillAttachment(command)
+        .then((attachment) => {
+          // The skill file vanished under the draft: send what the user typed
+          // rather than an empty message.
+          sendDraft(attachment ? rest : skillCommandFallback(command, rest), attachment ? [attachment] : []);
+        })
         .finally(() => {
           expandingSkillRef.current = false;
         });
@@ -597,6 +604,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           e.dataTransfer,
           parseFileRefContent(attachment.content) ?? attachment.preview,
         );
+      } else if (attachment.kind === 'skill') {
+        // The chip carries the whole instruction block so it round-trips between
+        // panels; `text/plain` gets only the reference, for targets outside Lumo.
+        e.dataTransfer.setData('text/plain', skillRefContent(attachment.preview));
       } else {
         if (attachment.mediaType === 'text/html') {
           e.dataTransfer.setData('text/html', attachment.content);
@@ -732,12 +743,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 <AnimatePresence initial={false}>
                   {queuedInputs.map((item, index) => {
                     // Attachments-only messages have no text to show; the label
-                    // names what will be sent so the row is never blank.
+                    // names what will be sent so the row is never blank. A skill
+                    // chip is named after its skill ("PDF tools"), not "Text".
                     const label =
                       item.text ||
                       (item.images.length > 0
                         ? t('sidebar.imageAttachment')
-                        : t('sidebar.textAttachment'));
+                        : item.textAttachments[0]
+                          ? attachmentLabel(item.textAttachments[0], t)
+                          : t('sidebar.textAttachment'));
                     return (
                       <motion.button
                         key={item.id}
@@ -842,6 +856,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 >
                   {attachment.kind === 'page-context' ? (
                     <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : attachment.kind === 'skill' ? (
+                    <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}

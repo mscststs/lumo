@@ -71,7 +71,10 @@ Read `references/formats.md` before converting a document.
   instructions are read on demand with `file_read`, so a skill costs a few dozen
   tokens until it is actually used.
 - `/skill:pdf-tools extract report.pdf` loads a skill explicitly, for the cases
-  where the model does not route to it on its own.
+  where the model does not route to it on its own. The instructions arrive as a
+  **skill attachment** on the message — the composer keeps only your request, and
+  the chip can be removed, dragged to another panel, or re-sent like any other
+  attachment.
 - **Settings → Files → Skills** is the management view: every installed skill with
   its routing description, `/skill:<name>` trigger, license, file count, and the
   validation diagnostics that explain why a skill does not load — plus delete for

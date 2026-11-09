@@ -1,13 +1,11 @@
 /**
- * The drag payload for a stored file, written identically wherever a file can be
- * picked up — the conversation files panel, a transcript chip, and the options
- * page file manager.
+ * The drag payloads written by reference chips — a stored file, and a skill.
  *
- * Each of those sites used to inline the same two `setData` calls, so the
- * `[filename: name]` wording of the plain-text fallback (the form the chat
- * the model both read a reference in) was re-spelled per call site and drifted.
- * Centralising it also keeps the fallback in step with `parseFileRefContent`,
- * which recovers the name when a chip is dragged back out.
+ * Each call site used to inline the same `setData` calls, so the `[filename: name]`
+ * wording of the plain-text fallback (the form the chat and the model both read a
+ * reference in) was re-spelled per site and drifted. Centralising it also keeps
+ * the fallback in step with `parseFileRefContent`, which recovers the name when a
+ * chip is dragged back out.
  */
 
 import { LUMO_FILE_REF_MIME } from '@/lib/constants';
@@ -20,6 +18,19 @@ export function fileRefContent(fileName: string): string {
 /** Recovers the file name from `fileRefContent` output; null if not a reference. */
 export function parseFileRefContent(content: string): string | null {
   return /^\[filename:\s*(.+)\]$/.exec(content)?.[1] ?? null;
+}
+
+/**
+ * The plain-text form of a skill reference — the drag fallback for a
+ * `kind: 'skill'` chip, whose internal payload carries the instruction block.
+ *
+ * Without it, dropping a skill chip on an editor (or a tab that knows nothing
+ * about Lumo) would paste an entire skill's instructions into it, which is the
+ * same reason a file reference travels as `[filename: …]` rather than as the
+ * file's contents.
+ */
+export function skillRefContent(name: string): string {
+  return `[skill: ${name}]`;
 }
 
 /**

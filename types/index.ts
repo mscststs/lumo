@@ -299,8 +299,10 @@ export interface TextAttachment {
    * - 'file-ref': a reference to a file stored in the extension's file system
    * - 'page-context': the identity (tabId/title/url) of the page a quick action
    *   was fired from. See `lib/page-context.ts`.
+   * - 'skill': the instruction block of a skill invoked with `/skill:<name>`.
+   *   See `lib/skills/commands.ts`.
    */
-  kind?: 'text' | 'file-ref' | 'page-context';
+  kind?: 'text' | 'file-ref' | 'page-context' | 'skill';
   /** The content type: 'text/plain' or 'text/html' */
   mediaType: 'text/plain' | 'text/html';
   /** The actual text/html content, or `[filename: name]` for file-ref kind */

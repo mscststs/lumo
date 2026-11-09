@@ -3,19 +3,35 @@
  *
  * The prompt index is a routing hint, not a guarantee: a model can read a task
  * and simply not load the skill that describes it. Pi solves this with an
- * explicit command, and so does Lumo: `/skill:pdf-tools extract a.pdf` expands
- * to the skill's instructions followed by the user's request, exactly as if the
- * model had loaded it perfectly.
+ * explicit command, and so does Lumo: `/skill:pdf-tools extract a.pdf` loads the
+ * skill's instructions, exactly as if the model had loaded it perfectly.
  *
- * The expansion happens in the composer, before the message is sent, so it is a
- * user-visible act rather than something the model has to be trusted with. It
+ * ## Why the instructions travel as an attachment
+ *
+ * The instructions are a payload, not something the user typed. Sending them as
+ * prompt text made the composer lie about what was being sent: the transcript
+ * showed one long wall of instructions, the request was buried at its end, and
+ * the block could not be removed or moved once it was written.
+ *
+ * So the composer builds a `kind: 'skill'` {@link TextAttachment} instead: the
+ * instructions become a chip beside the draft, the user's own request stays in
+ * the composer as ordinary text, and the message is built by `buildUserParts`
+ * with the attachment ahead of the prompt — the order the model should read
+ * them in. Everything attachments already do then applies for free: the chip is
+ * removable, draggable between panels, queued mid-turn, and rendered as a card
+ * in the transcript.
+ *
+ * The build still happens in the composer, before the message is sent, so it is
+ * a user-visible act rather than something the model has to be trusted with. It
  * also means a skill works in a conversation that already started, with no
  * system-prompt change of any kind.
  */
+import { v4 as uuidv4 } from 'uuid';
 import { commandKey, COMMAND_PREFIX, type ResolvedCommand } from '@/lib/slash-commands';
 import { fileStorage, parentDirPath } from '@/lib/mcp/file-storage';
 import { parseFrontmatter } from './frontmatter';
 import type { Skill } from './validate';
+import type { TextAttachment } from '@/types';
 
 /** Reserved trigger prefix, so a skill never collides with a user phrase. */
 export const SKILL_COMMAND_PREFIX = 'skill:';
@@ -68,54 +84,69 @@ export interface SkillExpansion {
   dir: string;
   /** Skill instructions (frontmatter stripped). */
   body: string;
-  /** Whatever the user typed after the trigger. */
-  args?: string;
 }
 
 /**
- * Render the message a skill command sends.
+ * Render the instruction block for a skill.
  *
  * Same shape as Pi's expansion: the instructions wrapped in a `<skill>` block
- * that names the file and its directory (so relative paths resolve), then the
- * user's own request as ordinary text. The wrapper is what lets the model tell
- * instructions apart from the request when the user's text starts with a verb
- * the instructions also use.
+ * that names the file and its directory (so relative paths resolve). The
+ * wrapper is what lets the model tell instructions apart from the request that
+ * follows them as ordinary prompt text.
  */
-export function expandSkillCommand(expansion: SkillExpansion): string {
+export function expandSkillInstructions(expansion: SkillExpansion): string {
   const body = expansion.body.trim();
-  const block = [
+  return [
     `<skill name="${expansion.name}" location="${expansion.path}">`,
     `References are relative to ${expansion.dir}. Read a referenced file with file_read before using it.`,
     '',
     body,
     '</skill>',
   ].join('\n');
-
-  const args = expansion.args?.trim();
-  return args ? `${block}\n\n${args}` : block;
 }
 
 /**
- * Read a skill's instructions and build the message for its command.
+ * Read a skill's instructions as the attachment its command sends.
  *
- * A missing file falls back to the text the user typed, so a deleted skill
- * degrades to a plain message instead of an error that eats their draft.
+ * `content` and `modelText` are the same string on purpose: the transcript card
+ * shows exactly what the model reads, and no marker is prefixed to it because a
+ * `<skill>` block already names itself.
+ *
+ * A missing file returns `null` rather than an empty attachment — the caller
+ * falls back to sending the text the user typed, so a skill deleted under the
+ * draft degrades to an ordinary message instead of an error that eats it.
  */
-export async function loadSkillCommandText(
+export async function loadSkillAttachment(
   command: Extract<ResolvedCommand, { kind: 'skill' }>,
-  args: string,
-): Promise<string> {
-  const fallback = [COMMAND_PREFIX + command.name, args].filter(Boolean).join(' ');
+): Promise<TextAttachment | null> {
   const raw = await fileStorage.readFileAsText(command.path).catch(() => null);
-  if (raw === null) return fallback;
+  if (raw === null) return null;
 
   const parsed = parseFrontmatter(raw);
-  return expandSkillCommand({
+  const content = expandSkillInstructions({
     name: command.id,
     path: command.path,
     dir: parentDirPath(command.path),
     body: parsed.ok ? parsed.document.body : raw,
-    args,
   });
+
+  return {
+    id: uuidv4(),
+    kind: 'skill',
+    mediaType: 'text/plain',
+    content,
+    // Verbatim: the block is already self-describing, and the model should read
+    // the instructions exactly as the card shows them.
+    modelText: content,
+    preview: command.id,
+  };
+}
+
+/** The text a skill command falls back to when its file has vanished. */
+export function skillCommandFallback(
+  command: Extract<ResolvedCommand, { kind: 'skill' }>,
+  args: string,
+): string {
+  return [COMMAND_PREFIX + command.name, args].filter(Boolean).join(' ');
 }
 

@@ -26,6 +26,7 @@ const MODEL_DELIMITER = '\n-----\n';
  */
 function markerFor(attachment: TextAttachment): string {
   if (attachment.kind === 'file-ref') return '[file attachment]';
+  if (attachment.kind === 'skill') return '[skill instructions]';
   if (attachment.mediaType === 'text/html') return '[HTML Content]';
   return '[text attachment]';
 }
@@ -35,7 +36,7 @@ function markerFor(attachment: TextAttachment): string {
  *
  * - An explicit `modelText` wins — used by page-context attachments that carry
  *   the `[referenced browser tab]` marker and a tool hint the UI card should
- *   not show.
+ *   not show, and by skill attachments whose `<skill>` block names itself.
  * - Everything else gets a semantic marker naming its kind, then its payload.
  * - A trailing `-----` rule closes the block, separating it from the next
  *   attachment and from the prompt (which is a separate part that follows).

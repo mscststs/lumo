@@ -27,6 +27,8 @@ export function attachmentLabel(attachment: TextAttachment, t: Translate): strin
       return t('sidebar.files.file');
     case 'page-context':
       return t('sidebar.pageContextAttachment');
+    case 'skill':
+      return t('sidebar.skillAttachment');
     default:
       return attachment.mediaType === 'text/html' ? 'HTML' : t('sidebar.textAttachment');
   }

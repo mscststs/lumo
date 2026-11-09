@@ -1,10 +1,10 @@
 import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { Copy, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity, RefreshCw } from 'lucide-react';
+import { Copy, FileText, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image as ImageIcon, Globe, CircleSlash, Trash2, Activity, RefreshCw, Sparkles } from 'lucide-react';
 import { attachmentLabel } from '@/lib/attachment-display';
 import { LUMO_ATTACHMENT_MIME, LUMO_IMAGE_DRAG_MIME } from '@/lib/constants';
-import { parseFileRefContent, setFileRefDragData } from '@/lib/file-drag';
+import { parseFileRefContent, setFileRefDragData, skillRefContent } from '@/lib/file-drag';
 import {
   Message,
   MessageContent,
@@ -426,6 +426,10 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
 
     if (attachment.kind === 'file-ref') {
       setFileRefDragData(e.dataTransfer, parseFileRefContent(attachment.content) ?? attachment.preview);
+    } else if (attachment.kind === 'skill') {
+      // Same rule as the composer chip: the internal payload carries the whole
+      // instruction block, the plain-text fallback stays a short reference.
+      e.dataTransfer.setData('text/plain', skillRefContent(attachment.preview));
     } else {
       if (isHtml) {
         e.dataTransfer.setData('text/html', attachment.content);
@@ -448,6 +452,8 @@ function TextAttachmentCard({ attachment }: { attachment: TextAttachment }) {
       >
         {attachment.kind === 'page-context' ? (
           <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : attachment.kind === 'skill' ? (
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         )}

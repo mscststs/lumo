@@ -342,20 +342,45 @@ describe('skill commands', () => {
     });
   });
 
-  it('sends the skill instructions ahead of the request', async () => {
+  it('sends the skill instructions as an attachment, with the request as prompt text', async () => {
     const onSend = vi.fn();
     const { textarea } = await renderInput({ onSend });
     typeValue(textarea, '/skill:pdf-tools extract a.pdf');
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
     await waitFor(() => expect(onSend).toHaveBeenCalled());
-    const [text] = (onSend as unknown as { mock: { calls: string[][] } }).mock.calls[0]!;
-    expect(text).toContain('STEER: read references/formats.md first.');
-    expect(text).toContain('</skill>');
-    expect(text).toContain('extract a.pdf');
+    const [text, images, attachments] = (onSend as unknown as {
+      mock: { calls: [string, string[], Array<Record<string, unknown>>][] };
+    }).mock.calls[0]!;
+
+    // The request is the prompt; the instructions are a chip.
+    expect(text).toBe('extract a.pdf');
+    expect(images).toEqual([]);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({ kind: 'skill', preview: 'pdf-tools' });
+    expect(attachments[0]!.content).toContain('STEER: read references/formats.md first.');
+    expect(attachments[0]!.content).toContain('</skill>');
     // The frontmatter is metadata, not instructions.
-    expect(text).not.toContain('description: Extract text.');
+    expect(attachments[0]!.content).not.toContain('description: Extract text.');
+    // The model reads the block verbatim, not behind a marker.
+    expect(attachments[0]!.modelText).toBe(attachments[0]!.content);
     expect(textarea.value).toBe('');
+  });
+
+  it('sends a skill-only message when no request was typed', async () => {
+    const onSend = vi.fn();
+    const { textarea } = await renderInput({ onSend });
+    typeValue(textarea, '/skill:pdf-tools');
+    // Close the picker: with a candidate highlighted, Enter selects it instead.
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    const [text, , attachments] = (onSend as unknown as {
+      mock: { calls: [string, string[], Array<Record<string, unknown>>][] };
+    }).mock.calls[0]!;
+    expect(text).toBe('');
+    expect(attachments).toHaveLength(1);
   });
 
   it('hides skill commands when the family switch is off, keeping the rest', async () => {
