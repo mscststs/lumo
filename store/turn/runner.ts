@@ -107,6 +107,18 @@ export class TurnRunner {
   private fingerprint = '';
   private resume: ResumeState | null = null;
   private overflowAttempted = false;
+  /**
+   * Whether the UI is currently showing the retry notice (the error card with
+   * its attempt counter) for a failure this turn is recovering from.
+   *
+   * Kept here rather than derived because the runner cannot read the reducer, and
+   * the notice must be retracted when the *retried request* succeeds, not when
+   * the turn settles: a recovered request can keep streaming for minutes, and
+   * until then the card sat under a reply that was visibly fine, still claiming
+   * "retrying". Invariant: set when `retrying` is dispatched, cleared whenever
+   * that notice is superseded — by recovery, by a further failure, or by a crash.
+   */
+  private retryNoticeShown = false;
   /** Set once the turn has settled or failed; teardown flushes become no-ops. */
   private settled = false;
   /**
@@ -320,6 +332,11 @@ export class TurnRunner {
         onUpdate: (parts) => {
           this.persistence.setParts(parts);
           if (!this.session.isCurrent()) return;
+          // Output from a retried request *is* its success signal — but only
+          // output: an update that carries no part yet says nothing, and
+          // retracting on it would make a retry that fails again flicker the
+          // card off and straight back.
+          if (parts.length > 0) this.clearRetryNotice();
           this.ports.dispatch({ type: 'parts', parts });
           this.persistence.checkpointThrottled(parts);
         },
@@ -531,6 +548,13 @@ export class TurnRunner {
     }
   }
 
+  /** Collapse the retry card once its request has recovered, exactly once. */
+  private clearRetryNotice(): void {
+    if (!this.retryNoticeShown) return;
+    this.retryNoticeShown = false;
+    this.ports.dispatch({ type: 'retry/recovered' });
+  }
+
   private handleError(error: unknown, attempt: number): void {
     // A user Stop aborts the request; a provider error racing that abort must
     // not start a retry against a turn the user already abandoned.
@@ -550,12 +574,17 @@ export class TurnRunner {
 
     if (action.kind === 'recover-overflow') {
       this.overflowAttempted = true;
+      // The fold takes over the notice: `overflow/recovering` retracts the card
+      // and shows the compaction phase instead, so nothing is left to clear when
+      // the recovered request starts producing output.
+      this.retryNoticeShown = false;
       this.ports.dispatch({ type: 'overflow/recovering' });
       void this.recoverOverflow(errorInfo, attempt);
       return;
     }
 
     if (action.kind === 'retry') {
+      this.retryNoticeShown = true;
       this.ports.dispatch({
         type: 'retrying',
         error: errorInfo,
@@ -575,6 +604,8 @@ export class TurnRunner {
       attempt: action.nextAttempt > MAX_RETRIES ? MAX_RETRIES : action.nextAttempt,
       parts: this.persistence.latestParts,
     });
+    // The card now shows this final failure's own state, not the retry's.
+    this.retryNoticeShown = false;
     void this.persistence.checkpoint(this.persistence.latestParts).catch((error) => {
       console.error('[Lumo] Failed to persist the failed reply:', error);
     });
@@ -623,6 +654,7 @@ export class TurnRunner {
       if (!this.session.isCurrent() || this.session.signal.aborted) return;
       console.error('[Lumo] Context-overflow recovery failed:', error);
       this.ports.dispatch({ type: 'overflow/failed', error: errorInfo });
+      this.retryNoticeShown = false;
       this.session.invalidate();
     }
   }
@@ -635,6 +667,7 @@ export class TurnRunner {
       error: classifyError(toError(error)),
       clearParts: false,
     });
+    this.retryNoticeShown = false;
     this.session.invalidate();
     this.notifySettled();
   }

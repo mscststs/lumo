@@ -169,6 +169,24 @@ describe('streamReducer', () => {
     expect(state.error).toBe(error);
   });
 
+  it('retracts the retry notice once the retried request produces output', () => {
+    const error = { message: '502', category: 'server' as const };
+    const retrying = streamReducer(streamingState(), {
+      type: 'retrying',
+      error,
+      attempt: 2,
+      parts: TEXT,
+    });
+    const recovered = streamReducer(retrying, { type: 'retry/recovered' });
+    // The turn keeps streaming — only the failure it recovered from is dropped,
+    // so the card cannot outlive the error under a reply that is now arriving.
+    expect(recovered.isStreaming).toBe(true);
+    expect(recovered.isRetrying).toBe(false);
+    expect(recovered.retryAttempt).toBe(0);
+    expect(recovered.error).toBeNull();
+    expect(recovered.parts).toBe(TEXT);
+  });
+
   it('ends the turn when the failure is final', () => {
     const error = { message: '401', category: 'auth' as const };
     const state = streamReducer(streamingState(), {
@@ -184,10 +202,18 @@ describe('streamReducer', () => {
   });
 
   it('marks overflow recovery without losing the stream phase', () => {
-    const recovering = streamReducer(streamingState(), { type: 'overflow/recovering' });
+    const error = { message: 'context_length_exceeded', category: 'unknown' as const };
+    const recovering = streamReducer(
+      { ...streamingState(), error, retryAttempt: 2 },
+      { type: 'overflow/recovering' },
+    );
     expect(recovering.isStreaming).toBe(true);
     expect(recovering.isCompacting).toBe(true);
     expect(recovering.isRetrying).toBe(true);
+    // The fold is the recovery now: the failure card must not sit behind it with
+    // an inert Retry button for the whole summarization.
+    expect(recovering.error).toBeNull();
+    expect(recovering.retryAttempt).toBe(0);
 
     const recovered = streamReducer(recovering, { type: 'overflow/recovered' });
     expect(recovered.isStreaming).toBe(true);

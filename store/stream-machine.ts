@@ -94,6 +94,11 @@ export type StreamAction =
   | { type: 'retrying'; error: ChatErrorInfo; attempt: number; parts: ChatMessagePart[] }
   /** The failure is final for this turn. */
   | { type: 'failed'; error: ChatErrorInfo; attempt: number; parts: ChatMessagePart[] }
+  /**
+   * The retried request came back and is producing output: the failure it
+   * replaced is no longer the turn's state.
+   */
+  | { type: 'retry/recovered' }
   /** A context overflow is being folded away before one retry. */
   | { type: 'overflow/recovering' }
   /** The fold succeeded; the retry is about to start. */
@@ -192,8 +197,26 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         error: action.error,
         parts: action.parts,
       };
+    case 'retry/recovered':
+      return {
+        ...state,
+        isRetrying: false,
+        retryAttempt: 0,
+        error: null,
+      };
     case 'overflow/recovering':
-      return { ...state, isRetrying: true, isCompacting: true };
+      // The fold *is* the recovery, so the failure it replaced stops being the
+      // turn's state: keeping the card would leave the old error (and a Retry
+      // button that is inert while the turn streams) on screen for the whole
+      // summarization. `overflow/failed` brings the error back if the fold cannot
+      // help, and the card is replaced by the compaction row meanwhile.
+      return {
+        ...state,
+        isRetrying: true,
+        isCompacting: true,
+        retryAttempt: 0,
+        error: null,
+      };
     case 'overflow/recovered':
       return { ...state, isRetrying: false, isCompacting: false, ...LIVE_CLEARED };
     case 'overflow/failed':
