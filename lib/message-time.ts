@@ -1,6 +1,6 @@
 /**
  * Message timestamps: a coarse relative label for the toolbar, and the full
- * localised date/time for the hover `title`.
+ * localised date/time for its hover tooltip.
  *
  * Deliberately built on `Intl.RelativeTimeFormat` / `Intl.DateTimeFormat` rather
  * than on i18next keys: "3 minutes ago", "3分钟前", "vor 3 Minuten" and the
@@ -94,9 +94,10 @@ export function formatMessageTime(timestamp: number, now: number, locale: string
 }
 
 /**
- * The exact date and time behind the relative label, used as the native
- * `title` on the `<time>` element. Unabbreviated on purpose: this is what the
- * user reaches for when the relative label is not precise enough.
+ * The exact date and time behind the relative label, shown in the message
+ * toolbar's hover tooltip and mirrored into `aria-label`. Unabbreviated on
+ * purpose: this is what the user reaches for when the relative label is not
+ * precise enough.
  */
 export function formatMessageTimeTitle(timestamp: number, locale: string): string {
   return fullFormatter(locale).format(new Date(timestamp));

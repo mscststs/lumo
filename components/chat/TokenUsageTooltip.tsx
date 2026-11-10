@@ -15,6 +15,8 @@ import {
   TooltipTrigger,
 } from '@radix-ui/react-tooltip';
 import { Button } from '@/components/ui/button';
+import { messageToolbarTriggerClass } from '@/components/ai-elements/message';
+import { cn } from '@/lib/utils';
 import type { TokenUsageStats, TokenUsageStep } from '@/types';
 
 interface TokenUsageTooltipProps {
@@ -29,6 +31,21 @@ interface TokenUsageTooltipProps {
  * A small dashboard-style button that shows token usage stats on hover.
  * Renders as an icon button inside MessageActions, with a rich tooltip
  * displaying the full breakdown.
+ *
+ * The trigger wears `messageToolbarTriggerClass` (the row's shared chrome) and
+ * shares the row's 300ms delay, so this is a *rich* flavour of the same
+ * tooltip, not a second system: only the content differs.
+ *
+ * It keeps a provider of its own, though. Radix's hoverable-content support
+ * works with a pointer "grace area" that lets the pointer travel from trigger
+ * to content without closing; while that area is active the provider sets
+ * `isPointerInTransitRef`, and every trigger in that provider ignores movement
+ * until the pointer leaves the hull. This panel is tall and wide, so its hull
+ * covers the neighbouring buttons: sharing the row's provider made hovering
+ * usage and then sliding to delete/time leave the panel open and swallow the
+ * next label. A separate provider scopes the grace area to this panel; when a
+ * label does open, Radix's `tooltip.open` event closes this one, so only one
+ * tooltip is ever visible.
  *
  * The agent loop is uncapped by default (`lib/max-steps.ts`), so a browsing turn
  * routinely runs dozens — sometimes hundreds — of steps. Radix's popper only
@@ -49,13 +66,13 @@ export function TokenUsageTooltip({
   const { t } = useTranslation();
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
+            className={cn(messageToolbarTriggerClass, 'w-6')}
             aria-label={t('sidebar.tokenUsage')}
           >
             <Activity className="size-3" />

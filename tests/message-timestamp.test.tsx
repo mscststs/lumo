@@ -5,7 +5,9 @@
  * to `undefined`, which the bubble reads as "hidden".
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { TooltipProvider } from '@radix-ui/react-tooltip';
+import { formatMessageTimeTitle } from '@/lib/message-time';
 import type { ChatMessage, MessageToolbarSettings } from '@/types';
 
 vi.mock('react-i18next', () => ({
@@ -13,6 +15,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const { MessageBubble } = await import('@/components/chat/MessageBubble');
+const { MessageTimestamp } = await import('@/components/chat/MessageTimestamp');
 
 afterEach(cleanup);
 
@@ -44,16 +47,38 @@ function toolbar(overrides: Partial<MessageToolbarSettings>): MessageToolbarSett
 }
 
 describe('MessageTimestamp', () => {
-  it('renders a relative label with the full date in `title`', () => {
-    const { container } = render(<MessageBubble message={USER} toolbar={toolbar({})} />);
-    const time = container.querySelector('time');
-    expect(time).not.toBeNull();
-    expect(time!.textContent).toBe('5 minutes ago');
-    expect(time!.getAttribute('datetime')).toBe(new Date(FIVE_MINUTES_AGO).toISOString());
-    // `dateStyle: 'full'` always names the year, whatever the current one is.
-    expect(time!.getAttribute('title')).toContain(
-      String(new Date(FIVE_MINUTES_AGO).getFullYear()),
+  it('renders a relative label with the full date in a toolbar tooltip', async () => {
+    const exact = formatMessageTimeTitle(FIVE_MINUTES_AGO, 'en-US');
+    // `delayDuration: 0` stands in for the provider `MessageActions` supplies;
+    // the assertion is about which surface carries the date, not the wait.
+    render(
+      <TooltipProvider delayDuration={0}>
+        <MessageTimestamp timestamp={FIVE_MINUTES_AGO} />
+      </TooltipProvider>,
     );
+    const time = screen.getByText('5 minutes ago');
+    expect(time.tagName).toBe('TIME');
+    expect(time.getAttribute('datetime')).toBe(new Date(FIVE_MINUTES_AGO).toISOString());
+    // No native `title`: it would pop up *alongside* the Radix tooltip.
+    expect(time.getAttribute('title')).toBeNull();
+    // Assistive tech still gets the exact date, not "5 minutes ago".
+    expect(time.getAttribute('aria-label')).toBe(exact);
+
+    fireEvent.pointerMove(time);
+    expect((await screen.findByRole('tooltip')).textContent).toBe(exact);
+  });
+
+  it('wears the same chrome as the copy and delete buttons', () => {
+    const { container } = render(<MessageBubble message={USER} toolbar={toolbar({ copy: 'all', delete: 'all' })} />);
+    const time = container.querySelector('time')!;
+    const buttons = Array.from(container.querySelectorAll('button'));
+    // One shared class string, so the hover wash and the hit-area height cannot
+    // drift apart again.
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const shared of ['h-6', 'rounded-md', 'hover:bg-accent', 'hover:text-foreground', 'transition-colors']) {
+      expect(time.className).toContain(shared);
+      expect(buttons[0]!.className).toContain(shared);
+    }
   });
 
   it('follows the role filter like copy and delete', () => {
