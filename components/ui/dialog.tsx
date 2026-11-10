@@ -70,7 +70,15 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'pointer-events-auto flex w-full max-w-md flex-col gap-4',
+          // `relative` is load-bearing: the panel is static by default, so the
+          // built-in close button (`absolute end-3.5 top-3.5`) would resolve
+          // against the nearest *positioned* ancestor. During the enter
+          // animation the panel's own `transform: scale()` made it a
+          // containing block, so the button sat correctly; when the keyframe
+          // ended and `transform` fell back to `none`, the containing block
+          // reverted to the full-screen `fixed` wrapper and the button jumped
+          // to the viewport's top-right corner.
+          'pointer-events-auto relative flex w-full max-w-md flex-col gap-4',
           'rounded-xl border border-border bg-card p-5 shadow-xl',
           'max-h-[calc(100dvh-4rem)] overflow-y-auto scrollbar-lumo dialog-content',
           className,

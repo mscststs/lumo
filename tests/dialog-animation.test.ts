@@ -86,4 +86,13 @@ describe('dialog centring', () => {
     expect(DIALOG_CODE).toContain('max-w-md');
     expect(DIALOG_CODE).toMatch(/max-h-\[calc\(100dvh/);
   });
+
+  it('gives the panel its own positioning context for the close button', () => {
+    // Regression guard: the panel must stay a containing block even after the
+    // enter animation's `transform: scale()` is gone, otherwise the built-in
+    // `absolute` close button resolves against the full-screen `fixed` wrapper
+    // and snaps to the viewport's top-right corner once the animation ends.
+    const panelClasses = DIALOG_CODE.match(/pointer-events-auto[^']*'/)?.[0] ?? '';
+    expect(panelClasses).toContain('relative');
+  });
 });
