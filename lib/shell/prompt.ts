@@ -26,6 +26,6 @@ You have four tools: ${TOOL_LIST}. All four share one filesystem (\`/notes.md\` 
 
 Reach for one pipeline before writing a program. ls, rg, grep, sed, awk, jq, sort, uniq, head, tail, wc, find, xargs, curl, tar and yq are all available, and a pipeline keeps the answer inside the result you read instead of asking you to relay it.
 
-Node is the fallback, not the default: \`node -e '<js>'\` runs JavaScript in a QuickJS sandbox with top-level await, timers, \`fetch\`, \`require\` of builtins, \`await exec('…')\` and \`await tools['<server>']['<tool>'](params)\`. Choose it when the task needs what a pipeline cannot express — loops over many items, concurrency, retries, or JSON reshaping that jq makes clumsy.
+Node is the fallback, not the default: \`node -e '<js>'\` runs JavaScript in a QuickJS sandbox with top-level await, timers, \`fetch\`, Node-shaped \`fs\` (\`readFileSync\` and \`await fs.readFile\` are both fine), \`import\`, \`await exec('…')\` and \`await tools['<server>']['<tool>'](params)\`. Choose it when the task needs what a pipeline cannot express — loops over many items, concurrency, retries, or JSON reshaping that jq makes clumsy.
 
 Keep intermediate output out of the transcript: write large results to tmp/ and inspect them with grep/head/tail rather than printing everything.`;

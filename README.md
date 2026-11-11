@@ -158,13 +158,15 @@ printf '%s\n' '{"target":"browser.browser_tabs","params":{}}' | mcp batch
   `fatal`/BOM rules), `crypto` hashes and HMACs, `zlib`, `stream`,
   `structuredClone`, `tools.<server>.<tool>()` (images it returns are written
   to `tmp/` and attached to the shell result, exactly like `mcp call`), `mcp.*`,
-  the asynchronous `fs`
-  and unrestricted `fetch`. `require` resolves builtins (`path`, `os`, `util`,
+  the whole `fs` surface (async **and** `*Sync`) and unrestricted `fetch`.
+  `require` resolves builtins (`path`, `path/posix`, `path/win32`, `os`, `util`,
   `events`, `fs`, `fs/promises`, `crypto`, `buffer`, `child_process`, `url`,
-  `timers`, `zlib`, `stream`, `readline`, `querystring`, `string_decoder`,
-  `perf_hooks`, `module`, `assert`) plus relative `.js`/`.json` files from the
-  VFS. `module`, `exports`, `__filename` and `__dirname` exist in the entry
-  script, and `import`/`export` syntax is downgraded to the CommonJS shims.
+  `timers`, `zlib`, `stream`, `stream/promises`, `readline`, `querystring`,
+  `string_decoder`, `perf_hooks`, `module`, `assert`) plus relative
+  `.js`/`.json` files from the VFS. `module`, `exports`, `__filename` and
+  `__dirname` exist in the entry script; static `import`/`export` is downgraded
+  to the CommonJS shims and `import()` resolves through the same loader, so
+  `const fs = await import('fs')` returns the ESM namespace.
 - **Locales.** QuickJS ships without ICU, so `Intl` (and `toLocaleString`,
   `localeCompare`) is delegated to the extension's own ICU through the bridge:
   dates, numbers, currencies, collation and plural rules match the browser
@@ -178,11 +180,21 @@ printf '%s\n' '{"target":"browser.browser_tabs","params":{}}' | mcp batch
   ```
 
   `execFile`/`spawn` quote their argv and call `exec`, with `stdout`/`stderr`
-  exposed as event streams. `execSync` and `fs.*Sync` cannot exist on a
-  WASM-bridged VFS; they fail with a message naming the `await` replacement.
-  Likewise there is no `node_modules` resolution, no socket-level `http`/`net`,
-  no Python and no SQLite. `Intl` is not in the engine, but the shim above
-  provides it.
+  exposed as event streams. `execSync` cannot exist on a WASM-bridged VFS: it
+  fails with a message naming the `await` replacement.
+- **Synchronous fs.** `fs.*Sync` works because the VFS is snapshotted into
+  memory before the script starts: metadata always (the host index is already
+  in memory) and file contents when the script reads synchronously. Mutations
+  are journalled and replayed into the store when the script ends — even when
+  it fails or times out — and the journal is flushed before `exec`/`tools.*`,
+  so a subprocess sees the script's writes and vice versa. Async and sync `fs`
+  share that one view, so mixing them inside a script stays consistent.
+  Bounds worth knowing: a synchronous read of a file created by something else
+  mid-script asks for `await fs.readFile`, and a file library above 64 MiB is
+  not snapshotted at all (same message).
+  Likewise there is no `node_modules` resolution, no socket-level
+  `http`/`net`, no Python and no SQLite. `Intl` is not in the engine, but the
+  shim above provides it.
 - **Bounded output.** stdout/stderr are capped at 2000 lines / 50 KB for the
   model; anything longer is written to `tmp/` and the path is reported. That
   path is clickable in the tool card, because the spill file is hidden from the

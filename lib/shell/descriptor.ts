@@ -59,7 +59,7 @@ export const SHELL_TOOL_DESCRIPTION = [
   '`node -e` runs JavaScript for what a pipeline cannot express.',
   '',
   'Not available in a browser extension: sockets (http/net/dns), processes, python3,',
-  'sqlite3, symlinks. `fs.*Sync` fails; use the `await` form.',
+  'sqlite3, symlinks. JavaScript has both `await fs.readFile(...)` and `fs.readFileSync(...)`.',
   '',
   'Output past 2000 lines / 50 KB is truncated and the full text is written to tmp/.',
   'MCP images land in tmp/ and can be read with file_read.',

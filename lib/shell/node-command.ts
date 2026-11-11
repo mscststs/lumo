@@ -9,14 +9,20 @@
  *    (honouring the label, `fatal` and BOM rules), `atob`/`btoa`, `URL`,
  *    `Buffer`, `AbortController`/`AbortSignal`, `Headers`/`Request`/`Response`,
  *  - `crypto` randomness plus `createHash`/`createHmac`/`timingSafeEqual`,
- *  - `require` for a built-in set: path, os, util, events, fs, fs/promises,
- *    crypto, buffer, child_process, url, timers, timers/promises, assert,
- *    zlib, stream, querystring, string_decoder, perf_hooks, process, console,
+ *  - `require` for a built-in set: path (incl. `path/posix`, `path/win32`), os,
+ *    util, events, fs, fs/promises, crypto, buffer, child_process, url, timers,
+ *    timers/promises, assert, zlib, stream, stream/promises, querystring,
+ *    string_decoder, perf_hooks, process, console,
  *  - `require('./relative.js')` and `require('./data.json')` resolved against
  *    the VFS before the VM starts (see `prepareModules`),
  *  - top-level `import`/`export` statements (downgraded to the CJS shims),
  *  - `tools.<server>.<tool>(params)` and `mcp.*` — every MCP server,
- *  - `fs.*` — the shared VFS,
+ *  - `fs.*` — the shared VFS, in both shapes: the async API goes through the
+ *    host bridge, and `*Sync` is answered from the preloaded view built by
+ *    `runtime/sync-fs.ts` (metadata always, file bytes when the script reads
+ *    synchronously) whose journal is replayed when the script ends,
+ *  - `import()` — rewritten by the host to the guest loader, so the dynamic
+ *    form returns the same namespace `require` backs,
  *  - `fetch(url, init)` — host fetch, matching the shell's unrestricted `curl`,
  *  - `exec(command[, options][, callback])` — runs a shell command in the same
  *    interpreter and captures stdout/stderr/exit code.
@@ -59,6 +65,7 @@ import { base64FromBytes as base64Of, bytesFromBase64 as bytesOfBase64, bytesFro
 import { combineAbortSignals as combineSignals } from '@/lib/abort';
 import { TMP_DIR } from './vfs';
 import { MAX_TIMER_DELAY_MS, NO_TIMEOUT_MS } from './runtime/limits';
+import { SyncFileBridge, detectSyncFsUsage, type SyncFsHost } from './runtime/sync-fs';
 import guestRuntimeSource from './runtime/guest-runtime.js?raw';
 
 function extensionVersion(): string {
@@ -200,15 +207,43 @@ function stripShebang(source: string): string {
 }
 
 /**
- * Downgrade line-anchored ESM syntax to the CommonJS shims.
+ * Downgrade ESM syntax to the CommonJS shims.
  *
- * `evalCode` compiles scripts, so `import`/`export` are syntax errors. Agents
- * write ESM constantly; rewriting the dominant statements is enough to make
- * those scripts run, and anything unusual still fails loudly at the same place.
+ * `evalCode` compiles scripts, so `import`/`export` are syntax errors and
+ * `import()` has no loader (QuickJS reported "could not load module"). Agents
+ * write ESM constantly, including in one-line `node -e` scripts, so the static
+ * statements are rewritten at their statement boundary and dynamic `import()`
+ * becomes `__lumo_import(...)`, the guest's promise-returning loader.
+ *
+ * This is a textual rewrite, not a parser: occurrences inside strings or
+ * comments are rewritten too, which is the same trade-off the previous
+ * line-anchored version made.
  */
 function downgradeEsm(source: string, scriptUrl: string): string {
-  if (!/^[ \t]*(?:import|export)[\s{*]/m.test(source)) return source;
+  let code = rewriteDynamicImport(source);
+  code = rewriteStaticEsm(code);
 
+  const url = JSON.stringify(scriptUrl);
+  const dirUrl = JSON.stringify(scriptUrl.replace(/\/[^/]*$/, '/'));
+  code = code.replace(/\bimport\.meta\.url\b/g, url);
+  code = code.replace(/\bimport\.meta\.dirname\b/g, dirUrl);
+  code = code.replace(/\bimport\.meta\.filename\b/g, url);
+  return code;
+}
+
+/**
+ * `import('fs')` → `__lumo_import('fs')`.
+ *
+ * The negative lookbehind keeps `obj.import(` and identifiers such as
+ * `reimport(` untouched; `import.meta` has no parenthesis and is left for
+ * `downgradeEsm` itself.
+ */
+function rewriteDynamicImport(source: string): string {
+  return source.replace(/(?<![\w$.])import(?=\s*\()/g, '__lumo_import');
+}
+
+/** Static `import`/`export` statements → bindings the guest can evaluate. */
+function rewriteStaticEsm(source: string): string {
   let code = source;
 
   // `export default function f() {}` → keep the declaration, drop the keyword.
@@ -220,18 +255,19 @@ function downgradeEsm(source: string, scriptUrl: string): string {
     '$1const __lumo_default_export = $2',
   );
   // `export const x` / `export function f` / `export class C`
-  code = code.replace(
-    /^([ \t]*)export\s+(?=(?:const|let|var|function|class|async)\b)/gm,
-    '$1',
-  );
-  // `export { a, b as c }` and `export * from './m'` have no consumer here.
+  code = code.replace(/^([ \t]*)export\s+(?=(?:const|let|var|function|class|async)\b)/gm, '$1');
+  // `export { a, b as c } from './m'` and `export * from './m'` have no
+  // consumer here: modules are loaded as CommonJS. Kept line-anchored so an
+  // `export {` printed by a script is not eaten.
   code = code.replace(/^[ \t]*export\s*\{[^}]*\}\s*(?:from\s*['"][^'"]+['"])?;?[ \t]*$/gm, '');
-  code = code.replace(/^[ \t]*export\s+\*[^\n]*$/gm, '');
+  code = code.replace(/^[ \t]*export\s*\*(?:\s*as\s+[\w$]+)?\s*from\s*['"][^'"]+['"];?[ \t]*$/gm, '');
 
-  // `import ... from 'spec'` (may span lines)
+  // `import ... from 'spec'`, anchored to a statement boundary rather than to a
+  // whole line, so a one-line `node -e 'import fs from "node:fs"; …'` works —
+  // while `obj['import']`, a property, and prose inside a string stay intact.
   code = code.replace(
-    /^([ \t]*)import\s+([\s\S]*?)\s+from\s+(['"])([^'"]+)\3;?[ \t]*$/gm,
-    (match, indent: string, clause: string, _quote: string, spec: string) => {
+    /(^|[;{}]\s*)(import\s+([\s\S]*?)\s*from\s*(['"])([^'"\n]+)\4(?:\s*(?:with|assert)\s*\{[^}]*\})?)/gm,
+    (_match, boundary: string, _statement: string, clause: string, _quote: string, spec: string) => {
       const { defaultName, namespaceName, named } = parseImportClause(clause);
       const parts: string[] = [];
       const namespace = `(await __lumo_esm(${JSON.stringify(spec)}))`;
@@ -239,21 +275,16 @@ function downgradeEsm(source: string, scriptUrl: string): string {
       if (namespaceName) parts.push(`const ${namespaceName} = ${namespace};`);
       if (named) parts.push(`const ${named} = ${namespace};`);
       if (parts.length === 0) parts.push(`await __lumo_esm(${JSON.stringify(spec)});`);
-      return parts.map((part) => indent + part).join('\n');
+      return boundary + parts.join(' ');
     },
   );
   // bare `import 'spec'`
   code = code.replace(
-    /^([ \t]*)import\s+(['"])([^'"]+)\2;?[ \t]*$/gm,
-    (_match, indent: string, _quote: string, spec: string) =>
-      `${indent}await __lumo_esm(${JSON.stringify(spec)});`,
+    /(^|[;{}]\s*)(import\s*(['"])([^'"\n]+)\3)/gm,
+    (_match, boundary: string, _statement: string, _quote: string, spec: string) =>
+      `${boundary}await __lumo_esm(${JSON.stringify(spec)});`,
   );
 
-  const url = JSON.stringify(scriptUrl);
-  const dirUrl = JSON.stringify(scriptUrl.replace(/\/[^/]*$/, '/'));
-  code = code.replace(/\bimport\.meta\.url\b/g, url);
-  code = code.replace(/\bimport\.meta\.dirname\b/g, dirUrl);
-  code = code.replace(/\bimport\.meta\.filename\b/g, url);
   return code;
 }
 
@@ -325,6 +356,14 @@ interface HostOptions {
    */
   execControllers: Map<string, AbortController>;
   fetchControllers: Map<string, AbortController>;
+  /**
+   * Synchronous-fs view of the VFS, when the script uses `fs.*Sync`.
+   *
+   * While it is active it also answers the asynchronous `fs` calls, so both
+   * shapes of the API see one filesystem, and the journal is flushed before
+   * anything that reads the real store (`exec`, MCP tools).
+   */
+  syncFs: SyncFileBridge;
 }
 
 /** Resolve a guest path against the guest's cwd (which `process.chdir` may move). */
@@ -389,6 +428,12 @@ async function handleHostCall(
   ctx: ResolvedCommandContext,
   options: HostOptions,
 ): Promise<unknown> {
+  // A synchronously written file must exist before a subprocess or a tool reads
+  // it; the journal is replayed first and the view rebuilt afterwards.
+  if (kind === 'tool' || kind === 'exec') await options.syncFs.flush();
+  const bridged = options.syncFs.tryAsync(kind, payload);
+  if (bridged) return bridged.value;
+
   if (kind === 'tool') {
     const server = String(payload.server ?? '');
     const toolName = String(payload.tool ?? '');
@@ -403,6 +448,7 @@ async function handleHostCall(
     // does.
     const materialized = await materializeToolImages(ctx.fs, result.content, { attach: true });
     options.attachments.push(...materialized.attachments);
+    await options.syncFs.resync();
     return { ...result, content: materialized.content } satisfies NormalizedToolResult;
   }
 
@@ -644,6 +690,7 @@ async function handleHostCall(
       const stderr = timedOut
         ? `${result.stderr}${result.stderr === '' || result.stderr.endsWith('\n') ? '' : '\n'}exec: timed out after ${timeoutMs}ms\n`
         : result.stderr;
+      await options.syncFs.resync();
       return {
         stdout: result.stdout,
         stderr,
@@ -673,7 +720,12 @@ async function handleHostCall(
 }
 
 /** Synchronous host calls (QuickJS can call these without a promise). */
-function handleSyncCall(kind: string, payload: HostPayload): unknown {
+function handleSyncCall(
+  kind: string,
+  payload: HostPayload,
+  syncFs: SyncFileBridge,
+): unknown {
+  if (kind === 'fs') return syncFs.call(String(payload.op ?? ''), payload);
   if (kind === 'crypto.randomUUID') return globalThis.crypto.randomUUID();
   if (kind === 'crypto.randomBytes') {
     const length = Math.max(0, Math.min(Number(payload.length ?? 16), 65_536));
@@ -864,6 +916,7 @@ const BUILTIN_MODULES = new Set([
   'readline',
   'readline/promises',
   'module',
+  'stream/promises',
 ]);
 
 function isBuiltinModule(spec: string): boolean {
@@ -897,6 +950,11 @@ async function prepareModules(
       specs.add(match[1]!);
     }
     for (const match of source.matchAll(/^[ \t]*import\s*['"]([^'"\n]+)['"]/gm)) {
+      specs.add(match[1]!);
+    }
+    // `await import('./helper.js')` — the literal is knowable, so the module is
+    // pre-read like a `require` and the runtime loader only has to look it up.
+    for (const match of source.matchAll(/(?<![\w$.])import\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g)) {
       specs.add(match[1]!);
     }
     return [...specs];
@@ -939,7 +997,7 @@ async function prepareModules(
       } catch {
         continue;
       }
-      modules.push({ path, source });
+      modules.push({ path, source: rewriteDynamicImport(source) });
       if (!path.endsWith('.json')) {
         const dir = path.slice(0, path.lastIndexOf('/')) || '/';
         for (const nested of specsOf(source)) next.push({ spec: nested, fromDir: dir });
@@ -1158,8 +1216,8 @@ export function createNodeCommand(
           '  -                   read the script from stdin',
           '',
           'Subset of Node on QuickJS/WASM: timers, Buffer, crypto hashes, zlib,',
-          'fetch, fs (async API), child_process.exec, require() of builtins and',
-          'VFS modules, and top-level import/export.',
+          'fetch, fs (sync and async), child_process.exec, require()/import() of',
+          'builtins and VFS modules, and top-level import/export.',
         ].join('\n') + '\n',
         stderr: '',
         exitCode: 0,
@@ -1212,6 +1270,43 @@ export function createNodeCommand(
 
     const scriptUrl = `file://${scriptPath ? ctx.fs.resolvePath(cwd, scriptPath) : `/${'node-script.js'}`}`;
     const transformed = downgradeEsm(source, scriptUrl);
+
+    // `fs.*Sync` needs the VFS in memory before the VM starts, because a
+    // synchronous read cannot await IndexedDB. A script that never touches a
+    // `*Sync` API pays nothing and keeps the plain async host path.
+    const syncFs = new SyncFileBridge({ fs: ctx.fs as unknown as SyncFsHost });
+    const syncUsage = detectSyncFsUsage([transformed, ...modules.map((entry) => entry.source)]);
+    if (syncUsage) {
+      try {
+        await syncFs.prepare(syncUsage);
+      } catch (error) {
+        return {
+          stdout: '',
+          stderr: `node: ${error instanceof Error ? error.message : String(error)}\n`,
+          exitCode: 1,
+        };
+      }
+    }
+
+    /**
+     * Close the synchronous-fs journal before returning.
+     *
+     * The script's own result is already final; a journal replay failure (quota,
+     * torn-down context) becomes stderr and a non-zero exit instead of a silent
+     * lost write.
+     */
+    const finish = async (result: ExecResult): Promise<ExecResult> => {
+      await syncFs.flush();
+      if (syncFs.flushErrors.length === 0) return result;
+      const details = syncFs.flushErrors.map((message) => `fs: ${message}`).join('\n');
+      const separator = result.stderr === '' || result.stderr.endsWith('\n') ? '' : '\n';
+      return {
+        stdout: result.stdout,
+        stderr: `${result.stderr}${separator}${details}\n`,
+        exitCode: result.exitCode === 0 ? 1 : result.exitCode,
+      };
+    };
+
     const prelude = buildPrelude({
       env,
       cwd,
@@ -1275,6 +1370,7 @@ export function createNodeCommand(
               attachments: shellAttachments,
               execControllers,
               fetchControllers,
+              syncFs,
             });
             if (disposed || !context) return;
             // `resolve`/`reject` consume the pointer but not the handle: without
@@ -1323,14 +1419,20 @@ export function createNodeCommand(
         const raw = context!.getString(payloadHandle);
         try {
           const payload = raw.length > 0 ? (JSON.parse(raw) as HostPayload) : {};
-          return context!.newString(JSON.stringify(handleSyncCall(kind, payload)));
+          return context!.newString(JSON.stringify(handleSyncCall(kind, payload, syncFs)));
         } catch (error) {
           const record = (error ?? {}) as Record<string, unknown>;
+          // Node-shaped fields cross the bridge too: guest code branches on
+          // `err.code` and prints `syscall`/`path`.
           return context!.newString(
             JSON.stringify({
               __lumo_error: error instanceof Error ? error.message : String(error),
               name: typeof record.name === 'string' ? record.name : 'Error',
               code: typeof record.code === 'string' ? record.code : undefined,
+              errno: typeof record.errno === 'number' ? record.errno : undefined,
+              syscall: typeof record.syscall === 'string' ? record.syscall : undefined,
+              path: typeof record.path === 'string' ? record.path : undefined,
+              dest: typeof record.dest === 'string' ? record.dest : undefined,
             }),
           );
         }
@@ -1402,11 +1504,13 @@ export function createNodeCommand(
       while (state.type === 'pending' && steps < 200_000) {
         if (ctx.signal?.aborted) {
           promise.dispose();
-          return toExecResult(collectGuestResult(context), 'node: script aborted\n');
+          return await finish(toExecResult(collectGuestResult(context), 'node: script aborted\n'));
         }
         if (Date.now() > deadline) {
           promise.dispose();
-          return toExecResult(collectGuestResult(context), 'node: script exceeded its deadline\n');
+          return await finish(
+            toExecResult(collectGuestResult(context), 'node: script exceeded its deadline\n'),
+          );
         }
         steps += 1;
         const drained = runtime.executePendingJobs();
@@ -1414,7 +1518,7 @@ export function createNodeCommand(
           const message = describeError(context.dump(drained.error));
           drained.error.dispose();
           promise.dispose();
-          return toExecResult(collectGuestResult(context), `node: ${message}\n`);
+          return await finish(toExecResult(collectGuestResult(context), `node: ${message}\n`));
         }
         state = context.getPromiseState(promise);
         if (state.type === 'pending') {
@@ -1435,23 +1539,25 @@ export function createNodeCommand(
       promise.dispose();
 
       if (state.type === 'pending') {
-        return toExecResult(collectGuestResult(context), 'node: script did not settle\n');
+        return await finish(
+          toExecResult(collectGuestResult(context), 'node: script did not settle\n'),
+        );
       }
       if (state.type === 'rejected') {
         const message = describeError(context.dump(state.error));
         state.error.dispose();
-        return toExecResult(collectGuestResult(context), `node: ${message}\n`);
+        return await finish(toExecResult(collectGuestResult(context), `node: ${message}\n`));
       }
 
       const raw = context.getString(state.value);
       state.value.dispose();
-      return toExecResult(JSON.parse(raw) as GuestResult, '');
+      return await finish(toExecResult(JSON.parse(raw) as GuestResult, ''));
     } catch (error) {
-      return {
+      return await finish({
         stdout: '',
         stderr: `node: ${error instanceof Error ? error.message : String(error)}\n`,
         exitCode: 1,
-      };
+      });
     } finally {
       disposed = true;
       activeDepth -= 1;

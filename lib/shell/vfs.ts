@@ -286,6 +286,17 @@ export interface LumoFileSystemOptions {
   conversationId?: string;
 }
 
+/** One path in the tree, as `snapshotSync` reports it. */
+export interface VfsSnapshotEntry {
+  /** Absolute VFS path (`/dir/file.txt`). */
+  path: string;
+  kind: 'file' | 'dir';
+  size: number;
+  /** Epoch milliseconds. */
+  mtime: number;
+  mode: number;
+}
+
 export class LumoFileSystem implements IFileSystem {
   private readonly conversationId?: string;
   /** Store path (no leading slash) -> metadata. */
@@ -801,6 +812,45 @@ export class LumoFileSystem implements IFileSystem {
 
   resolvePath(base: string, path: string): string {
     return resolveVfsPath(base, path);
+  }
+
+  /**
+   * The whole tree as plain metadata, for the synchronous fs bridge.
+   *
+   * The index is already in memory, so this is a map walk — no storage access.
+   * `lib/shell/runtime/sync-fs.ts` uses it to answer `statSync`/`readdirSync`
+   * without an await, and to know which files it has to load for `readFileSync`.
+   */
+  snapshotSync(): VfsSnapshotEntry[] {
+    const entries: VfsSnapshotEntry[] = [
+      {
+        path: ROOT,
+        kind: 'dir',
+        size: 0,
+        mtime: this.mtimes.get('')?.getTime() ?? this.dirTimes.get('') ?? 0,
+        mode: this.modes.get('') ?? DIR_MODE,
+      },
+    ];
+    for (const dir of this.dirs) {
+      if (dir === '') continue;
+      entries.push({
+        path: toVfsPath(dir),
+        kind: 'dir',
+        size: 0,
+        mtime: this.mtimes.get(dir)?.getTime() ?? this.dirTimes.get(dir) ?? 0,
+        mode: this.modes.get(dir) ?? DIR_MODE,
+      });
+    }
+    for (const [storePath, meta] of this.files) {
+      entries.push({
+        path: toVfsPath(storePath),
+        kind: 'file',
+        size: meta.size,
+        mtime: this.mtimes.get(storePath)?.getTime() ?? meta.updatedAt,
+        mode: this.modes.get(storePath) ?? FILE_MODE,
+      });
+    }
+    return entries;
   }
 
   getAllPaths(): string[] {
