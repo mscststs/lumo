@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "URL ya msingi",
@@ -236,6 +239,8 @@
       "fetchModels": "Leta modeli",
       "fetchModelsConfigError": "Weka URL ya API na ufunguo wa API kwanza.",
       "fetchModelsError": "Imeshindwa kuleta modeli.",
+      "searchModels": "Tafuta modeli",
+      "noMatchingModels": "Hakuna modeli zinazolingana",
       "modelName": "Jina la kuonyesha",
       "modelNamePlaceholder": "k.m. GPT-4o",
       "isVision": "Modeli ya kuona",

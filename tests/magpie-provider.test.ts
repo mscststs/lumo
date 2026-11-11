@@ -51,7 +51,7 @@ describe('Magpie vendor', () => {
     expect(normalizeProviderVendor('magpie')).toBe('magpie');
   });
 
-  it.each(['openai-chat', 'openai-responses', 'anthropic'] as const)(
+  it.each(['openai-chat', 'openai-responses', 'anthropic', 'google'] as const)(
     'defaults the %s base URL to the local gateway',
     (type) => {
       expect(resolveBaseUrl(magpie({ type }))).toBe('http://127.0.0.1:3425/v1');
@@ -74,6 +74,9 @@ describe('Magpie vendor', () => {
   it('hints the default endpoint as the placeholder for every protocol', () => {
     expect(providerBaseUrlPlaceholder('magpie', 'anthropic')).toBe('http://127.0.0.1:3425/v1');
     expect(providerBaseUrlPlaceholder('magpie', 'openai-chat')).toBe('http://127.0.0.1:3425/v1');
+    // The gateway owns the base for Gemini too; the SDK appends
+    // `/models/{id}:generateContent` to whatever it is given.
+    expect(providerBaseUrlPlaceholder('magpie', 'google')).toBe('http://127.0.0.1:3425/v1');
   });
 
   it('builds the base from an origin, tolerating a trailing slash', () => {
@@ -101,6 +104,8 @@ describe('canFetchModels', () => {
     [{ vendor: 'opencode', type: 'anthropic' }, true],
     [{ vendor: 'custom', type: 'openai-chat' }, true],
     [{ vendor: undefined, type: 'openai-responses' }, true],
+    // Gemini's list is read with the same key header its API takes.
+    [{ vendor: 'custom', type: 'google' }, true],
     // The official Anthropic API rejects the Bearer-authenticated list request.
     [{ vendor: 'custom', type: 'anthropic' }, false],
     [{ vendor: undefined, type: 'anthropic' }, false],

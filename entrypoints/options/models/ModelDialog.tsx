@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { canFetchModels, resolveModelsUrl } from '@/lib/provider-type';
+import { canFetchModels, resolveModelListRequest } from '@/lib/provider-type';
 import { parseModelList, type FetchedModel } from '@/lib/provider-models';
 import type { ModelConfig, ProviderType, ProviderVendor } from '@/types';
 import { ContextWindowField } from '@/entrypoints/options/components/ContextWindowField';
@@ -86,24 +87,34 @@ export function ModelDialog({
     setFetchError(null);
   }, [providerType, providerVendor, providerBaseUrl]);
 
+  const comboboxOptions = useMemo<ComboboxOption[]>(() => {
+    if (!modelOptions) return [];
+    return [...modelOptions.values()].map((model) => ({
+      value: model.id,
+      // The list is scanned while typing, so the row stays a single line: the id
+      // on the left, the gateway's own name on the right when it has one.
+      description: model.displayName,
+    }));
+  }, [modelOptions]);
+
   const fetchModels = async () => {
     // Resolved rather than composed here: OpenCode serves its list outside the
-    // protocol path, so `${baseUrl}/models` would 404 for it.
-    const url = resolveModelsUrl({
+    // protocol path (`${baseUrl}/models` would 404), and Gemini authenticates the
+    // request with its own key header instead of a Bearer token.
+    const request = resolveModelListRequest({
       vendor: providerVendor,
       type: providerType,
       baseUrl: providerBaseUrl,
+      apiKey: providerApiKey,
     });
-    if (!url || !providerApiKey.trim()) {
+    if (!request || !providerApiKey.trim()) {
       setFetchError(t('options.models.fetchModelsConfigError'));
       return;
     }
     setFetchingModels(true);
     setFetchError(null);
     try {
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${providerApiKey.trim()}` },
-      });
+      const response = await fetch(request.url, { headers: request.headers });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const models = parseModelList(await response.json());
       if (!models.length) throw new Error('empty model list');
@@ -144,6 +155,18 @@ export function ModelDialog({
       ...(windowIsAuto ? { contextWindow: next?.contextWindow } : {}),
     }, 'modelId');
     if (nameIsAuto && errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
+  };
+
+  /**
+   * Free text in the combobox is the id itself, not just a filter.
+   *
+   * The display name keeps mirroring the id while it is still automatic, which
+   * is what makes typing a model the gateway has not listed yet a single step.
+   */
+  const handleModelIdInput = (modelId: string) => {
+    const shouldMirror = !value.displayName || value.displayName === value.modelId;
+    patch(shouldMirror ? { modelId, displayName: modelId } : { modelId }, 'modelId');
+    if (shouldMirror && errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
   };
 
   const handleSave = async () => {
@@ -190,20 +213,23 @@ export function ModelDialog({
             {(props) => (
               <div className="flex gap-2">
                 {modelOptions ? (
-                  <Select value={value.modelId} onValueChange={selectFetchedModel}>
-                    <SelectTrigger {...props} className="font-mono text-xs"><SelectValue placeholder={t('options.models.modelIdPlaceholder')} /></SelectTrigger>
-                    <SelectContent>{[...modelOptions.keys()].map((model) => <SelectItem key={model} value={model} className="font-mono text-xs">{model}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <Combobox
+                    {...props}
+                    className="min-w-0 flex-1"
+                    mono
+                    value={value.modelId}
+                    options={comboboxOptions}
+                    onChange={handleModelIdInput}
+                    onSelect={(option) => selectFetchedModel(option.value)}
+                    placeholder={t('options.models.modelIdPlaceholder')}
+                    emptyLabel={t('options.models.noMatchingModels')}
+                    listLabel={t('options.models.searchModels')}
+                  />
                 ) : (
                   <Input
                     {...props}
                     value={value.modelId}
-                    onChange={(e) => {
-                      const modelId = e.target.value;
-                      const shouldMirror = !value.displayName || value.displayName === value.modelId;
-                      patch(shouldMirror ? { modelId, displayName: modelId } : { modelId }, 'modelId');
-                      if (shouldMirror && errors.displayName) setErrors((prev) => ({ ...prev, displayName: undefined }));
-                    }}
+                    onChange={(e) => handleModelIdInput(e.target.value)}
                     placeholder={t('options.models.modelIdPlaceholder')}
                     dir="ltr"
                     spellCheck={false}

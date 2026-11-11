@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Základní URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Načíst modely",
       "fetchModelsConfigError": "Nejprve nastavte URL API a klíč API.",
       "fetchModelsError": "Modely se nepodařilo načíst.",
+      "searchModels": "Hledat modely",
+      "noMatchingModels": "Žádné modely neodpovídají",
       "modelName": "Zobrazovaný název",
       "modelNamePlaceholder": "např. GPT-4o",
       "isVision": "Model vidění",

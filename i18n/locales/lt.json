@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Bazinis URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Gauti modelius",
       "fetchModelsConfigError": "Pirmiausia sukonfigūruokite API URL ir API raktą.",
       "fetchModelsError": "Nepavyko gauti modelių.",
+      "searchModels": "Ieškoti modelių",
+      "noMatchingModels": "Nė vienas modelis neatitinka",
       "modelName": "Rodomas pavadinimas",
       "modelNamePlaceholder": "pvz. GPT-4o",
       "isVision": "Regos modelis",

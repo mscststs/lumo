@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "نشانی پایه",
@@ -236,6 +239,8 @@
       "fetchModels": "دریافت مدل‌ها",
       "fetchModelsConfigError": "ابتدا نشانی API و کلید API را پیکربندی کنید.",
       "fetchModelsError": "دریافت مدل‌ها ممکن نشد.",
+      "searchModels": "جستجوی مدل‌ها",
+      "noMatchingModels": "مدلی مطابقت ندارد",
       "modelName": "نام نمایشی",
       "modelNamePlaceholder": "مثلاً GPT-4o",
       "isVision": "مدل بینایی",

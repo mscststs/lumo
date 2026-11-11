@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Βασικό URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Λήψη μοντέλων",
       "fetchModelsConfigError": "Ρυθμίστε πρώτα το URL του API και το κλειδί API.",
       "fetchModelsError": "Δεν ήταν δυνατή η λήψη των μοντέλων.",
+      "searchModels": "Αναζήτηση μοντέλων",
+      "noMatchingModels": "Κανένα μοντέλο δεν ταιριάζει",
       "modelName": "Εμφανιζόμενο όνομα",
       "modelNamePlaceholder": "π.χ. GPT-4o",
       "isVision": "Μοντέλο όρασης",

@@ -16,6 +16,7 @@ import { normalizeContextWindow } from '@/lib/context-window';
 /** i18n key suffix under `options.models.providerTypes` for each type. */
 export const PROVIDER_TYPE_I18N_KEY: Record<ProviderType, string> = {
   anthropic: 'anthropic',
+  google: 'google',
   'openai-chat': 'openaiChat',
   'openai-responses': 'openaiResponses',
 };
@@ -25,6 +26,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
   'openai-chat',
   'openai-responses',
   'anthropic',
+  'google',
 ];
 
 /** i18n key suffix under `options.models.vendors` for each vendor. */
@@ -40,6 +42,9 @@ export const PROVIDER_VENDORS: ProviderVendor[] = ['custom', 'opencode', 'magpie
 /** Default base URL hint per provider type, used as an input placeholder. */
 export const PROVIDER_BASE_URL_PLACEHOLDER: Record<ProviderType, string> = {
   anthropic: 'https://api.anthropic.com',
+  // Gemini's base carries the API version: the SDK appends
+  // `/models/{id}:generateContent` to it verbatim.
+  google: 'https://generativelanguage.googleapis.com/v1beta',
   'openai-chat': 'https://api.openai.com/v1',
   'openai-responses': 'https://api.openai.com/v1',
 };
@@ -192,14 +197,56 @@ export function resolveModelsUrl(input: ProviderEndpointInput): string | undefin
 }
 
 /**
+ * A ready-to-send model-list request: where to fetch it, and the header that
+ * authenticates it.
+ *
+ * The header is derived from the protocol rather than fixed to Bearer: Gemini
+ * reads its list with the same `x-goog-api-key` its API takes, so a Bearer-only
+ * fetch would fail on it with a 401 the dialog could not explain.
+ */
+export interface ModelListRequest {
+  url: string;
+  headers: Record<string, string>;
+}
+
+/**
+ * The request the model dialog should issue.
+ *
+ * `undefined` means no list URL can be derived at all — the same case
+ * {@link resolveModelsUrl} answers — and the dialog reports that instead of
+ * fetching a made-up endpoint.
+ */
+export function resolveModelListRequest(
+  input: ProviderEndpointInput & { apiKey: string },
+): ModelListRequest | undefined {
+  const url = resolveModelsUrl(input);
+  if (!url) return undefined;
+  const apiKey = input.apiKey.trim();
+  if (normalizeProviderType(input.type) === 'google') {
+    // Gemini pages its catalogue at 50 models unless told otherwise, so the
+    // default request would succeed while hiding most of it. One page of 1000 is
+    // the ceiling the API accepts, so a single request returns the whole list.
+    return {
+      url: `${url}${url.includes('?') ? '&' : '?'}pageSize=1000`,
+      headers: { 'x-goog-api-key': apiKey },
+    };
+  }
+  return { url, headers: { Authorization: `Bearer ${apiKey}` } };
+}
+
+/**
  * Whether the model dialog offers to fetch the provider's model list.
  *
- * The fetch is Bearer-authenticated. OpenAI-protocol endpoints and both known
- * vendors accept that; the official Anthropic API does not (it wants
- * `x-api-key`), so a custom Anthropic provider is left to a typed model id
- * rather than shown a button that cannot succeed.
+ * The fetch authenticates the way the protocol itself does, and every case here
+ * has a header the endpoint accepts: OpenAI-protocol endpoints and both known
+ * vendors take a Bearer token, and Gemini's list is read with the same
+ * `x-goog-api-key` its API uses. The official Anthropic API is the exception —
+ * it wants `x-api-key` against `{baseUrl}/models` and publishes no list there —
+ * so a custom Anthropic provider is left to a typed model id rather than shown a
+ * button that cannot succeed.
  */
 export function canFetchModels(input: ProviderEndpointInput): boolean {
+  if (normalizeProviderType(input.type) === 'google') return true;
   const vendor = normalizeProviderVendor(input.vendor);
   return (vendor !== undefined && vendor !== 'custom') || isOpenAIProvider(input.type);
 }

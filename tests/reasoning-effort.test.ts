@@ -137,7 +137,7 @@ describe('normalizeProvider', () => {
 });
 
 describe('createProvider', () => {
-  const TYPES: ProviderType[] = ['openai-chat', 'openai-responses', 'anthropic'];
+  const TYPES: ProviderType[] = ['openai-chat', 'openai-responses', 'anthropic', 'google'];
 
   it.each(TYPES)('routes a unified level through the top-level setting on %s', (type) => {
     const resolved = createProvider(
@@ -219,7 +219,7 @@ describe('per-provider level lists', () => {
   });
 
   it('offers max everywhere, since every provider enum has it', () => {
-    for (const type of ['anthropic', 'openai-chat', 'openai-responses'] as const) {
+    for (const type of ['anthropic', 'google', 'openai-chat', 'openai-responses'] as const) {
       expect(reasoningEffortsFor(type), type).toContain('max');
     }
   });

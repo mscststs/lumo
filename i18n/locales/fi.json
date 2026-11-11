@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Perus-URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Hae mallit",
       "fetchModelsConfigError": "Määritä ensin API-URL ja API-avain.",
       "fetchModelsError": "Mallien hakeminen epäonnistui.",
+      "searchModels": "Hae malleja",
+      "noMatchingModels": "Mikään malli ei vastaa",
       "modelName": "Näyttönimi",
       "modelNamePlaceholder": "esim. GPT-4o",
       "isVision": "Näkömalli",

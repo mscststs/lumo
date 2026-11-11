@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Base URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Kunin ang mga modelo",
       "fetchModelsConfigError": "I-configure muna ang API URL at API key.",
       "fetchModelsError": "Hindi makuha ang mga modelo.",
+      "searchModels": "Maghanap ng mga modelo",
+      "noMatchingModels": "Walang tugmang modelo",
       "modelName": "Display name",
       "modelNamePlaceholder": "hal. GPT-4o",
       "isVision": "Vision model",

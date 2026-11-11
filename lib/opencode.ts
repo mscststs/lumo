@@ -10,6 +10,7 @@
  * Endpoints (see https://opencode.ai/docs/zen/):
  * - OpenAI Chat / Responses base: `${origin}/inference/openai/v1`
  * - Anthropic base:               `${origin}/inference/anthropic`
+ * - Google (Gemini) base:         `${origin}/inference/google/v1beta`
  * - Model list:                   `${origin}/inference/v1/models`
  */
 
@@ -39,18 +40,20 @@ const OPENCODE_SESSION_SALT = 'lumo.opencode.session.v1';
 
 /** Protocol-specific base URL on the OpenCode origin. */
 export function openCodeBaseUrl(type: ProviderType, origin = OPENCODE_ORIGIN): string {
-  // Gemini is served at `/inference/google/v1beta`, which `ProviderType` cannot
-  // express, so every supported protocol maps onto one of the two paths below.
-  return type === 'anthropic'
-    ? `${trimOrigin(origin)}/inference/anthropic`
-    : `${trimOrigin(origin)}/inference/openai/v1`;
+  const base = trimOrigin(origin);
+  // Anthropic and Gemini live outside the OpenAI prefix, and Gemini keeps its own
+  // API version in the base because the SDK appends `/models/{id}:…` to it.
+  if (type === 'anthropic') return `${base}/inference/anthropic`;
+  if (type === 'google') return `${base}/inference/google/v1beta`;
+  return `${base}/inference/openai/v1`;
 }
 
 /**
  * Model-list URL derived from a resolved OpenCode base URL.
  *
  * The list is served once at `${origin}/inference/v1/models`, *not* under the
- * protocol path — appending `/models` to an OpenCode base URL 404s. Deriving it
+ * protocol path — appending `/models` to an OpenCode base URL 404s, including for
+ * the Gemini base, whose `/v1beta` is part of the stripped suffix. Deriving it
  * from the base rather than hardcoding the origin also keeps a self-hosted
  * OpenCode under a subpath working.
  */

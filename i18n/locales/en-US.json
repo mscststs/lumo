@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Base URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Fetch models",
       "fetchModelsConfigError": "Configure the API URL and API key first.",
       "fetchModelsError": "Unable to fetch models.",
+      "searchModels": "Search models",
+      "noMatchingModels": "No models match",
       "modelName": "Display Name",
       "modelNamePlaceholder": "e.g. GPT-4o",
       "isVision": "Vision Model",

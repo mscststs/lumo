@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "URL cơ sở",
@@ -236,6 +239,8 @@
       "fetchModels": "Lấy danh sách mô hình",
       "fetchModelsConfigError": "Cấu hình URL API và khóa API trước.",
       "fetchModelsError": "Không thể lấy danh sách mô hình.",
+      "searchModels": "Tìm mô hình",
+      "noMatchingModels": "Không có mô hình phù hợp",
       "modelName": "Tên hiển thị",
       "modelNamePlaceholder": "ví dụ: GPT-4o",
       "isVision": "Mô hình thị giác",

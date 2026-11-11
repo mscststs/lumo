@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Osnovni URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Pridobi modele",
       "fetchModelsConfigError": "Najprej nastavite URL API in ključ API.",
       "fetchModelsError": "Modelov ni bilo mogoče pridobiti.",
+      "searchModels": "Iskanje modelov",
+      "noMatchingModels": "Noben model se ne ujema",
       "modelName": "Prikazno ime",
       "modelNamePlaceholder": "npr. GPT-4o",
       "isVision": "Model vida",

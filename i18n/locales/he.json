@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "כתובת URL בסיסית",
@@ -236,6 +239,8 @@
       "fetchModels": "הבאת מודלים",
       "fetchModelsConfigError": "הגדר תחילה את כתובת ה-API ואת מפתח ה-API.",
       "fetchModelsError": "לא ניתן היה להביא את המודלים.",
+      "searchModels": "חיפוש מודלים",
+      "noMatchingModels": "אין מודלים תואמים",
       "modelName": "שם תצוגה",
       "modelNamePlaceholder": "למשל GPT-4o",
       "isVision": "מודל ראייה",

@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "அடிப்படை URL",
@@ -236,6 +239,8 @@
       "fetchModels": "மாதிரிகளைப் பெறு",
       "fetchModelsConfigError": "முதலில் API URL மற்றும் API விசையை உள்ளமைக்கவும்.",
       "fetchModelsError": "மாதிரிகளைப் பெற முடியவில்லை.",
+      "searchModels": "மாதிரிகளைத் தேடு",
+      "noMatchingModels": "பொருந்தும் மாதிரிகள் இல்லை",
       "modelName": "காட்சிப் பெயர்",
       "modelNamePlaceholder": "எ.கா. GPT-4o",
       "isVision": "பார்வை மாதிரி",

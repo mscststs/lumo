@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Bas-URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Hämta modeller",
       "fetchModelsConfigError": "Konfigurera API-URL och API-nyckel först.",
       "fetchModelsError": "Det gick inte att hämta modellerna.",
+      "searchModels": "Sök modeller",
+      "noMatchingModels": "Inga modeller matchar",
       "modelName": "Visningsnamn",
       "modelNamePlaceholder": "t.ex. GPT-4o",
       "isVision": "Synmodell",

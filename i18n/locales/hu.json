@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Alap URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Modellek lekérése",
       "fetchModelsConfigError": "Először állítsa be az API URL-t és az API-kulcsot.",
       "fetchModelsError": "Nem sikerült lekérni a modelleket.",
+      "searchModels": "Modellek keresése",
+      "noMatchingModels": "Nincs egyező modell",
       "modelName": "Megjelenített név",
       "modelNamePlaceholder": "pl. GPT-4o",
       "isVision": "Látásmodell",

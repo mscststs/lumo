@@ -14,8 +14,15 @@ import type { BusySendBehavior } from '@/lib/busy-send';
  *   The portable choice for DeepSeek / Moonshot / SiliconFlow / OneAPI / Ollama…
  * - `openai-responses` → `POST {baseUrl}/responses` (`openai(id)`).
  *   Only official OpenAI (or a gateway that truly proxies Responses) supports it.
+ * - `anthropic` → `POST {baseUrl}/messages` (`@ai-sdk/anthropic`).
+ * - `google` → `POST {baseUrl}/models/{id}:streamGenerateContent`
+ *   (`@ai-sdk/google`). Not an OpenAI shape: the key travels in
+ *   `x-goog-api-key`, and `baseUrl` carries the API version (`…/v1beta`) because
+ *   the SDK appends the model path straight onto it. Gemini's own OpenAI
+ *   endpoint exists but loses the thinking and grounding options this protocol
+ *   has, so it is a different protocol and not a base-URL variant of one.
  */
-export type ProviderType = 'anthropic' | 'openai-chat' | 'openai-responses';
+export type ProviderType = 'anthropic' | 'google' | 'openai-chat' | 'openai-responses';
 
 /**
  * Provider types as they may appear in previously persisted configs.

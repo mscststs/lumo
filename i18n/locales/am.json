@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "መሠረት URL",
@@ -236,6 +239,8 @@
       "fetchModels": "ሞዴሎችን አምጣ",
       "fetchModelsConfigError": "መጀመሪያ የAPI URL እና የAPI ቁልፍ ያዋቅሩ።",
       "fetchModelsError": "ሞዴሎችን ማምጣት አልተቻለም።",
+      "searchModels": "ሞዴሎችን ፈልግ",
+      "noMatchingModels": "የሚዛመድ ሞዴል የለም",
       "modelName": "የሚታይ ስም",
       "modelNamePlaceholder": "ለምሳሌ GPT-4o",
       "isVision": "የራዕይ ሞዴል",

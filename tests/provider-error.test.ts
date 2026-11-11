@@ -172,6 +172,17 @@ describe('classifyError via structured signals', () => {
     expect(classifyError(error).category).toBe('rateLimit');
   });
 
+  it('reads a Gemini envelope whose HTTP status rides in `code`', () => {
+    // Gemini answers `{ error: { code: 429, message, status: 'RESOURCE_EXHAUSTED' } }`.
+    // The number is an HTTP status even though it claims to be a code; reading it
+    // as both is what lets the retry/rate-limit decision see what happened.
+    const error = toError({
+      error: { code: 429, message: 'Resource has been exhausted', status: 'RESOURCE_EXHAUSTED' },
+    });
+    expect(providerErrorInfo(error)).toEqual({ statusCode: 429, code: '429' });
+    expect(classifyError(error).category).toBe('rateLimit');
+  });
+
   it('maps auth statuses without needing keywords', () => {
     expect(
       classifyError(new ProviderError('nope', { statusCode: 401 })).category,

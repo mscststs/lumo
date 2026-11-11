@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Baas-URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Hangi mudelid",
       "fetchModelsConfigError": "Seadistage esmalt API URL ja API võti.",
       "fetchModelsError": "Mudeleid ei õnnestunud hankida.",
+      "searchModels": "Otsi mudeleid",
+      "noMatchingModels": "Ükski mudel ei vasta",
       "modelName": "Kuvatav nimi",
       "modelNamePlaceholder": "nt GPT-4o",
       "isVision": "Nägemismudel",

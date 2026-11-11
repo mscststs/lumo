@@ -5,10 +5,12 @@
  * Extracted from `lib/ai.ts` so modules that only need a model handle (OCR, the
  * summarizer) do not depend on the agent loop and its tool registry. The
  * provider-specific quirks live here: base URL resolution, OpenCode session
- * headers, reasoning effort translation, and the Responses API's `store: false`.
+ * headers, reasoning effort translation, the Responses API's `store: false`, and
+ * Gemini's `includeThoughts`.
  */
 
 import { createOpenResponses } from '@ai-sdk/open-responses';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { LanguageModel, ProviderMetadata } from 'ai';
@@ -27,11 +29,16 @@ import {
 /**
  * A model plus the provider-specific request options it needs.
  *
- * `providerOptions` is not cosmetic for the Responses API: with the SDK default
- * `store: true` and no `previousResponseId`, prior assistant/reasoning parts are
- * replayed as `{ type: 'item_reference', id }`, which requires the server to
- * still hold those items. Forcing `store: false` makes the SDK inline the real
- * content (and auto-request `reasoning.encrypted_content`) instead.
+ * `providerOptions` is not cosmetic here, in either protocol that uses it:
+ * - Responses: with the SDK default `store: true` and no `previousResponseId`,
+ *   prior assistant/reasoning parts are replayed as
+ *   `{ type: 'item_reference', id }`, which requires the server to still hold
+ *   those items. Forcing `store: false` makes the SDK inline the real content
+ *   (and auto-request `reasoning.encrypted_content`) instead.
+ * - Google: the thinking *level* comes from the unified `reasoning` setting, but
+ *   the thought summary only comes back when `thinkingConfig.includeThoughts` is
+ *   set — otherwise the reasoning block every other protocol shows would stay
+ *   empty on Gemini.
  */
 export interface ResolvedModel {
   model: LanguageModel;
@@ -55,7 +62,7 @@ export interface ResolvedModel {
    * `reasoning_content` / `reasoning` deltas that compatible gateways stream,
    * so `lib/gateway-reasoning.ts` rewrites them back into `reasoning` parts.
    * Absent for protocols that already map thinking themselves (Anthropic,
-   * the Responses API).
+   * Google, the Responses API).
    */
   rawReasoning?: boolean;
 }
@@ -89,6 +96,30 @@ export function createProvider(
     });
     return {
       model: anthropic(model.modelId),
+      ...reasoning,
+    };
+  }
+
+  if (type === 'google') {
+    const google = createGoogleGenerativeAI({
+      apiKey: provider.apiKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+      ...(headers ? { headers } : {}),
+    });
+    return {
+      model: google(model.modelId),
+      // Gemini thinks silently: the budget/level reaches the request from the
+      // unified `reasoning` setting, but the summary of those thoughts is only
+      // returned when `includeThoughts` is asked for. Without it the UI would
+      // show an empty reasoning block (or none) on every model that thinks —
+      // the same visible-thinking parity Anthropic and OpenAI already have.
+      // Sent only alongside an explicit level, because a model that cannot think
+      // rejects the whole `thinkingConfig` field, which is the same reason the
+      // level itself is omitted by default. The SDK derives the budget or level
+      // from `reasoning` and merges these keys into the same object.
+      ...(effort
+        ? { providerOptions: { google: { thinkingConfig: { includeThoughts: true } } } }
+        : {}),
       ...reasoning,
     };
   }

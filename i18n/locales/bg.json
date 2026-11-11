@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Базов URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Извлечи модели",
       "fetchModelsConfigError": "Първо конфигурирайте URL на API и API ключа.",
       "fetchModelsError": "Моделите не могат да бъдат извлечени.",
+      "searchModels": "Търсене на модели",
+      "noMatchingModels": "Няма съвпадащи модели",
       "modelName": "Показвано име",
       "modelNamePlaceholder": "напр. GPT-4o",
       "isVision": "Модел за зрение",

@@ -217,6 +217,7 @@ from both modes stays readable.
 - OpenAI-compatible API (Chat Completions)
 - OpenAI Responses API
 - Anthropic Claude API
+- Google Gemini API
 - Any OpenAI-compatible gateway (e.g. OpenRouter, Azure, local proxies)
 
 ### Settings & Customization

@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "URL dasar",
@@ -236,6 +239,8 @@
       "fetchModels": "Ambil model",
       "fetchModelsConfigError": "Konfigurasikan URL API dan kunci API terlebih dahulu.",
       "fetchModelsError": "Tidak dapat mengambil model.",
+      "searchModels": "Cari model",
+      "noMatchingModels": "Tidak ada model yang cocok",
       "modelName": "Nama tampilan",
       "modelNamePlaceholder": "mis. GPT-4o",
       "isVision": "Model visi",

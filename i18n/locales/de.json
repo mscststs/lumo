@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Basis-URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Modelle abrufen",
       "fetchModelsConfigError": "Konfiguriere zuerst API-URL und API-Schlüssel.",
       "fetchModelsError": "Modelle konnten nicht abgerufen werden.",
+      "searchModels": "Modelle durchsuchen",
+      "noMatchingModels": "Keine passenden Modelle",
       "modelName": "Anzeigename",
       "modelNamePlaceholder": "z. B. GPT-4o",
       "isVision": "Vision-Modell",

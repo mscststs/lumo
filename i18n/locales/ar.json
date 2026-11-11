@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "عنوان URL الأساسي",
@@ -236,6 +239,8 @@
       "fetchModels": "جلب النماذج",
       "fetchModelsConfigError": "هيّئ عنوان API ومفتاح API أولًا.",
       "fetchModelsError": "تعذّر جلب النماذج.",
+      "searchModels": "ابحث في النماذج",
+      "noMatchingModels": "لا توجد نماذج مطابقة",
       "modelName": "الاسم المعروض",
       "modelNamePlaceholder": "مثل GPT-4o",
       "isVision": "نموذج رؤية",

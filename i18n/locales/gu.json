@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "આધાર URL",
@@ -236,6 +239,8 @@
       "fetchModels": "મોડેલો લાવો",
       "fetchModelsConfigError": "પહેલા API URL અને API કી ગોઠવો.",
       "fetchModelsError": "મોડેલો લાવી શકાયા નથી.",
+      "searchModels": "મોડેલો શોધો",
+      "noMatchingModels": "કોઈ મોડેલ મેળ ખાતું નથી",
       "modelName": "પ્રદર્શિત નામ",
       "modelNamePlaceholder": "દા.ત. GPT-4o",
       "isVision": "વિઝન મોડેલ",

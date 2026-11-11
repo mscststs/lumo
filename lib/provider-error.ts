@@ -150,10 +150,17 @@ function readErrorObject(value: unknown): ExtractedError | undefined {
   const { message } = record;
   if (typeof message !== 'string' || message.length === 0) return undefined;
 
+  // Gemini (and proxies that mirror its envelope) puts the HTTP status in `code`:
+  // `{ error: { code: 429, message, status: 'RESOURCE_EXHAUSTED' } }`. It is read
+  // both ways — as the code it claims to be, and as the status it actually is —
+  // because the status heuristics are what turn it into a rate-limit decision.
+  const numericStatus = readStatus(record.code);
+
   return {
     message,
     code: readCode(record.code ?? record.type),
-    statusCode: readStatus(record.status ?? record.status_code ?? record.statusCode),
+    statusCode:
+      readStatus(record.status ?? record.status_code ?? record.statusCode) ?? numericStatus,
   };
 }
 

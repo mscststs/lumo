@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Temel URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Modelleri getir",
       "fetchModelsConfigError": "Önce API URL'sini ve API anahtarını yapılandırın.",
       "fetchModelsError": "Modeller getirilemedi.",
+      "searchModels": "Model ara",
+      "noMatchingModels": "Eşleşen model yok",
       "modelName": "Görünen ad",
       "modelNamePlaceholder": "ör. GPT-4o",
       "isVision": "Görsel model",

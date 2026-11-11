@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "ಮೂಲ URL",
@@ -236,6 +239,8 @@
       "fetchModels": "ಮಾದರಿಗಳನ್ನು ಪಡೆ",
       "fetchModelsConfigError": "ಮೊದಲು API URL ಮತ್ತು API ಕೀ ಕಾನ್ಫಿಗರ್ ಮಾಡಿ.",
       "fetchModelsError": "ಮಾದರಿಗಳನ್ನು ಪಡೆಯಲಾಗಲಿಲ್ಲ.",
+      "searchModels": "ಮಾದರಿಗಳನ್ನು ಹುಡುಕಿ",
+      "noMatchingModels": "ಹೊಂದಿಕೆಯಾಗುವ ಮಾದರಿಗಳಿಲ್ಲ",
       "modelName": "ಪ್ರದರ್ಶನ ಹೆಸರು",
       "modelNamePlaceholder": "ಉದಾ. GPT-4o",
       "isVision": "ದೃಷ್ಟಿ ಮಾದರಿ",

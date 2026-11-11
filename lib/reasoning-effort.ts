@@ -75,9 +75,27 @@ export const REASONING_EFFORTS = [
  *   i.e. publishes no enum, so this is the broadest set the OpenAI family is
  *   known to take. A model that rejects one fails the request, which is why the
  *   default remains "send nothing".
+ * - `google` — Gemini publishes both a `thinkingLevel` enum (`low | medium |
+ *   high`, plus `minimal` on models whose minimum allows it) on gemini-3-and
+ *   later and a token `thinkingBudget` on gemini-2.5-and-earlier, where the SDK
+ *   scales the budget off the same level (2 % … 100 % of the thinking budget).
+ *   Every level below therefore has a spelling on at least one Gemini family;
+ *   a level a particular model cannot express is degraded to the nearest one it
+ *   can (with an SDK warning) rather than failing the request. `'none'` means a
+ *   zero budget on the models that allow one, and the lowest level elsewhere.
  */
 export const REASONING_EFFORTS_BY_PROVIDER = {
   anthropic: ['provider-default', 'none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  google: [
+    'provider-default',
+    'none',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+  ],
   'openai-chat': [
     'provider-default',
     'none',

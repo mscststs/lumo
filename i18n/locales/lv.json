@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Pamata URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Iegūt modeļus",
       "fetchModelsConfigError": "Vispirms konfigurējiet API URL un API atslēgu.",
       "fetchModelsError": "Modeļus neizdevās iegūt.",
+      "searchModels": "Meklēt modeļus",
+      "noMatchingModels": "Neviens modelis neatbilst",
       "modelName": "Parādāmais nosaukums",
       "modelNamePlaceholder": "piem. GPT-4o",
       "isVision": "Redzes modelis",

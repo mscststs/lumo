@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "介面位址",
@@ -236,6 +239,8 @@
       "fetchModels": "自動取得",
       "fetchModelsConfigError": "請先設定介面位址與 API 金鑰。",
       "fetchModelsError": "無法取得模型清單。",
+      "searchModels": "搜尋模型",
+      "noMatchingModels": "沒有符合的模型",
       "modelName": "顯示名稱",
       "modelNamePlaceholder": "例如 GPT-4o",
       "isVision": "視覺模型",

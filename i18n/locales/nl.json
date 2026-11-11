@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "Basis-URL",
@@ -236,6 +239,8 @@
       "fetchModels": "Modellen ophalen",
       "fetchModelsConfigError": "Configureer eerst de API-URL en API-sleutel.",
       "fetchModelsError": "Kan modellen niet ophalen.",
+      "searchModels": "Modellen zoeken",
+      "noMatchingModels": "Geen overeenkomende modellen",
       "modelName": "Weergavenaam",
       "modelNamePlaceholder": "bijv. GPT-4o",
       "isVision": "Vision-model",

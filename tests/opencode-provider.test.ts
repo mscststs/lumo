@@ -96,6 +96,7 @@ describe('resolveBaseUrl', () => {
     ['openai-chat', 'https://opencode.ai/inference/openai/v1'],
     ['openai-responses', 'https://opencode.ai/inference/openai/v1'],
     ['anthropic', 'https://opencode.ai/inference/anthropic'],
+    ['google', 'https://opencode.ai/inference/google/v1beta'],
   ] as const)('derives the OpenCode %s endpoint', (type, expected) => {
     expect(resolveBaseUrl(provider({ vendor: 'opencode', type }))).toBe(expected);
   });
@@ -113,11 +114,21 @@ describe('resolveBaseUrl', () => {
 
 describe('resolveModelsUrl', () => {
   it('uses the shared OpenCode list endpoint regardless of protocol', () => {
-    for (const type of ['openai-chat', 'openai-responses', 'anthropic'] as const) {
+    for (const type of ['openai-chat', 'openai-responses', 'anthropic', 'google'] as const) {
       expect(resolveModelsUrl(provider({ vendor: 'opencode', type }))).toBe(
         'https://opencode.ai/inference/v1/models',
       );
     }
+  });
+
+  it('strips a typed Gemini base down to the shared list endpoint', () => {
+    // The list is a sibling of the protocol paths, and Gemini's base carries an
+    // extra `/v1beta` segment that has to go too — `${base}/models` is a 404.
+    expect(
+      resolveModelsUrl(
+        provider({ vendor: 'opencode', type: 'google', baseUrl: openCodeBaseUrl('google') }),
+      ),
+    ).toBe('https://opencode.ai/inference/v1/models');
   });
 
   it('derives the OpenCode list endpoint from a typed protocol URL', () => {
@@ -200,7 +211,7 @@ describe('createProvider on OpenCode', () => {
   const openCode = (overrides: Partial<ProviderConfig> = {}) =>
     provider({ vendor: 'opencode', ...overrides });
 
-  it.each(['openai-chat', 'openai-responses', 'anthropic'] as const)(
+  it.each(['openai-chat', 'openai-responses', 'anthropic', 'google'] as const)(
     'sends the client and session headers on %s',
     async (type) => {
       const sessionId = await deriveOpenCodeSession('conv-1');

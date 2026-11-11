@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "기본 URL",
@@ -236,6 +239,8 @@
       "fetchModels": "모델 가져오기",
       "fetchModelsConfigError": "먼저 API URL과 API 키를 구성하세요.",
       "fetchModelsError": "모델을 가져올 수 없습니다.",
+      "searchModels": "모델 검색",
+      "noMatchingModels": "일치하는 모델이 없습니다",
       "modelName": "표시 이름",
       "modelNamePlaceholder": "예: GPT-4o",
       "isVision": "비전 모델",

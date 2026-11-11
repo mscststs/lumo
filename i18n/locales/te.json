@@ -219,6 +219,9 @@
         },
         "anthropic": {
           "label": "Anthropic"
+        },
+        "google": {
+          "label": "Google Gemini"
         }
       },
       "baseUrl": "బేస్ URL",
@@ -236,6 +239,8 @@
       "fetchModels": "మోడల్‌లను పొందు",
       "fetchModelsConfigError": "మొదట API URL మరియు API కీని కాన్ఫిగర్ చేయండి.",
       "fetchModelsError": "మోడల్‌లను పొందలేకపోయాం.",
+      "searchModels": "మోడల్‌లను వెతకండి",
+      "noMatchingModels": "సరిపోలే మోడల్‌లు లేవు",
       "modelName": "ప్రదర్శన పేరు",
       "modelNamePlaceholder": "ఉదా. GPT-4o",
       "isVision": "విజన్ మోడల్",
