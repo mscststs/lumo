@@ -18,6 +18,7 @@ import { createNodeCommand } from '../node-command';
 import { createArchiveCommands } from '../archive-command';
 import { createIconvCommand } from '../iconv-command';
 import { createYqCommand } from '../yq-command';
+import { createCompatCommands } from '../compat';
 import type { ShellToolContext } from '../descriptor';
 import type { ShellResult } from '../result';
 import { createToolGateway } from '@/lib/tools/gateway';
@@ -142,6 +143,9 @@ export async function executeShell(
         ...createArchiveCommands(),
         createIconvCommand(),
         createYqCommand(),
+        // Argument-level fixes layered over the bundled commands; see
+        // `lib/shell/compat/index.ts`.
+        ...createCompatCommands(),
       ],
       // `normal` is just-bash's compatibility profile: 64 MiB source/heredoc/
       // string, 512 MiB live/input bytes, 256 MiB output, 1 GiB archives. The
