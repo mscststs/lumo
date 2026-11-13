@@ -321,7 +321,7 @@ export function Combobox({
                   {option.description && (
                     <span
                       className={cn(
-                        'max-w-[45%] shrink-0 truncate text-[11px]',
+                        'max-w-[45%] shrink-0 truncate text-[0.6875rem]',
                         active ? 'text-accent-foreground/70' : 'text-muted-foreground',
                       )}
                     >

@@ -23,6 +23,8 @@
     "closePanel": "パネルを閉じる",
     "placeholder": "メッセージを入力...",
     "send": "送信",
+    "stop": "停止",
+    "scrollToBottom": "一番下までスクロール",
     "withdrawQueued": "待機中のメッセージを取り消す",
     "thinking": "考え中...",
     "pasteImage": "画像を貼り付けまたはドロップ",

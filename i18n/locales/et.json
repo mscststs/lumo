@@ -23,6 +23,8 @@
     "closePanel": "Sulge paneel",
     "placeholder": "Sisestage sõnum...",
     "send": "Saada",
+    "stop": "Peata",
+    "scrollToBottom": "Keri alla",
     "withdrawQueued": "Võta järjekorras olev sõnum tagasi",
     "thinking": "Mõtleb...",
     "pasteImage": "Kleebi või lohista pilt",

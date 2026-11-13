@@ -400,14 +400,22 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
 
   return (
     <>
-      <div
+      {/* A button, not a clickable div: expanding an attached image has to be
+          reachable by keyboard, and a `div` with `onClick` is not. The drag
+          source stays on the same element so the drag-out gesture is unchanged. */}
+      <button
+        type="button"
         className="relative group cursor-pointer rounded-lg border border-border overflow-hidden bg-muted/30 active:cursor-grabbing"
         onClick={() => setExpanded(true)}
         draggable
         onDragStart={handleDragStart}
+        aria-label={image.filename ?? t('sidebar.imageAttachment')}
       >
         <img
           src={image.url}
+          width={80}
+          height={80}
+          decoding="async"
           className="h-20 w-20 object-cover"
           alt={image.filename ?? ''}
         />
@@ -415,10 +423,10 @@ function ImageAttachmentCard({ image }: { image: Extract<ChatMessagePart, { type
             themed surface — so this stays a fixed dark wash rather than using
             `bg-overlay`, and the icon keeps a literal `text-white`. Tying it to
             a theme token would make the icon illegible on light themes. */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+        <div className="absolute inset-0 flex items-center justify-center reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 bg-black/20">
           <ImageIcon className="h-4 w-4 text-white" />
         </div>
-      </div>
+      </button>
 
       {/* Expanded overlay */}
       <AnimatePresence>

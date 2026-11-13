@@ -47,8 +47,13 @@
   --color-chat-user: hsl(217 92% 60%);
   --color-chat-user-foreground: hsl(0 0% 100%);
   /* Scrollbar tokens (shared by sidepanel & options) */
-  --color-scrollbar-thumb: hsl(215.4 16.3% 46.9% / 0.25);
-  --color-scrollbar-thumb-hover: hsl(215.4 16.3% 46.9% / 0.45);
+  /* Non-text contrast: a scrollbar thumb is the affordance that tells the user
+     how much content is left, so WCAG 1.4.11 asks for 3:1 against what is
+     behind it. At 25% alpha the old thumb composited to ~1.8:1 on `background`
+     — visible in a screenshot, invisible in use. 70% lands at ~3.1:1 while
+     still reading as a soft pill rather than a hard OS bar. */
+  --color-scrollbar-thumb: hsl(215.4 16.3% 46.9% / 0.7);
+  --color-scrollbar-thumb-hover: hsl(215.4 16.3% 46.9% / 0.85);
 }
 
 @layer base {
@@ -91,8 +96,8 @@
     --color-overlay: hsl(222.2 60% 2% / 0.68);
     --color-chat-user: hsl(217 72% 45%);
     --color-chat-user-foreground: hsl(0 0% 100%);
-    --color-scrollbar-thumb: hsl(215 20.2% 65.1% / 0.22);
-    --color-scrollbar-thumb-hover: hsl(215 20.2% 65.1% / 0.4);
+    --color-scrollbar-thumb: hsl(215 20.2% 65.1% / 0.65);
+    --color-scrollbar-thumb-hover: hsl(215 20.2% 65.1% / 0.8);
   }
 
   /* ─── Midnight: Google/Material-style dark ─────────────────────────────────
@@ -145,28 +150,79 @@
        distinguished by surface elevation rather than by a brand colour. */
     --color-chat-user: hsl(225 8% 25%);
     --color-chat-user-foreground: hsl(225 10% 92%);
-    --color-scrollbar-thumb: hsl(225 8% 66% / 0.22);
-    --color-scrollbar-thumb-hover: hsl(225 8% 66% / 0.4);
+    --color-scrollbar-thumb: hsl(225 8% 66% / 0.65);
+    --color-scrollbar-thumb-hover: hsl(225 8% 66% / 0.8);
   }
 }
 
 @layer base {
   * {
     @apply border-border;
-    outline: none !important;
   }
-  /* Suppress native focus rings app-wide. Radix Select focuses its content
-     element when the pointer leaves a highlighted item onto a group label, so
-     exempt the listbox (the dropdown panel) from the box-shadow suppression to
-     keep its `shadow-md`. */
-  *:focus:not([role="listbox"]),
-  *:focus-visible:not([role="listbox"]) {
-    outline: none !important;
-    box-shadow: none !important;
+
+  /* ─── Focus visibility ─────────────────────────────────────────────────────
+     Pointer/programmatic focus stays silent so a mouse click does not leave a
+     ring behind on every control it touches. Keyboard focus gets exactly one
+     global indicator.
+
+     This *used* to be written as `outline: none !important; box-shadow: none
+     !important` on `*:focus-visible`, with the intent that components would
+     paint their own `focus-visible:ring-*`. That intent could not hold: a
+     Tailwind v4 ring is a `box-shadow`, and an `!important` declaration beats
+     every utility, so the global rule silently deleted the ring it was trying
+     to make room for — every button, input, textarea, switch, tab and select
+     trigger lost its only focus indicator (WCAG 2.4.7).
+
+     `:where()` keeps the specificity at 0, so a component that wants a richer
+     treatment (e.g. a `focus-within` border on the composer) can still override
+     it with a single utility. `[tabindex="-1"]` is excluded because Radix parks
+     focus on a dialog/listbox container after opening it; ringing that
+     container would read as "this panel is a form field". */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  :where(:focus-visible:not([tabindex='-1'])) {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
   }
   body {
     @apply bg-background text-foreground;
     font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  /* Line breaking is a layout decision, and this UI is narrow by nature: the
+     sidebar is hand-resizable and the split view can put a panel at ~200px.
+     `balance` keeps headings from ending on a single orphan word; `pretty`
+     stops a paragraph's last line from being one word. Both degrade to normal
+     wrapping, so no fallback is needed. `balance` is deliberately not applied
+     to body copy — it is a binary search and caps out around six lines. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap: balance;
+  }
+
+  p,
+  blockquote,
+  li {
+    text-wrap: pretty;
+  }
+
+  /* Windows High Contrast / forced colours repaint the page with system
+     palette colours, which erases `bg-card`/`bg-muted` separations. Borders are
+     what remain meaningful, so the surfaces that rely on a fill get one. */
+  @media (forced-colors: active) {
+    * {
+      border-color: CanvasText;
+    }
+
+    :where(:focus-visible:not([tabindex='-1'])) {
+      outline-color: Highlight;
+    }
   }
 
   /* ─── First-paint surface ───────────────────────────────────────────────────
@@ -205,30 +261,58 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-scrollbar-thumb) transparent;
 
-  &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+  /* Legacy WebKit/Blink fallback, gated on support.
+     Declaring `::-webkit-scrollbar` unconditionally alongside the standard
+     properties is not "belt and braces": once `scrollbar-color`/`scrollbar-width`
+     are set, Blink renders the standard scrollbar and stops honouring the
+     pseudo-elements, so the pill shape, the inset and — most visibly — the
+     hover state silently did nothing. `@supports not` is the documented way to
+     pair them without the two fighting. */
+  @supports not (scrollbar-color: auto) {
+    &::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
 
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
 
-  &::-webkit-scrollbar-thumb {
-    background-color: var(--color-scrollbar-thumb);
-    border-radius: 9999px;
-    /* Inset the thumb so it reads as a floating pill, not a full-width bar */
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--color-scrollbar-thumb);
+      border-radius: 9999px;
+      /* Inset the thumb so it reads as a floating pill, not a full-width bar */
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
 
-  &::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-scrollbar-thumb-hover);
-  }
+    &::-webkit-scrollbar-thumb:hover {
+      background-color: var(--color-scrollbar-thumb-hover);
+    }
 
-  /* Prevent the white square where vertical and horizontal bars meet */
-  &::-webkit-scrollbar-corner {
-    background: transparent;
+    /* Prevent the white square where vertical and horizontal bars meet */
+    &::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+  }
+}
+
+/* ─── Reveal-on-hover affordances ───────────────────────────────────────────
+   Row/toolbar actions that stay hidden until the row is hovered.
+
+   Hover is a *fine-pointer* capability. The previous hand-written
+   `opacity-0 group-hover:opacity-100` pairs made the control invisible on
+   touch devices (no hover at all) and invisible to keyboard users while
+   focused (opacity is not cancelled by focus), so removing an attachment or
+   referencing a file was impossible without a mouse. This utility defaults to
+   visible and only hides where hover actually exists; call sites pair it with
+   `group-hover:opacity-100 group-focus-within:opacity-100`. */
+@utility reveal-on-hover {
+  opacity: 1;
+  transition: opacity 150ms ease-out;
+
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
   }
 }
 
@@ -296,10 +380,24 @@
     animation: lumo-fade-out 90ms ease-in;
   }
 
+  /* Tooltips share the popover timing. They used to rely on
+     `tailwindcss-animate` utilities (`animate-in fade-in-0 zoom-in-95`) that
+     this project never compiled, so every tooltip appeared and vanished with no
+     motion while the rest of the floating surfaces animated. */
+  .tooltip-panel[data-state='delayed-open'],
+  .tooltip-panel[data-state='instant-open'] {
+    animation: lumo-fade-in 120ms ease-out;
+  }
+
+  .tooltip-panel[data-state='closed'] {
+    animation: lumo-fade-out 90ms ease-in;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .dialog-overlay,
     .dialog-content,
-    .popover-panel {
+    .popover-panel,
+    .tooltip-panel {
       animation-duration: 1ms !important;
     }
   }

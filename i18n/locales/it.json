@@ -23,6 +23,8 @@
     "closePanel": "Chiudi pannello",
     "placeholder": "Scrivi un messaggio...",
     "send": "Invia",
+    "stop": "Interrompi",
+    "scrollToBottom": "Scorri in basso",
     "withdrawQueued": "Ritira il messaggio in coda",
     "thinking": "Sto pensando...",
     "pasteImage": "Incolla o trascina un'immagine",

@@ -159,7 +159,7 @@ export function CsvPreview({ content }: { content: string }) {
                 <td className="sticky start-0 z-10 w-10 select-none border-e border-border bg-inherit p-0 text-end align-middle">
                   <div
                     className={cn(
-                      'flex h-7 items-center justify-end px-2 text-[11px] tabular-nums text-muted-foreground',
+                      'flex h-7 items-center justify-end px-2 text-[0.6875rem] tabular-nums text-muted-foreground',
                       RECORD_DIVIDER,
                     )}
                   >

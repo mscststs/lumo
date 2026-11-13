@@ -23,6 +23,8 @@
     "closePanel": "Sulje paneeli",
     "placeholder": "Kirjoita viesti...",
     "send": "Lähetä",
+    "stop": "Pysäytä",
+    "scrollToBottom": "Vieritä alas",
     "withdrawQueued": "Peruuta jonossa oleva viesti",
     "thinking": "Miettii...",
     "pasteImage": "Liitä tai pudota kuva",

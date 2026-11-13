@@ -21,8 +21,14 @@ export function McpServerCard({
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
-      <div
-        className="flex items-center gap-2 p-3 bg-card cursor-pointer hover:bg-accent/50 transition-colors"
+      {/* A disclosure row, so it is a <button>: the click handler alone left the
+          header mouse-only — no keyboard activation, no announced expanded
+          state. `w-full`/`text-start` restore the block layout and the
+          direction-aware alignment the div had for free. */}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 p-3 bg-card text-start cursor-pointer hover:bg-accent/50 transition-colors"
         onClick={onToggle}
       >
         {expanded ? (
@@ -44,7 +50,7 @@ export function McpServerCard({
         <span className="text-xs text-muted-foreground shrink-0">
           {t('options.mcp.toolCount', { count: state.tools.length })}
         </span>
-      </div>
+      </button>
 
       <CardDisclosure open={expanded}>
         <ServerExpandedContent state={state} />

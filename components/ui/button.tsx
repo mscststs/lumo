@@ -4,7 +4,12 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  // Focus is painted by the global `:where(:focus-visible)` rule in
+  // `assets/globals.css`. Components used to restate `focus-visible:ring-2`,
+  // but a Tailwind v4 ring is a `box-shadow` and the global focus reset used to
+  // wipe it with `!important` — every button lost its keyboard indicator. There
+  // is now exactly one place that draws focus, so none is restated here.
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {

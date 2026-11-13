@@ -63,7 +63,7 @@ export function AboutIdentity() {
           <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{t('options.about.extensionId')}</span>
             {/* Selectable and monospaced: it gets pasted into issue reports. */}
-            <code className="select-all break-all font-mono text-[11px] text-foreground">
+            <code className="select-all break-all font-mono text-[0.6875rem] text-foreground">
               {extensionId}
             </code>
           </p>

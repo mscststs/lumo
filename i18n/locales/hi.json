@@ -23,6 +23,8 @@
     "closePanel": "पैनल बंद करें",
     "placeholder": "संदेश लिखें...",
     "send": "भेजें",
+    "stop": "रोकें",
+    "scrollToBottom": "नीचे स्क्रॉल करें",
     "withdrawQueued": "कतार में रखा संदेश वापस लें",
     "thinking": "सोच रहा है...",
     "pasteImage": "छवि चिपकाएँ या छोड़ें",

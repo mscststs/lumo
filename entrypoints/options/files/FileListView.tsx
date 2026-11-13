@@ -50,9 +50,12 @@ import { EmptyLibrary } from './EmptyLibrary';
 const ROW_GRID =
   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:grid-cols-[minmax(0,1fr)_56px_112px_88px_auto]';
 
-/** Action cluster: quiet until the row is hovered or focused, always visible when narrow. */
+/** Action cluster: quiet until the row is hovered or focused, always visible
+ *  where hovering is not a thing (touch). `reveal-on-hover` carries the coarse
+ *  pointer handling; the `sm:` prefix that used to gate the hiding on *width*
+ *  left tablet-width touch screens with an invisible action cluster. */
 const ROW_ACTIONS =
-  'flex items-center justify-end opacity-100 transition-opacity sm:opacity-0 sm:group-hover/row:opacity-100 sm:group-focus-within/row:opacity-100';
+  'flex items-center justify-end reveal-on-hover group-hover/row:opacity-100 group-focus-within/row:opacity-100';
 
 /**
  * Indentation per nesting level, applied to the name cell only.
@@ -324,7 +327,7 @@ function FolderRow({ node }: { node: FolderNode }) {
           onClick={() => tree.onToggle(node.prefix, !open)}
           aria-expanded={open}
           style={nameIndent(node.depth)}
-          className="flex min-w-0 items-center gap-2 rounded-sm text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 items-center gap-2 rounded-sm text-start"
         >
           <motion.span
             animate={{ rotate: open ? 90 : 0 }}

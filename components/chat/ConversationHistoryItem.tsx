@@ -40,7 +40,7 @@ export function ConversationHistoryItem({
       <button
         type="button"
         onClick={() => onSelect(conversation.id)}
-        className="w-full text-start px-2.5 py-2 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
+        className="w-full text-start px-2.5 py-2 min-w-0 rounded-lg"
       >
         {/* pr leaves room for the hover actions so long titles never sit under them */}
         <div
@@ -52,14 +52,14 @@ export function ConversationHistoryItem({
           <span className="text-xs font-medium truncate min-w-0">
             {conversationTitle(conversation.title, t)}
           </span>
-          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+          <span className="text-[0.625rem] text-muted-foreground shrink-0 tabular-nums">
             {formatRelative(conversation.updatedAt)}
           </span>
         </div>
         {preview && (
           <p
             className={cn(
-              'text-[11px] text-muted-foreground truncate mt-0.5 transition-[padding] duration-200',
+              'text-[0.6875rem] text-muted-foreground truncate mt-0.5 transition-[padding] duration-200',
               isConfirming ? 'pe-14' : 'pe-7',
             )}
           >
@@ -94,7 +94,7 @@ export function ConversationHistoryItem({
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-destructive"
+            className="h-6 w-6 text-muted-foreground reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-destructive"
             onClick={() => setIsConfirming(true)}
             title={t('common.delete')}
           >

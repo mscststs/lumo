@@ -120,7 +120,7 @@ export function ModelRow({
           </span>
           {/* Hidden below `sm` because the display name is the useful label at
               narrow widths and the raw id is the first thing worth dropping. */}
-          <span className="hidden max-w-[45%] shrink-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+          <span className="hidden max-w-[45%] shrink-0 truncate font-mono text-[0.6875rem] text-muted-foreground sm:inline">
             {model.modelId}
           </span>
           {model.isVision && (
@@ -142,7 +142,7 @@ export function ModelRow({
           size="icon"
           aria-label={`${t('common.edit')} ${model.displayName}`}
           onClick={onEdit}
-          className="hidden h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 sm:inline-flex"
+          className="hidden h-7 w-7 shrink-0 text-muted-foreground reveal-on-hover group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 hover:text-foreground sm:inline-flex"
         >
           <Pencil className="h-3 w-3" />
         </Button>
@@ -153,8 +153,9 @@ export function ModelRow({
           aria-label={`${t('common.delete')} ${model.displayName}`}
           onClick={() => setConfirming(true)}
           // Always rendered (never `hidden`) so it stays in the tab order;
-          // opacity alone hides it visually until the row is engaged.
-          className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+          // `reveal-on-hover` hides it visually only on fine-pointer devices, so
+          // touch users keep the control they have no hover to reveal.
+          className="h-7 w-7 shrink-0 text-muted-foreground reveal-on-hover group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 hover:text-destructive"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>

@@ -68,45 +68,54 @@ export function ExtensionProviderCard({
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
-      <div
-        className="flex items-center gap-2 p-3 bg-card cursor-pointer hover:bg-accent/50 transition-colors"
-        onClick={onToggle}
-      >
-        {expanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
-        )}
+      {/* The row hosts a Switch and two action buttons, so the row itself cannot
+          be a button — interactive content cannot nest inside one. The
+          disclosure is its own button instead, and it takes the flexible space
+          so the whole label area (chevron, icon, name, badges) still toggles;
+          the controls to its right stay separate hit targets. */}
+      <div className="flex items-center gap-2 p-3 bg-card hover:bg-accent/50 transition-colors">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-2 text-start cursor-pointer"
+          onClick={onToggle}
+        >
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 shrink-0" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 rtl:-scale-x-100" />
+          )}
 
-        <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />
+          <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />
 
-        <span className="font-medium text-sm flex-1 truncate">{current.info.name}</span>
+          <span className="font-medium text-sm flex-1 truncate">{current.info.name}</span>
 
-        <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0 uppercase">
-          {t('options.mcp.extensions.badge')}
-        </span>
-
-        {config.enabled ? (
-          <StatusBadge
-            status={current.status}
-            title={authReason}
-            labels={{
-              unauthorized: t('options.mcp.extensions.unauthorized'),
-              authorizing: t('options.mcp.extensions.authorizing'),
-            }}
-          />
-        ) : (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-            <PowerOff className="h-3 w-3" />
-            <span className="hidden sm:inline">{t('options.mcp.disabled')}</span>
+          <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0 uppercase">
+            {t('options.mcp.extensions.badge')}
           </span>
-        )}
 
-        <span className="text-xs text-muted-foreground shrink-0">
-          {t('options.mcp.toolCount', { count: current.tools.length })}
-        </span>
+          {config.enabled ? (
+            <StatusBadge
+              status={current.status}
+              title={authReason}
+              labels={{
+                unauthorized: t('options.mcp.extensions.unauthorized'),
+                authorizing: t('options.mcp.extensions.authorizing'),
+              }}
+            />
+          ) : (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+              <PowerOff className="h-3 w-3" />
+              <span className="hidden sm:inline">{t('options.mcp.disabled')}</span>
+            </span>
+          )}
 
-        <div onClick={(event) => event.stopPropagation()} className="shrink-0">
+          <span className="text-xs text-muted-foreground shrink-0">
+            {t('options.mcp.toolCount', { count: current.tools.length })}
+          </span>
+        </button>
+
+        <div className="shrink-0">
           <Switch
             checked={config.enabled}
             onCheckedChange={(checked) => onToggleEnabled(checked)}

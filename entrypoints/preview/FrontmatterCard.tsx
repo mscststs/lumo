@@ -169,7 +169,7 @@ function Chips({ items }: { items: string[] }) {
       {items.map((item) => (
         <code
           key={item}
-          className="rounded border border-border/60 bg-background/60 px-1 py-0.5 text-[11px]"
+          className="rounded border border-border/60 bg-background/60 px-1 py-0.5 text-[0.6875rem]"
         >
           {item}
         </code>
@@ -198,7 +198,7 @@ function CommandChip({ command }: { command: string }) {
       type="button"
       onClick={() => void copy()}
       title={t('skills.list.copyCommand')}
-      className="flex shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      className="flex shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[0.6875rem] text-muted-foreground transition-colors hover:text-foreground"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       /{command}

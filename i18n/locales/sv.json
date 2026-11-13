@@ -23,6 +23,8 @@
     "closePanel": "Stäng panel",
     "placeholder": "Skriv ett meddelande...",
     "send": "Skicka",
+    "stop": "Stoppa",
+    "scrollToBottom": "Rulla till botten",
     "withdrawQueued": "Dra tillbaka köat meddelande",
     "thinking": "Tänker...",
     "pasteImage": "Klistra in eller släpp en bild",

@@ -230,7 +230,7 @@ describe('side panel receiving a file dragged from another document', () => {
       'text/plain': `[filename: ${FILE_NAME}]`,
     });
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), { dataTransfer });
+      fireEvent.drop(screen.getByRole('combobox'), { dataTransfer });
     });
 
     // The chip shows the file name under a "file" label; a text attachment would

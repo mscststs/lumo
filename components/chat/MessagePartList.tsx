@@ -80,6 +80,13 @@ export function MessagePartList({
                 key={key}
                 src={part.url}
                 alt={part.filename ?? ''}
+                // Explicit box: the CSS size alone cannot reserve space before
+                // the attachment blob decodes, so a 20-image message reflowed
+                // the transcript once per image.
+                width={80}
+                height={80}
+                loading="lazy"
+                decoding="async"
                 className="h-20 w-20 rounded object-cover"
               />
             );

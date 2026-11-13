@@ -34,6 +34,16 @@ interface SuggestionPopupProps {
   activeIndex: number;
   onHover: (index: number) => void;
   onSelect: (index: number) => void;
+  /**
+   * Id of the listbox element, so the composer's textarea can name it through
+   * `aria-controls`.
+   *
+   * The popup deliberately does *not* carry `aria-activedescendant` itself: that
+   * attribute is only honoured on the element that holds DOM focus, which is the
+   * textarea (the popup is never focused — pointer events only select rows).
+   * Declaring it here looked correct in the markup and announced nothing.
+   */
+  id?: string;
   className?: string;
 }
 
@@ -43,6 +53,7 @@ export function SuggestionPopup({
   activeIndex,
   onHover,
   onSelect,
+  id,
   className,
 }: SuggestionPopupProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -70,9 +81,11 @@ export function SuggestionPopup({
             className,
           )}
           // The popup is a visual extension of the input, not a focus target: the
-          // textarea keeps the caret, and pointer events only select a row.
+          // textarea keeps the caret, and pointer events only select a row. The
+          // textarea therefore owns `aria-expanded`/`aria-controls`/
+          // `aria-activedescendant`; this element only supplies the listbox.
           role="listbox"
-          aria-activedescendant={items[activeIndex] ? `suggestion-${items[activeIndex].id}` : undefined}
+          id={id}
         >
           <div
             ref={listRef}
@@ -127,7 +140,7 @@ export function SuggestionPopup({
                   {item.badge && (
                     <span
                       className={cn(
-                        'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                        'shrink-0 rounded-md px-1.5 py-0.5 text-[0.625rem] font-medium leading-none',
                         active
                           ? 'bg-accent-foreground/10 text-accent-foreground/80'
                           : 'bg-muted text-muted-foreground',

@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
  * ratios consistent across the three themes.
  */
 const badgeVariants = cva(
-  'inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-tight whitespace-nowrap',
+  'inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[0.6875rem] font-medium leading-tight whitespace-nowrap',
   {
     variants: {
       variant: {

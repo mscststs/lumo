@@ -7,10 +7,9 @@ import { cn } from '@/lib/utils';
 import {
   Tooltip,
   TooltipContent,
-  TooltipPortal,
   TooltipProvider,
   TooltipTrigger,
-} from '@radix-ui/react-tooltip';
+} from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 
 // ─── Message ────────────────────────────────────────────────────────────────
@@ -110,10 +109,15 @@ export function MessageActions({ className, children, ...props }: MessageActions
     // the provider while the pointer is "in flight" — out of the row entirely.
     // A hoverable neighbour (the token panel) owns its own provider for exactly
     // that reason; see `TokenUsageTooltip`.
-    <TooltipProvider delayDuration={300} disableHoverableContent>
+    <TooltipProvider disableHoverableContent>
       <div
         className={cn(
-          'flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity pt-1',
+          // `reveal-on-hover` hides the row only where hover exists, and the
+          // `group-focus-within` half is what keeps it honest for keyboard users:
+          // tabbing into a button focuses a descendant of `.group`, which reveals
+          // the row before the focus ring lands. A bare `opacity-0 group-hover:*`
+          // left the actions unreachable by keyboard and touch alike.
+          'flex items-center gap-0.5 reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 pt-1',
           className,
         )}
         {...props}
@@ -146,25 +150,16 @@ export const messageToolbarTriggerClass =
  * misplaces it. Radix still flips/shifts against the viewport, so a toolbar at
  * the very bottom of the sidepanel opens its label upward instead of clipping.
  */
+/**
+ * The toolbar's flavour of the shared tooltip. It exists as a named export so
+ * every label in a message row is spelled the same way at the call site; the
+ * surface itself (portal, delay, motion, chrome) comes from `ui/tooltip`.
+ */
 export function MessageToolbarTooltipContent({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<typeof TooltipContent>) {
-  return (
-    <TooltipPortal>
-      <TooltipContent
-        side="bottom"
-        sideOffset={4}
-        collisionPadding={8}
-        className={cn(
-          'z-50 rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm',
-          'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-          className,
-        )}
-        {...props}
-      />
-    </TooltipPortal>
-  );
+  return <TooltipContent className={className} {...props} />;
 }
 
 // ─── MessageAction ──────────────────────────────────────────────────────────

@@ -23,6 +23,8 @@
     "closePanel": "Fermer le panneau",
     "placeholder": "Saisissez un message...",
     "send": "Envoyer",
+    "stop": "Arrêter",
+    "scrollToBottom": "Faire défiler vers le bas",
     "withdrawQueued": "Retirer le message en attente",
     "thinking": "Réflexion...",
     "pasteImage": "Collez ou déposez une image",

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,7 +35,10 @@ export function ConversationContent({
   return (
     <div
       ref={scrollRef as React.Ref<HTMLDivElement>}
-      className={cn('flex-1 overflow-y-auto scrollbar-lumo', className)}
+      // `stable` reserves the scrollbar track whether or not the transcript
+      // overflows, so the first message that makes the list scrollable does not
+      // shift every bubble sideways by the scrollbar width.
+      className={cn('flex-1 overflow-y-auto scrollbar-lumo [scrollbar-gutter:stable]', className)}
       {...props}
     >
       <div ref={contentRef as React.Ref<HTMLDivElement>} className="flex flex-col gap-4 px-3 py-3">
@@ -57,6 +61,7 @@ export function ConversationScrollButton({
   scrollToBottom,
   className,
 }: ConversationScrollButtonProps) {
+  const { t } = useTranslation();
   return (
     <AnimatePresence>
       {!isAtBottom && (
@@ -71,6 +76,8 @@ export function ConversationScrollButton({
             size="icon"
             className="h-7 w-7 rounded-full shadow-md bg-background/90 backdrop-blur-sm"
             onClick={scrollToBottom}
+            aria-label={t('sidebar.scrollToBottom')}
+            title={t('sidebar.scrollToBottom')}
           >
             <ChevronDown className="h-4 w-4" />
           </Button>

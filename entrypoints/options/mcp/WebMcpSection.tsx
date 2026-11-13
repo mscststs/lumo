@@ -111,8 +111,14 @@ function WebMcpTabCard({
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
-      <div
-        className="flex items-center gap-2 p-3 bg-card cursor-pointer hover:bg-accent/50 transition-colors"
+      {/* A disclosure row, so it is a <button>: the click handler alone left the
+          header mouse-only — no keyboard activation, no announced expanded
+          state. `w-full`/`text-start` restore the block layout and the
+          direction-aware alignment the div had for free. */}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 p-3 bg-card text-start cursor-pointer hover:bg-accent/50 transition-colors"
         onClick={onToggle}
       >
         {expanded ? (
@@ -130,7 +136,7 @@ function WebMcpTabCard({
         <span className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded shrink-0">
           {t('options.mcp.toolCount', { count: tabState.tools.length })}
         </span>
-      </div>
+      </button>
 
       <AnimatePresence>
         {expanded && (

@@ -264,7 +264,7 @@ function SkillRowView({
             )}
           </div>
 
-          <div className="flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover/row:opacity-100 sm:group-focus-within/row:opacity-100">
+          <div className="flex shrink-0 items-center reveal-on-hover group-hover/row:opacity-100 group-focus-within/row:opacity-100">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

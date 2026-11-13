@@ -84,6 +84,9 @@ export function ToolBlobImage({
         <img
           src={state.url}
           alt={t('sidebar.tool.screenshot')}
+          // Screenshots are tall; the intrinsic ratio must be known before the
+          // blob decodes or the transcript jumps as each one expands.
+          decoding="async"
           className="max-h-48 w-full rounded-md border border-border/60 object-contain bg-background/80"
         />
       ) : (
@@ -112,6 +115,7 @@ export function ToolInlineImage({ data, mimeType }: { data: string; mimeType: st
     <img
       src={`data:${mimeType};base64,${data}`}
       alt={t('sidebar.tool.screenshot')}
+      decoding="async"
       className="max-h-48 w-full rounded-md border border-border/60 object-contain bg-background/80"
     />
   );

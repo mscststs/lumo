@@ -113,13 +113,20 @@ export default function App() {
 
   return (
     <AppDirection>
-    <div className="flex h-screen w-full bg-background">
+    <div className="flex h-dvh w-full bg-background">
       <ThemeInit />
       <FontSizeInit />
-      {/* Left Navigation */}
-      <nav className="w-56 shrink-0 border-e border-border bg-card flex flex-col">
+      {/* Left Navigation.
+          Below `lg` the same navigation becomes an icon rail rather than eating
+          224px of a narrow window: the label column is what costs width, and the
+          icons already identify every entry. Nothing is removed — each item keeps
+          its `title`/`aria-label` — so the page stays fully usable when the
+          browser window is dragged narrow. */}
+      <nav className="w-14 lg:w-56 shrink-0 border-e border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
-          <h1 className="text-lg font-semibold text-foreground truncate">{t('options.title')}</h1>
+          <h1 className="text-lg font-semibold text-foreground truncate sr-only lg:not-sr-only">
+            {t('options.title')}
+          </h1>
         </div>
         <div className="flex-1 overflow-y-auto">
           <div className="p-2">
@@ -129,7 +136,7 @@ export default function App() {
                 className={gi > 0 ? 'mt-3 pt-3 border-t border-border' : ''}
               >
                 {group.titleKey && (
-                  <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground truncate select-none">
+                  <p className="hidden lg:block px-3 pb-1.5 text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground truncate select-none">
                     {t(group.titleKey)}
                   </p>
                 )}
@@ -151,7 +158,7 @@ export default function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto scrollbar-lumo p-6">
+      <main className="flex-1 overflow-auto scrollbar-lumo p-4 lg:p-6 [scrollbar-gutter:stable]">
         {activeNav === 'models' && <ModelSettings />}
         {activeNav === 'ocr' && <OcrSettingsPage />}
         {activeNav === 'systemPrompt' && <SystemPromptSettingsPage />}
@@ -182,15 +189,22 @@ function NavButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+      // The current page is a fact about navigation, not only a colour: with the
+      // label hidden on the icon rail, `aria-current` is the only thing telling a
+      // screen reader which entry the user is on.
+      aria-current={active ? 'page' : undefined}
+      aria-label={label}
+      title={label}
+      className={`w-full flex items-center justify-center lg:justify-start gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
         active
           ? 'bg-accent text-accent-foreground font-medium'
           : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
       }`}
     >
       {icon}
-      <span className="truncate">{label}</span>
+      <span className="hidden lg:inline truncate">{label}</span>
     </button>
   );
 }

@@ -23,6 +23,8 @@
     "closePanel": "Lukk panel",
     "placeholder": "Skriv en melding...",
     "send": "Send",
+    "stop": "Stopp",
+    "scrollToBottom": "Rull til bunnen",
     "withdrawQueued": "Trekk tilbake ventende melding",
     "thinking": "Tenker...",
     "pasteImage": "Lim inn eller slipp et bilde",

@@ -189,24 +189,27 @@ function FileItem({
       draggable
       onDragStart={handleDragStart}
     >
-      {/* File name + icon area: click to preview, draggable */}
-      <div
-        className="flex items-center gap-2 flex-1 min-w-0 cursor-default active:cursor-grabbing"
+      {/* File name + icon area: click to preview, draggable. A <button> rather
+          than a clickable div so the preview is reachable by keyboard — the
+          actions beside it are tiny icons and were the only tab stops. */}
+      <button
+        type="button"
+        className="flex items-center gap-2 flex-1 min-w-0 text-start cursor-default active:cursor-grabbing"
         onClick={onPreview}
       >
         <FileIcon mimeType={file.mimeType} />
         <span className="text-xs truncate flex-1 min-w-0" title={file.name}>
           {displayName}
         </span>
-      </div>
-      <span className="text-[10px] text-muted-foreground shrink-0">
+      </button>
+      <span className="text-[0.625rem] text-muted-foreground shrink-0">
         {formatSize(file.size)}
       </span>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="flex items-center gap-0.5 reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 shrink-0">
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 rounded"
+          className="h-6 w-6 rounded"
           onClick={onReference}
           title={t('sidebar.files.reference')}
         >
@@ -216,7 +219,7 @@ function FileItem({
           <Button
             variant="ghost"
             size="icon"
-            className="h-5 w-5 rounded"
+            className="h-6 w-6 rounded"
             onClick={onPreview}
             title={t('sidebar.files.preview')}
           >
@@ -226,7 +229,7 @@ function FileItem({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 rounded"
+          className="h-6 w-6 rounded"
           onClick={onDownload}
           title={t('sidebar.files.download')}
         >

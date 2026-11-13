@@ -23,6 +23,8 @@
     "closePanel": "Tanca el plafó",
     "placeholder": "Escriu un missatge...",
     "send": "Envia",
+    "stop": "Atura",
+    "scrollToBottom": "Desplaça't fins a baix",
     "withdrawQueued": "Retira el missatge en cua",
     "thinking": "Pensant...",
     "pasteImage": "Enganxa o deixa anar una imatge",

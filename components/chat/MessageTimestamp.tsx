@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Tooltip, TooltipTrigger } from '@radix-ui/react-tooltip';
+import { Tooltip, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   MessageToolbarTooltipContent,
   messageToolbarTriggerClass,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
+import { commitOnEnter } from '@/lib/enter-submit';
 import {
   Select,
   SelectContent,
@@ -94,12 +95,7 @@ export function TokenBudgetField({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              commitDraft();
-            }
-          }}
+          onKeyDown={(e) => commitOnEnter(e, commitDraft)}
           placeholder={placeholder}
           aria-label={ariaLabel}
           className="w-24 font-mono text-xs"

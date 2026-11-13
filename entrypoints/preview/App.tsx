@@ -314,7 +314,7 @@ export default function App() {
 
   return (
     <AppDirection>
-    <div className="flex flex-col h-screen w-full bg-background">
+    <div className="flex flex-col h-dvh w-full bg-background">
       <ThemeInit />
       <FontSizeInit />
 
@@ -341,7 +341,7 @@ export default function App() {
                   className={cn(file.name === fileName && 'bg-accent')}
                 >
                   <span className="truncate">{file.name}</span>
-                  <span className="ms-auto ps-3 text-[10px] text-muted-foreground shrink-0">
+                  <span className="ms-auto ps-3 text-[0.625rem] text-muted-foreground shrink-0">
                     {file.mimeType.split('/')[1]}
                   </span>
                 </DropdownMenuItem>
@@ -473,11 +473,18 @@ export default function App() {
  * Image preview with zoom support.
  */
 function ImagePreview({ src, zoom }: { src: string; zoom: number }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-center min-h-full p-4 bg-[repeating-conic-gradient(#80808015_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
       <img
         src={src}
-        alt="Preview"
+        // The alt is read aloud, so it follows the UI language; the old literal
+        // "Preview" was untranslated in an otherwise fully localized page.
+        alt={t('options.preview.title')}
+        decoding="async"
+        // The user just asked for this image, so it must not be deprioritized —
+        // but it is above the fold in its own tab, which is what `high` states.
+        fetchPriority="high"
         className="max-w-none transition-transform duration-150"
         style={{ width: `${zoom}%`, height: 'auto' }}
       />

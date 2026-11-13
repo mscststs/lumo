@@ -185,7 +185,7 @@ export function LanguagePicker({ value, onChange, className }: LanguagePickerPro
                       <span className="block truncate text-sm" dir="auto">
                         {row ? row.native : t('options.ui.languageAuto')}
                       </span>
-                      <span className="block truncate text-[11px] text-muted-foreground" dir="auto">
+                      <span className="block truncate text-[0.6875rem] text-muted-foreground" dir="auto">
                         {row ? row.english : t('options.ui.languageAutoDesc')}
                       </span>
                     </span>

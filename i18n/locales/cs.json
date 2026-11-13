@@ -23,6 +23,8 @@
     "closePanel": "Zavřít panel",
     "placeholder": "Napište zprávu...",
     "send": "Odeslat",
+    "stop": "Zastavit",
+    "scrollToBottom": "Přejít na konec",
     "withdrawQueued": "Stáhnout zprávu ve frontě",
     "thinking": "Přemýšlí...",
     "pasteImage": "Vložte nebo přetáhněte obrázek",

@@ -23,6 +23,8 @@
     "closePanel": "ปิดแผง",
     "placeholder": "พิมพ์ข้อความ...",
     "send": "ส่ง",
+    "stop": "หยุด",
+    "scrollToBottom": "เลื่อนไปด้านล่าง",
     "withdrawQueued": "ถอนข้อความที่รออยู่",
     "thinking": "กำลังคิด...",
     "pasteImage": "วางหรือลากรูปภาพ",

@@ -23,6 +23,8 @@
     "closePanel": "إغلاق اللوحة",
     "placeholder": "اكتب رسالة...",
     "send": "إرسال",
+    "stop": "إيقاف",
+    "scrollToBottom": "الانتقال إلى الأسفل",
     "withdrawQueued": "سحب الرسالة المنتظرة",
     "thinking": "يفكّر...",
     "pasteImage": "الصق صورة أو أفلتها",

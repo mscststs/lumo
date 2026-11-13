@@ -191,7 +191,7 @@ describe('side panel receiving files from the OS', () => {
 
     const dataTransfer = fakeDataTransfer([droppedFile('notes.md', 'text/markdown')]);
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), { dataTransfer });
+      fireEvent.drop(screen.getByRole('combobox'), { dataTransfer });
     });
     await settle();
 
@@ -214,7 +214,7 @@ describe('side panel receiving files from the OS', () => {
     await settle();
 
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([droppedFile('notes.md', 'text/markdown')]),
       });
     });
@@ -230,7 +230,7 @@ describe('side panel receiving files from the OS', () => {
     await settle();
 
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([droppedFile('shot.png', 'image/png')]),
       });
     });
@@ -247,7 +247,7 @@ describe('side panel receiving files from the OS', () => {
     await settle();
 
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([droppedFile('shot.png', 'image/png')]),
       });
     });
@@ -262,7 +262,7 @@ describe('side panel receiving files from the OS', () => {
     await settle();
 
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([
           droppedFile('bundle.zip', 'application/zip'),
           droppedFile('paper.pdf', 'application/pdf'),
@@ -281,7 +281,7 @@ describe('side panel receiving files from the OS', () => {
     await settle();
 
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([
           droppedFile('shot.png', 'image/png'),
           droppedFile('notes.md', 'text/markdown'),
@@ -302,7 +302,7 @@ describe('side panel receiving files from the OS', () => {
     // the file's URL in text/plain for some sources, which would otherwise be
     // attached as if the user had dragged a snippet of page text.
     await act(async () => {
-      fireEvent.drop(screen.getByRole('textbox'), {
+      fireEvent.drop(screen.getByRole('combobox'), {
         dataTransfer: fakeDataTransfer([droppedFile('bundle.zip', 'application/zip')], {
           'text/plain': 'file:///home/user/bundle.zip',
         }),

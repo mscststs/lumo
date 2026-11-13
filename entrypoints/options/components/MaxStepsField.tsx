@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
+import { commitOnEnter } from '@/lib/enter-submit';
 import {
   Select,
   SelectContent,
@@ -85,12 +86,7 @@ export function MaxStepsField({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              commitDraft();
-            }
-          }}
+          onKeyDown={(e) => commitOnEnter(e, commitDraft)}
           aria-label={t('options.execution.maxStepsCustom')}
           className="w-24 text-sm"
         />

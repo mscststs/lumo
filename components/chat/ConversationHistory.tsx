@@ -66,7 +66,7 @@ export function ConversationHistory({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-1.5 text-[11px] text-destructive hover:text-destructive"
+                className="h-6 px-1.5 text-[0.6875rem] text-destructive hover:text-destructive"
                 onClick={() => {
                   onClearAll();
                   setIsConfirmingClear(false);
@@ -77,7 +77,7 @@ export function ConversationHistory({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-1.5 text-[11px] text-muted-foreground"
+                className="h-6 px-1.5 text-[0.6875rem] text-muted-foreground"
                 onClick={() => setIsConfirmingClear(false)}
               >
                 {t('common.cancel')}

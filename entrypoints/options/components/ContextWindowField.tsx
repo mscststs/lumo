@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
+import { commitOnEnter } from '@/lib/enter-submit';
 import {
   Select,
   SelectContent,
@@ -105,12 +106,7 @@ export function ContextWindowField({ value, onChange, controlProps }: ContextWin
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              commitDraft();
-            }
-          }}
+          onKeyDown={(e) => commitOnEnter(e, commitDraft)}
           placeholder="128000"
           aria-label={t('options.models.contextWindowCustom')}
           className="w-28 font-mono text-xs"

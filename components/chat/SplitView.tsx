@@ -719,7 +719,7 @@ export function SplitView() {
   return (
     <div
       ref={containerRef}
-      className="flex h-screen w-full overflow-hidden"
+      className="flex h-dvh w-full overflow-hidden"
       style={{ cursor: draggingDivider !== null ? 'col-resize' : undefined }}
       onDragEnter={handleSplitViewDragEnter}
       onDragLeave={handleSplitViewDragLeave}
@@ -763,7 +763,12 @@ export function SplitView() {
               // React never remounts a panel — the reason a reorder cannot
               // interrupt a stream or lose an input draft.
               key={`panel-${slot}`}
-              className="flex h-full overflow-hidden shrink-0"
+              // A named container so descendants can respond to *this panel's*
+              // width rather than the window's. Three panels in a 400px side
+              // panel are ~130px each while the viewport still reports 400px, so
+              // a `sm:` breakpoint inside a panel answers a question nobody
+              // asked. Components that need size awareness query `@panel`.
+              className="@container/panel flex h-full overflow-hidden shrink-0"
               style={{
                 // Visual position. DOM order stays ascending by slot; see the
                 // component docs for why React must not reorder these nodes.

@@ -23,6 +23,8 @@
     "closePanel": "Panel schließen",
     "placeholder": "Nachricht eingeben...",
     "send": "Senden",
+    "stop": "Stoppen",
+    "scrollToBottom": "Nach unten scrollen",
     "withdrawQueued": "Wartende Nachricht zurückziehen",
     "thinking": "Denkt nach...",
     "pasteImage": "Bild einfügen oder ablegen",

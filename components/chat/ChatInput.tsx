@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, Square, ImagePlus, X, FileText, Globe, Clock, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,6 +25,7 @@ import { MENTION_PREFIX } from '@/lib/mention-commands';
 import { loadSkillAttachment, skillCommandFallback, withSkillCommands } from '@/lib/skills/commands';
 import { useSuggestionMenu, type SuggestionOption } from '@/lib/use-suggestion-menu';
 import { useMentionResolver } from '@/lib/use-mention-resolver';
+import { isImeConfirming } from '@/lib/enter-submit';
 import { storage } from '@/store/storage';
 import { useEnabledCommands, useCommandSettings } from '@/store/useCommands';
 import { useSkills } from '@/store/useSkills';
@@ -475,6 +476,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onApply: applySuggestion,
   });
 
+  /**
+   * ARIA wiring for the suggestion menu.
+   *
+   * `aria-activedescendant` has to live on the element that holds focus — the
+   * textarea — for a screen reader to announce the highlighted row while the
+   * arrow keys move through it. It used to sit on the popup, which never takes
+   * focus, so navigation was silent and the listbox had no announced owner.
+   */
+  const suggestionListId = useId();
+  const listboxId = `suggestion-list-${suggestionListId}`;
+  const suggestionOpen = suggestions.open && suggestions.items.length > 0;
+  const activeSuggestionId = suggestionOpen
+    ? `suggestion-${suggestions.items[suggestions.activeIndex]?.id ?? ''}`
+    : undefined;
+
   const syncCaret = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -487,17 +503,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
    * - `'meta-enter'`: any modifier+Enter sends (Ctrl/Alt/Shift on Windows,
    *   ⌘/⌥/⇧ on macOS); plain Enter inserts a newline.
    *
-   * FIX: Ignore Enter while an IME (input method) is composing.
-   * - e.nativeEvent.isComposing === true  -> IME composition is in progress
-   * - e.nativeEvent.keyCode === 229       -> legacy browsers that don't expose isComposing
-   *
-   * When composing, the Enter key is used to confirm/commit the candidate word and
-   * should ONLY commit the composition to the input, not trigger a send.
+   * Enter is ignored while an IME is composing (`lib/enter-submit.ts`): the key
+   * is confirming a candidate, so it must only commit the composition to the
+   * input, never send the draft. The same helper guards the options number
+   * fields, which share this failure mode.
    */
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Skip if the event originates from an IME composition session
-    const nativeEvent = e.nativeEvent;
-    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+    // Skip if the event originates from an IME composition session.
+    if (isImeConfirming(e)) {
       return;
     }
 
@@ -800,6 +813,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       */}
       <div className="relative">
         <SuggestionPopup
+          id={listboxId}
           open={suggestions.open}
           items={suggestions.items}
           activeIndex={suggestions.activeIndex}
@@ -833,10 +847,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                   onDragStart={(e) => handleImageDragStart(e, img)}
                   onDragEnd={(e) => handleChipDragEnd(e, () => removeImage(i))}
                 >
-                  <img src={img} className="h-14 w-14 object-cover rounded-lg" alt="" />
+                  <img
+                    src={img}
+                    width={56}
+                    height={56}
+                    decoding="async"
+                    className="h-14 w-14 object-cover rounded-lg"
+                    alt=""
+                  />
                   <button
+                    type="button"
                     onClick={() => removeImage(i)}
-                    className="absolute -top-1.5 -end-1.5 bg-foreground/80 text-background rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={t('common.delete')}
+                    // `reveal-on-hover` defaults to visible where hovering is not a
+                    // thing (touch) and gives way to the three real triggers: the
+                    // chip is hovered, its subtree holds focus, or this button is
+                    // itself focus-visible. A bare `opacity-0 group-hover:*` made
+                    // the control unreachable without a mouse.
+                    className="reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 absolute -top-1.5 -end-1.5 bg-foreground/80 text-background rounded-full p-0.5"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -862,14 +890,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
                   <div className="flex flex-col overflow-hidden min-w-0">
-                    <span className="text-[10px] text-muted-foreground leading-tight">
+                    <span className="text-[0.625rem] text-muted-foreground leading-tight">
                       {attachmentLabel(attachment, t)}
                     </span>
                     <span className="text-xs truncate leading-tight">{attachment.preview}</span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => removeTextAttachment(attachment.id)}
-                    className="absolute -top-1.5 -end-1.5 bg-foreground/80 text-background rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={t('common.delete')}
+                    className="reveal-on-hover group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 absolute -top-1.5 -end-1.5 bg-foreground/80 text-background rounded-full p-0.5"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -894,7 +924,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={t('sidebar.placeholder')}
-            className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/60 scrollbar-lumo"
+            // Editable combobox: the caret stays here while the listbox is open,
+            // so this element is the one that must expose the expanded state and
+            // the active option.
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestionOpen}
+            aria-controls={suggestionOpen ? listboxId : undefined}
+            aria-activedescendant={activeSuggestionId}
+            aria-label={t('sidebar.placeholder')}
+            className="min-h-[36px] resize-none overflow-y-auto text-sm border-0 bg-transparent p-0 shadow-none focus-visible:outline-none placeholder:text-muted-foreground/60 scrollbar-lumo"
             rows={1}
           />
         </div>
@@ -931,6 +970,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 size="icon"
                 className="h-7 w-7 rounded-lg text-destructive hover:text-destructive"
                 onClick={onStop}
+                aria-label={t('sidebar.stop')}
+                title={t('sidebar.stop')}
               >
                 <Square className="h-4 w-4" />
               </Button>
@@ -941,6 +982,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
                 onClick={handleSend}
                 disabled={!hasDraft}
+                aria-label={t('sidebar.send')}
+                title={t('sidebar.send')}
               >
                 <Send className="h-4 w-4" />
               </Button>

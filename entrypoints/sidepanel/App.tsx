@@ -43,7 +43,7 @@ export default function App() {
   return (
     <AppDirection>
     <WindowIdContext.Provider value={windowId}>
-      <div className="h-screen w-full bg-background overflow-hidden">
+      <div className="h-dvh w-full bg-background overflow-hidden">
         <ThemeInit />
         <FontSizeInit />
         <SplitView />
