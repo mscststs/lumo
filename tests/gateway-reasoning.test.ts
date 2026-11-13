@@ -50,6 +50,21 @@ const SSE_CHUNKS: unknown[] = [
   '[DONE]',
 ];
 
+/**
+ * The same reply as every compatible gateway actually frames it.
+ *
+ * `{role, content: ''}` is the role announcement, and the parser opens the call's
+ * single text part on it because `content` is present, not because it is text.
+ */
+const ROLE_FRAME_CHUNKS: unknown[] = [
+  delta({ role: 'assistant', content: '' }),
+  delta({ reasoning_content: '我先看一下' }),
+  delta({ reasoning_content: '当前页面。' }),
+  delta({ content: 'Reading the page now.' }),
+  { ...BASE, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: USAGE },
+  '[DONE]',
+];
+
 describe('reasoningTextFromRaw', () => {
   it('reads the gateway spellings', () => {
     expect(reasoningTextFromRaw(delta({ reasoning_content: 'thinking' }))).toBe('thinking');
@@ -127,6 +142,107 @@ describe('gatewayReasoningTransform', () => {
     expect(await run([raw])).toEqual([raw]);
   });
 
+  it('holds the empty role-frame text part back so the thinking stays first', async () => {
+    // The bug this guards: the parser opens the text part on the role frame's
+    // empty `content`, so the reply's text part exists before any thinking and
+    // the recovered reasoning is appended *after* the answer it preceded.
+    const out = await run([
+      { type: 'raw', rawValue: delta({ role: 'assistant', content: '' }) },
+      { type: 'raw', rawValue: delta({ reasoning_content: 'a' }) },
+      { type: 'raw', rawValue: delta({ reasoning_content: 'b' }) },
+      { type: 'text-start', id: '0' },
+      { type: 'text-delta', id: '0', text: '' },
+      { type: 'text-delta', id: '0', text: 'hello' },
+      { type: 'text-end', id: '0' },
+      { type: 'finish', finishReason: 'stop', totalUsage: {} as never },
+    ]);
+
+    expect(out.map((part) => part.type)).toEqual([
+      // The role frame is not thinking, so it is passed through untouched — but
+      // the text part it opened is not.
+      'raw',
+      'reasoning-start',
+      'reasoning-delta',
+      'reasoning-delta',
+      'reasoning-end',
+      'text-start',
+      'text-delta',
+      'text-delta',
+      'text-end',
+      'finish',
+    ]);
+    // The empty framing delta is replayed, but only *after* the start, and it
+    // still leaves a single text part the answer streams into.
+    const deltas = out.filter((part) => part.type === 'text-delta');
+    expect(deltas.map((part) => (part as { text: string }).text)).toEqual(['', 'hello']);
+  });
+
+  it('emits no text part at all when only the framing ever arrives', async () => {
+    const out = await run([
+      { type: 'raw', rawValue: delta({ role: 'assistant', content: '' }) },
+      { type: 'raw', rawValue: delta({ reasoning_content: 'a' }) },
+      { type: 'text-start', id: '0' },
+      { type: 'text-delta', id: '0', text: '' },
+      { type: 'text-end', id: '0' },
+      { type: 'finish', finishReason: 'stop', totalUsage: {} as never },
+    ]);
+
+    // A thinking-only reply must not leave an empty part ahead of (or behind)
+    // the reasoning block.
+    expect(out.map((part) => part.type)).toEqual([
+      'raw',
+      'reasoning-start',
+      'reasoning-delta',
+      'reasoning-end',
+      'finish',
+    ]);
+  });
+
+  it('keeps one thinking block when a gateway puts thinking and empty content in one frame', async () => {
+    // Same frame carries both: the raw is rewritten first, then the parser opens
+    // the (empty) text part. The withheld start means the next thinking delta
+    // continues the open block instead of opening one after the text.
+    const out = await run([
+      { type: 'raw', rawValue: delta({ reasoning_content: 'a', content: '' }) },
+      { type: 'raw', rawValue: delta({ reasoning_content: 'b' }) },
+      { type: 'text-start', id: '0' },
+      { type: 'text-delta', id: '0', text: 'hello' },
+      { type: 'text-end', id: '0' },
+      { type: 'finish', finishReason: 'stop', totalUsage: {} as never },
+    ]);
+
+    expect(out.map((part) => part.type)).toEqual([
+      'reasoning-start',
+      'reasoning-delta',
+      'reasoning-delta',
+      'reasoning-end',
+      'text-start',
+      'text-delta',
+      'text-end',
+      'finish',
+    ]);
+    expect(out.filter((part) => part.type === 'reasoning-start')).toHaveLength(1);
+  });
+
+  it('keeps a whitespace-only text part, which is framing the transcript always had', async () => {
+    const out = await run([
+      { type: 'raw', rawValue: delta({ reasoning_content: 'a' }) },
+      { type: 'text-start', id: '0' },
+      { type: 'text-delta', id: '0', text: '\n' },
+      { type: 'text-end', id: '0' },
+      { type: 'finish', finishReason: 'stop', totalUsage: {} as never },
+    ]);
+    expect(out.map((part) => part.type)).toEqual([
+      'reasoning-start',
+      'reasoning-delta',
+      'reasoning-end',
+      'text-start',
+      'text-delta',
+      'text-end',
+      'finish',
+    ]);
+  });
+
   it('closes a block at a tool call and opens a new one if thinking resumes', async () => {
     const out = await run([
       { type: 'raw', rawValue: delta({ reasoning_content: 'first' }) },
@@ -152,8 +268,8 @@ describe('runAgentLoop over an OpenAI-compatible gateway', () => {
     server = undefined;
   });
 
-  /** Serve `SSE_CHUNKS` once and return the model that talks to it. */
-  async function serve() {
+  /** Serve `chunks` once and return the model that talks to it. */
+  async function serve(chunks: unknown[] = SSE_CHUNKS) {
     server = createServer((_req, res) => {
       // `connection: close` makes the SDK drop the socket once the stream ends,
       // so teardown is deterministic instead of waiting for an idle connection.
@@ -161,7 +277,7 @@ describe('runAgentLoop over an OpenAI-compatible gateway', () => {
         'content-type': 'text/event-stream',
         connection: 'close',
       });
-      for (const chunk of SSE_CHUNKS) {
+      for (const chunk of chunks) {
         res.write(typeof chunk === 'string' ? `data: ${chunk}\n\n` : `data: ${JSON.stringify(chunk)}\n\n`);
       }
       res.end();
@@ -202,6 +318,27 @@ describe('runAgentLoop over an OpenAI-compatible gateway', () => {
 
     expect(result.usage.steps?.[0]?.ttftMs).toBeGreaterThanOrEqual(0);
     expect(events.some((event) => event.ttftMs !== null)).toBe(true);
+  }, 15_000);
+
+  it('keeps the thinking ahead of the reply when the gateway opens with a role frame', async () => {
+    // The shape every compatible gateway actually sends. Before the withheld
+    // start, this produced `[text, reasoning]` — the thinking rendered below the
+    // answer it led to, which is exactly what users reported.
+    const model = await serve(ROLE_FRAME_CHUNKS);
+    const result = await runAgentLoop({
+      model,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      gatewayReasoning: true,
+    });
+
+    const types = result.parts.map((part) => part.type);
+    expect(types.indexOf('reasoning')).toBeLessThan(types.indexOf('text'));
+
+    const text = result.parts.find((part) => part.type === 'text');
+    expect((text as { text: string }).text).toBe('Reading the page now.');
+    const reasoning = result.parts.filter((part) => part.type === 'reasoning');
+    expect(reasoning).toHaveLength(1);
+    expect((reasoning[0] as { text: string }).text).toBe('我先看一下当前页面。');
   }, 15_000);
 
   it('drops the thinking without the transform — the bug this module fixes', async () => {
