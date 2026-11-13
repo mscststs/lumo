@@ -66,18 +66,8 @@ import { combineAbortSignals as combineSignals } from '@/lib/abort';
 import { TMP_DIR } from './vfs';
 import { MAX_TIMER_DELAY_MS, NO_TIMEOUT_MS } from './runtime/limits';
 import { SyncFileBridge, detectSyncFsUsage, type SyncFsHost } from './runtime/sync-fs';
+import { NODE_SEMVER, NODE_VERSION, extensionVersion } from './system-facts';
 import guestRuntimeSource from './runtime/guest-runtime.js?raw';
-
-function extensionVersion(): string {
-  try {
-    const runtime = (globalThis as {
-      chrome?: { runtime?: { getManifest?: () => { version?: string } } };
-    }).chrome;
-    return runtime?.runtime?.getManifest?.().version ?? '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-}
 /**
  * Fetch bodies larger than this are cut off and reported as truncated.
  *
@@ -856,6 +846,8 @@ interface PreludeConfig {
   argv: string[];
   timeoutMs: number;
   version: string;
+  nodeVersion: string;
+  nodeSemver: string;
   servers: Array<{ id: string; name: string; tools: string[] }>;
   modules: PreludeModule[];
 }
@@ -1201,7 +1193,7 @@ export function createNodeCommand(
     }
 
     if (parsed.version) {
-      return { stdout: `v0.0.0-lumo\n`, stderr: '', exitCode: 0 };
+      return { stdout: `${NODE_VERSION}\n`, stderr: '', exitCode: 0 };
     }
     if (parsed.help) {
       return {
@@ -1315,6 +1307,8 @@ export function createNodeCommand(
       argv,
       timeoutMs,
       version,
+      nodeVersion: NODE_VERSION,
+      nodeSemver: NODE_SEMVER,
       servers,
       modules,
     });

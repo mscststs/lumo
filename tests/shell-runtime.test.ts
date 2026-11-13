@@ -21,6 +21,7 @@ import { fileStorage } from '@/lib/mcp/file-storage';
 import { mcpRegistry } from '@/lib/mcp/registry';
 import type { AnyTool, IMcpServer } from '@/lib/mcp/types';
 import { hostTimeZone } from '@/lib/shell/env';
+import { NODE_VERSION } from '@/lib/shell/system-facts';
 
 const originalFetch = globalThis.fetch;
 
@@ -304,7 +305,7 @@ describe('E1 Node API gaps', () => {
     await fileStorage.writeFile('scripts/check.js', 'console.log("executed")\n');
     const bash = await shell();
     const version = await bash.exec('node -v');
-    expect(version.stdout).toBe('v0.0.0-lumo\n');
+    expect(version.stdout).toBe(`${NODE_VERSION}\n`);
     expect(version.stderr).toBe('');
     expect(version.exitCode).toBe(0);
     const help = await bash.exec('node --help');

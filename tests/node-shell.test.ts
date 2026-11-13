@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Bash } from 'just-bash/browser';
 import { LumoFileSystem } from '@/lib/shell/vfs';
 import { createNodeCommand } from '@/lib/shell/node-command';
+import { NODE_VERSION } from '@/lib/shell/system-facts';
 import { fileStorage } from '@/lib/mcp/file-storage';
 import { mcpRegistry } from '@/lib/mcp/registry';
 import type { AnyTool, IMcpServer } from '@/lib/mcp/types';
@@ -202,7 +203,7 @@ describe('node command', () => {
     const result = await bash.exec(
       "node -e 'console.log(\"out\"); console.error(\"err\"); console.warn(\"warn\"); console.log(process.version, process.platform, typeof process.nextTick, typeof process.stdout.write)'",
     );
-    expect(result.stdout).toBe('out\nv0.0.0-lumo linux function function\n');
+    expect(result.stdout).toBe(`out\n${NODE_VERSION} linux function function\n`);
     expect(result.stderr).toBe('err\nwarn\n');
   });
 
