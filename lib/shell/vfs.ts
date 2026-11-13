@@ -62,6 +62,7 @@ import {
   latin1FromBytes,
   textFromBytes,
 } from '@/lib/encoding';
+import { osRelease, procVersion } from './system-facts';
 
 const ROOT = '/';
 
@@ -120,34 +121,105 @@ function toVfsPath(storePath: string): string {
 }
 
 /**
- * POSIX device paths the shell may redirect to.
+ * Paths that exist in the namespace but not in storage.
  *
- * They are virtual: nothing is stored. Without this, `cmd 2>/dev/null` (and
- * `>/dev/null`, which just-bash resolves through `fs.writeFile`) created a real
- * zero-byte `dev/null` in the file library. Its last segment rendered as a file
- * named "null" in the conversation's file bar, even though the script had only
- * read files.
+ * Two families share the mechanism:
+ *
+ *  - POSIX devices the shell redirects to. Without them, `cmd 2>/dev/null` (and
+ *    `>/dev/null`, which just-bash resolves through `fs.writeFile`) created a
+ *    real zero-byte `dev/null` in the file library, which then rendered as a
+ *    file named "null" in the conversation's file bar.
+ *  - The handful of read-only system files a script reads to learn what it is
+ *    running on.
  */
-type DeviceKind = 'dir' | 'null' | 'zero';
+type VirtualNode =
+  | { kind: 'dir'; children: readonly string[] }
+  | { kind: 'null' }
+  | { kind: 'zero' }
+  | { kind: 'file'; content: string };
 
-function deviceKind(path: string): DeviceKind | undefined {
-  const normalized = normalizeVfsPath(path);
-  if (normalized === '/dev') return 'dir';
-  if (normalized === '/dev/null') return 'null';
-  if (normalized === '/dev/zero') return 'zero';
+/**
+ * The read-only system files the shell presents.
+ *
+ * just-bash seeds `/bin`, `/dev`, `/proc` only into filesystems that expose
+ * synchronous writes, which this IndexedDB-backed one does not — so a script
+ * looking for the platform (`cat /etc/os-release`, `cat /proc/version`) found
+ * nothing. Serving them here keeps the answers in one place with `uname`.
+ */
+function virtualFileContent(normalized: string): string | undefined {
+  if (normalized === '/etc/os-release') return osRelease();
+  if (normalized === '/proc/version') return procVersion();
   return undefined;
 }
 
-/** Device stat: no size, and a stable identity so `-ef` comparisons work. */
-function deviceStat(kind: Exclude<DeviceKind, 'dir'>): FsStat {
+/** Virtual directories under `/`, listed by `ls /` like any other Unix root. */
+const VIRTUAL_ROOT_DIRS: readonly string[] = ['dev', 'etc', 'proc'];
+
+/** Every virtual path, for the glob index. */
+const VIRTUAL_PATHS: readonly string[] = [
+  '/dev',
+  '/dev/null',
+  '/dev/zero',
+  '/etc',
+  '/etc/os-release',
+  '/proc',
+  '/proc/version',
+];
+
+function virtualAt(path: string): VirtualNode | undefined {
+  const normalized = normalizeVfsPath(path);
+  if (normalized === '/dev') return { kind: 'dir', children: ['null', 'zero'] };
+  if (normalized === '/dev/null') return { kind: 'null' };
+  if (normalized === '/dev/zero') return { kind: 'zero' };
+  if (normalized === '/etc') return { kind: 'dir', children: ['os-release'] };
+  if (normalized === '/proc') return { kind: 'dir', children: ['version'] };
+  const content = virtualFileContent(normalized);
+  if (content !== undefined) return { kind: 'file', content };
+  return undefined;
+}
+
+/**
+ * True when `path` sits below a virtual directory.
+ *
+ * `/etc` and `/proc` are read-only, and `/dev` only has the two devices: a write
+ * to `/etc/new` would otherwise leave a real `etc/new` in the user's library,
+ * invisible because the virtual directory shadows it.
+ */
+function insideVirtualDir(path: string): boolean {
+  const segments = normalizeVfsPath(path).split('/').filter(Boolean);
+  let prefix = '';
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    prefix += `/${segments[i]}`;
+    if (virtualAt(prefix)?.kind === 'dir') return true;
+  }
+  return false;
+}
+
+function readOnly(path: string): Error {
+  return fsError('EROFS', `EROFS: read-only file system, open '${path}'`, { path, syscall: 'open' });
+}
+
+/** Virtual stat: devices are writable sinks, system files are read-only. */
+function virtualStat(path: string, node: VirtualNode): FsStat {
+  if (node.kind === 'dir') {
+    return {
+      isFile: false,
+      isDirectory: true,
+      isSymbolicLink: false,
+      mode: DIR_MODE,
+      size: 0,
+      mtime: new Date(0),
+      identity: `sys:${path}`,
+    };
+  }
   return {
     isFile: true,
     isDirectory: false,
     isSymbolicLink: false,
-    mode: 0o666,
-    size: 0,
+    mode: node.kind === 'file' ? 0o444 : 0o666,
+    size: node.kind === 'file' ? bytesFromText(node.content).length : 0,
     mtime: new Date(0),
-    identity: `dev:${kind}`,
+    identity: `sys:${path}`,
   };
 }
 
@@ -339,6 +411,10 @@ export class LumoFileSystem implements IFileSystem {
     this.sortedPaths = null;
     this.dirTimes = new Map();
 
+    // The virtual system tree is part of the namespace every refresh, so globs
+    // (`/etc/*`) see it even though nothing is stored for it.
+    for (const path of VIRTUAL_PATHS) this.allPaths.add(path);
+
     for (const record of directories) {
       const path = record.path.replace(/\/+$/, '');
       this.addDir(path);
@@ -485,6 +561,12 @@ export class LumoFileSystem implements IFileSystem {
       const rest = dir.slice(prefix.length);
       if (rest !== '' && !rest.includes('/')) names.add(rest);
     }
+    // The virtual tree is part of the namespace: `ls /` lists `/dev`, `/etc`
+    // and `/proc` like any other Unix root, instead of hiding directories that
+    // `ls /etc` would happily show.
+    if (storePath === '') {
+      for (const dir of VIRTUAL_ROOT_DIRS) names.add(dir);
+    }
 
     return [...names]
       .sort()
@@ -492,8 +574,8 @@ export class LumoFileSystem implements IFileSystem {
         const child = prefix + name;
         return {
           name,
-          isFile: this.files.has(child),
-          isDirectory: this.dirs.has(child),
+          isFile: this.files.has(child) || virtualAt(`/${child}`)?.kind === 'file',
+          isDirectory: this.dirs.has(child) || virtualAt(`/${child}`)?.kind === 'dir',
         };
       });
   }
@@ -504,22 +586,24 @@ export class LumoFileSystem implements IFileSystem {
 
   async readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') throw eisdir(path);
-    if (device) return '';
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') throw eisdir(path);
+    const encoding = typeof options === 'string' ? options : options?.encoding;
+    if (node?.kind === 'file') return decodeBytes(bytesFromText(node.content), encoding);
+    if (node) return '';
     const storePath = toStorePath(path);
     this.requireFile(storePath, path);
     const blob = await fileStorage.readFileAsBlob(storePath);
     if (!blob) throw enoent(path);
-    const encoding = typeof options === 'string' ? options : options?.encoding;
     return decodeBytes(new Uint8Array(await blob.arrayBuffer()), encoding);
   }
 
   async readFileBytes(path: string): Promise<ByteString> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') throw eisdir(path);
-    if (device) return '' as unknown as ByteString;
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') throw eisdir(path);
+    if (node?.kind === 'file') return byteString(bytesFromText(node.content));
+    if (node) return '' as unknown as ByteString;
     const storePath = toStorePath(path);
     this.requireFile(storePath, path);
     const blob = await fileStorage.readFileAsBlob(storePath);
@@ -529,9 +613,10 @@ export class LumoFileSystem implements IFileSystem {
 
   async readFileBuffer(path: string): Promise<Uint8Array> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') throw eisdir(path);
-    if (device) return new Uint8Array();
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') throw eisdir(path);
+    if (node?.kind === 'file') return bytesFromText(node.content);
+    if (node) return new Uint8Array();
     const storePath = toStorePath(path);
     this.requireFile(storePath, path);
     const blob = await fileStorage.readFileAsBlob(storePath);
@@ -545,11 +630,16 @@ export class LumoFileSystem implements IFileSystem {
     options?: WriteFileOptions | BufferEncoding,
   ): Promise<void> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') throw eisdir(path);
-    // `/dev/null` and `/dev/zero` discard. This is what keeps
-    // `cmd 2>/dev/null` from creating a stored file.
-    if (device) return;
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') throw eisdir(path);
+    // System files are read-only; a write reports EROFS instead of silently
+    // creating a shadow copy in the library. `/dev/null` and `/dev/zero`
+    // discard, which is what keeps `cmd 2>/dev/null` from storing a file.
+    if (node?.kind === 'file') throw readOnly(path);
+    // `/dev/null` and `/dev/zero` swallow the write before the ancestor check:
+    // they are the one writable place inside a virtual directory.
+    if (node) return;
+    if (insideVirtualDir(path)) throw readOnly(path);
     const storePath = toStorePath(path);
     if (this.isDirectory(storePath)) throw eisdir(path);
 
@@ -582,9 +672,11 @@ export class LumoFileSystem implements IFileSystem {
     options?: WriteFileOptions | BufferEncoding,
   ): Promise<void> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') throw eisdir(path);
-    if (device) return;
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') throw eisdir(path);
+    if (node?.kind === 'file') throw readOnly(path);
+    if (node) return;
+    if (insideVirtualDir(path)) throw readOnly(path);
     const previous = this.isFile(toStorePath(path))
       ? await this.readFileBuffer(path)
       : new Uint8Array();
@@ -597,26 +689,15 @@ export class LumoFileSystem implements IFileSystem {
 
   async exists(path: string): Promise<boolean> {
     await this.syncIfStale();
-    if (deviceKind(path)) return true;
+    if (virtualAt(path)) return true;
     const storePath = toStorePath(path);
     return this.isDirectory(storePath) || this.isFile(storePath);
   }
 
   async stat(path: string): Promise<FsStat> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') {
-      return {
-        isFile: false,
-        isDirectory: true,
-        isSymbolicLink: false,
-        mode: DIR_MODE,
-        size: 0,
-        mtime: new Date(0),
-        identity: 'dev:dir',
-      };
-    }
-    if (device) return deviceStat(device);
+    const node = virtualAt(path);
+    if (node) return virtualStat(normalizeVfsPath(path), node);
     return this.statOf(toStorePath(path), path);
   }
 
@@ -626,11 +707,11 @@ export class LumoFileSystem implements IFileSystem {
 
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    // `/dev` already exists virtually; creating anything below it would put a
-    // real directory into the library, so only the device itself is a no-op.
-    if (device === 'dir') return;
-    if (device) throw eexist(path);
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') return;
+    // System paths are read-only, so a shadow copy would be a lie.
+    if (node) throw eexist(path);
+    if (insideVirtualDir(path)) throw readOnly(path);
     const storePath = toStorePath(path);
     if (storePath === '') return;
     if (this.isFile(storePath)) throw eexist(path);
@@ -649,8 +730,7 @@ export class LumoFileSystem implements IFileSystem {
 
   async createExclusive(path: string, options: CreateExclusiveOptions): Promise<void> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device) throw eexist(path);
+    if (virtualAt(path) || insideVirtualDir(path)) throw eexist(path);
     const storePath = toStorePath(path);
     if (this.isDirectory(storePath) || this.isFile(storePath)) {
       throw eexist(path);
@@ -666,24 +746,24 @@ export class LumoFileSystem implements IFileSystem {
 
   async readdir(path: string): Promise<string[]> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') return ['null', 'zero'];
-    if (device) throw enotdir(path);
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') return [...node.children];
+    if (node) throw enotdir(path);
     return this.children(toStorePath(path)).map((child) => child.name);
   }
 
   async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    if (device === 'dir') {
-      return ['null', 'zero'].map((name) => ({
+    const node = virtualAt(path);
+    if (node?.kind === 'dir') {
+      return node.children.map((name) => ({
         name,
         isFile: true,
         isDirectory: false,
         isSymbolicLink: false,
       }));
     }
-    if (device) throw enotdir(path);
+    if (node) throw enotdir(path);
     return this.children(toStorePath(path)).map((child) => ({
       name: child.name,
       isFile: child.isFile,
@@ -694,10 +774,13 @@ export class LumoFileSystem implements IFileSystem {
 
   async rm(path: string, options?: RmOptions): Promise<void> {
     await this.syncIfStale();
-    const device = deviceKind(path);
-    // Removing a device would only break the next redirect; report it instead
-    // of pretending it succeeded.
-    if (device) throw fsError('EPERM', `EPERM: cannot remove device: ${path}`, { path, syscall: 'unlink' });
+    const node = virtualAt(path);
+    // Removing a device would only break the next redirect, and the system
+    // files are part of the environment; report both instead of pretending.
+    if (node) {
+      // No path in the message: see the `mv` note above about the sanitizer.
+      throw fsError('EPERM', 'EPERM: read-only virtual path', { path, syscall: 'unlink' });
+    }
     const storePath = toStorePath(path);
     if (storePath === '') throw fsError('EBUSY', 'EBUSY: cannot remove the filesystem root');
 
@@ -738,14 +821,16 @@ export class LumoFileSystem implements IFileSystem {
 
   async cp(src: string, dest: string, options?: CpOptions): Promise<void> {
     await this.syncIfStale();
-    const srcDevice = deviceKind(src);
-    const destDevice = deviceKind(dest);
-    if (destDevice === 'dir') throw eisdir(dest);
-    if (destDevice) return;
+    const srcNode = virtualAt(src);
+    const destNode = virtualAt(dest);
+    if (destNode?.kind === 'dir') throw eisdir(dest);
+    if (destNode?.kind === 'file') throw readOnly(dest);
+    if (destNode) return;
+    if (insideVirtualDir(dest)) throw readOnly(dest);
     // `cp /dev/null file` is a common way to truncate/create an empty file.
-    if (srcDevice === 'dir') throw eisdir(src);
-    if (srcDevice) {
-      await this.writeFile(dest, new Uint8Array());
+    if (srcNode?.kind === 'dir') throw eisdir(src);
+    if (srcNode) {
+      await this.writeFile(dest, srcNode.kind === 'file' ? srcNode.content : new Uint8Array());
       return;
     }
     const from = toStorePath(src);
@@ -776,8 +861,11 @@ export class LumoFileSystem implements IFileSystem {
 
   async mv(src: string, dest: string): Promise<void> {
     await this.syncIfStale();
-    if (deviceKind(src) || deviceKind(dest)) {
-      throw fsError('EPERM', `EPERM: cannot move device: ${src}`, { path: src, syscall: 'rename' });
+    if (virtualAt(src) || virtualAt(dest) || insideVirtualDir(src) || insideVirtualDir(dest)) {
+      // No path in the message: just-bash's `rm`/`mv` sanitizer rewrites host-like
+      // paths (`/etc`, `/tmp`) to `<path>`, and the command prints the operand
+      // itself.
+      throw fsError('EPERM', 'EPERM: read-only virtual path', { path: src, syscall: 'rename' });
     }
     const from = toStorePath(src);
     const to = toStorePath(dest);
@@ -850,6 +938,19 @@ export class LumoFileSystem implements IFileSystem {
         mode: this.modes.get(storePath) ?? FILE_MODE,
       });
     }
+    // Virtual nodes belong in the snapshot too: otherwise `node`'s synchronous
+    // `existsSync('/etc/os-release')` disagrees with the shell's `test -f`.
+    for (const path of VIRTUAL_PATHS) {
+      const node = virtualAt(path);
+      if (!node) continue;
+      entries.push({
+        path,
+        kind: node.kind === 'dir' ? 'dir' : 'file',
+        size: node.kind === 'file' ? bytesFromText(node.content).length : 0,
+        mtime: 0,
+        mode: node.kind === 'dir' ? DIR_MODE : node.kind === 'file' ? 0o444 : 0o666,
+      });
+    }
     return entries;
   }
 
@@ -862,7 +963,7 @@ export class LumoFileSystem implements IFileSystem {
 
   async chmod(path: string, mode: number): Promise<void> {
     await this.syncIfStale();
-    if (deviceKind(path)) return;
+    if (virtualAt(path)) return;
     const storePath = toStorePath(path);
     if (!this.isFile(storePath) && !this.isDirectory(storePath)) throw enoent(path);
     this.modes.set(storePath, mode);
@@ -870,7 +971,7 @@ export class LumoFileSystem implements IFileSystem {
 
   async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
     await this.syncIfStale();
-    if (deviceKind(path)) return;
+    if (virtualAt(path)) return;
     const storePath = toStorePath(path);
     if (!this.isFile(storePath) && !this.isDirectory(storePath)) throw enoent(path);
     this.mtimes.set(storePath, mtime);
@@ -879,7 +980,7 @@ export class LumoFileSystem implements IFileSystem {
   async realpath(path: string): Promise<string> {
     await this.syncIfStale();
     const normalized = normalizeVfsPath(path);
-    if (deviceKind(normalized)) return normalized;
+    if (virtualAt(normalized)) return normalized;
     const storePath = toStorePath(normalized);
     if (!this.isFile(storePath) && !this.isDirectory(storePath)) throw enoent(path);
     return normalized;
