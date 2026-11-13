@@ -6,7 +6,7 @@
  * 1. The live value is published *before* the step ends, so the reply can show
  *    something while it streams.
  * 2. The per-step timings recorded on the usage ledger measure the model call
- *    only — tool execution must never land in a decode denominator.
+ *    only — tool execution must never land in the generation window.
  */
 import { describe, it, expect } from 'vitest';
 import { tool } from 'ai';
@@ -49,8 +49,9 @@ const PROMPT: ModelMessage[] = [
 ];
 
 function textStep(body: string): LanguageModelV4StreamPart[] {
-  // Several deltas: a single one has no window (first delta === last delta),
-  // which is correctly reported as "not measurable" rather than a rate.
+  // Several deltas: a single one lands inside the debounce (the whole call is
+  // one burst), which is correctly reported as "not measurable" rather than a
+  // rate.
   const size = Math.max(1, Math.ceil(body.length / 4));
   const deltas: LanguageModelV4StreamPart[] = [];
   for (let offset = 0; offset < body.length; offset += size) {
@@ -99,26 +100,27 @@ describe('runAgentLoop metrics', () => {
     });
 
     expect(events.length).toBeGreaterThan(0);
-    // First publication: TTFT known, speed not yet measurable.
+    // First publication: TTFT known. Whether it already carries a rate depends
+    // on how long the first token took relative to the debounce, so the cadence
+    // itself is pinned by the recorder's unit tests (injected clock).
     expect(events[0]!.ttftMs).not.toBeNull();
     expect(events[0]!.ttftMs!).toBeGreaterThan(0);
-    expect(events[0]!.tps).toBeNull();
 
     const step = result.usage.steps?.[0];
     expect(step?.ttftMs).toBeGreaterThan(0);
-    expect(step?.decodeMs).toBeGreaterThan(0);
+    expect(step?.generationMs).toBeGreaterThan(0);
 
     // The last event carries the step-exact value that also landed on the ledger.
     const last = events.at(-1)!;
     expect(last.ttftMs).toBe(step!.ttftMs);
-    // The ledger stores rounded milliseconds, so deriving from it differs from
-    // the exact event by a rounding error, not a semantic one. The numerator is
-    // the provider's whole output and the window is not floored.
-    const derived = step!.outputTokens / (step!.decodeMs! / 1000);
-    expect(Math.abs(last.tps! - derived)).toBeLessThan(derived * 0.01);
+    // Both sides divide the provider's whole output by the same rounded window
+    // (the whole call, TTFT included), so they agree exactly — not just within
+    // a rounding tolerance.
+    const derived = step!.outputTokens / (step!.generationMs! / 1000);
+    expect(last.tps).toBe(derived);
   });
 
-  it('records a timing pair only for steps that streamed deltas', async () => {
+  it('records the generation window for a whole-call tool step too', async () => {
     let call = 0;
     const model = new MockLanguageModelV4({
       doStream: async () => {
@@ -142,15 +144,16 @@ describe('runAgentLoop metrics', () => {
     });
 
     expect(result.usage.steps).toHaveLength(2);
-    // Step 0 is a one-chunk tool call: no argument delta ever streamed, so
-    // there is no decode sample and no rate. Its arrival is still the first
-    // output, so TTFT exists (pi's delta-only clock would show neither).
+    // Step 0 is a one-chunk tool call: no argument delta ever streamed, and the
+    // window does not care. Its arrival opens TTFT, and the call's end closes a
+    // normal generation window — the same measurement a streaming step gets.
+    // (Whether that window is long enough to survive the debounce is the
+    // unit test's business; 150ms intra-chunk delay is not a stable assertion.)
     expect(result.usage.steps![0]!.ttftMs).toBeGreaterThan(0);
-    expect(result.usage.steps![0]!.decodeMs).toBeUndefined();
-    expect(stepThroughput(result.usage.steps![0]!)).toBeNull();
-    // Step 1 generated text deltas, so both are recorded and the rate exists.
+    expect(result.usage.steps![0]!.generationMs).toBeGreaterThan(0);
+    // Step 1 generated text deltas, so it has a window and a rate.
     expect(result.usage.steps![1]!.ttftMs).toBeGreaterThan(0);
-    expect(result.usage.steps![1]!.decodeMs).toBeGreaterThan(0);
+    expect(result.usage.steps![1]!.generationMs).toBeGreaterThan(0);
     expect(stepThroughput(result.usage.steps![1]!)).toBeGreaterThan(0);
     expect(new Set(events.map((event) => event.step))).toEqual(new Set([0, 1]));
   });
@@ -195,14 +198,14 @@ describe('runAgentLoop metrics', () => {
     });
 
     const step = result.usage.steps![0]!;
-    // The arguments themselves streamed across five deltas, so the window is
-    // real, and it runs to the end of the call.
-    expect(step.decodeMs).toBeGreaterThanOrEqual(250);
+    // The arguments themselves streamed across five deltas and the window runs
+    // to the end of the call.
+    expect(step.generationMs).toBeGreaterThanOrEqual(250);
     expect(stepThroughput(step)).toBeGreaterThan(0);
     expect(events.some((event) => event.step === 0 && event.tps !== null)).toBe(true);
   });
 
-  it('charges a provider hold-open tail to the window, exactly like pi', async () => {
+  it('charges a provider hold-open tail to the window', async () => {
     // The arguments arrive in ~8ms, then the provider keeps the response open
     // for 400ms before the finish chunk. pi reads the clock at `message_end`,
     // so that tail is generation time: 200 tokens over ~0.4s, not an instant
@@ -256,14 +259,14 @@ describe('runAgentLoop metrics', () => {
 
     const step = result.usage.steps![0]!;
     expect(step.ttftMs).toBeGreaterThan(0);
-    expect(step.decodeMs!).toBeGreaterThanOrEqual(250);
+    expect(step.generationMs!).toBeGreaterThanOrEqual(250);
     expect(stepThroughput(step)).toBeGreaterThan(0);
     expect(stepThroughput(step)!).toBeLessThan(1_000);
     // The settled event and the ledger tell the same story.
     expect(events.at(-1)!.tps).toBeCloseTo(stepThroughput(step)!, 0);
   });
 
-  it('does not charge tool execution to the decode window', async () => {
+  it('does not charge tool execution to the generation window', async () => {
     // Generous against CI scheduling noise: the assertion only needs the tool
     // delay to dwarf the model call, not a tight timing bound.
     const TOOL_DELAY_MS = 500;
@@ -290,6 +293,6 @@ describe('runAgentLoop metrics', () => {
     const result = await runAgentLoop({ model, messages: PROMPT, tools: { slow } });
 
     // The first step's model call ended long before its tool did.
-    expect(result.usage.steps![0]!.decodeMs!).toBeLessThan(TOOL_DELAY_MS - 100);
+    expect(result.usage.steps![0]!.generationMs!).toBeLessThan(TOOL_DELAY_MS - 100);
   });
 });

@@ -416,18 +416,19 @@ export interface TokenUsageStep {
    */
   ttftMs?: number;
   /**
-   * Milliseconds from the first delta to the model-call end.
+   * Milliseconds from the request start to the model-call end — the whole call,
+   * TTFT included.
    *
-   * The decode window behind the step's output speed: `outputTokens /
-   * (decodeMs / 1000)`, with no floor — a short window reports a high rate,
-   * as in pi's status line. The clock is read when the call settles
-   * (`message_end`), so a provider that flushes its output and then holds the
-   * stream open is charged for that time. Tool execution happens after the call
-   * ends, so it is structurally excluded. The 250ms debounce tests this span,
-   * which is why a call that finished within one burst has no speed. Absent
-   * when no delta ever streamed.
+   * The denominator of the step's output speed: `outputTokens / (generationMs
+   * / 1000)`. The clock starts before the request goes out and is read when the
+   * call settles (`message_end`), so a provider that holds the stream and then
+   * flushes a large burst is charged for the wait before it, and a provider
+   * that flushes and then holds the stream open is charged for that too. Tool
+   * execution happens after the call ends, so it is structurally excluded. A
+   * window shorter than the 250ms debounce is one burst and yields no speed.
+   * Absent when the call's end was never observed.
    */
-  decodeMs?: number;
+  generationMs?: number;
 }
 
 export interface ChatMessage {

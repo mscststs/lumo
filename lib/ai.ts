@@ -894,8 +894,8 @@ export async function runAgentLoop({
     const promptMessageCount = modelMessages.length;
     // Owns this step's TTFT origin, live estimate, debounce and throttle. The
     // recorder starts its clock immediately, before the request goes out, and
-    // `finish` reads it again once the stream ends — pi's `turn_start →
-    // message_end` window.
+    // `finish` reads it again once the stream ends — so TTFT sits in the
+    // denominator of the step's speed, not beside it.
     const timing = new StepTimingRecorder(step, onMetrics);
     const result = streamText({
       model,

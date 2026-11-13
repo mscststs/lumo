@@ -8,11 +8,8 @@
  * excludes tool execution structurally — a step is one `streamText` call, so
  * the time the loop spends running tools never lands in a denominator.
  *
- * The arithmetic is `@everyx/pi-status-line`'s (the status-line extension pi is
- * configured with), line for line:
- *
- *   TTFT = generation start → first observed output
- *   TPS  = output tokens / wall clock (firstToken → now, and → message end when
+ *   TTFT = request start → first observed output
+ *   TPS  = output tokens / wall clock (request start → now, and → call end once
  *          the call settles)
  *
  * - **Numerator** is the *whole* generation: the provider's exact
@@ -20,17 +17,25 @@
  *   character count (CJK ≈ 1 token/char, other ≈ 4 chars/token). Never a
  *   per-delta ceil: `Σceil(cᵢ/4)` ≥ `ceil(Σcᵢ/4)` inflates the sum (≈ +40% on
  *   token-aligned streams, +284% on char-level ones).
- * - **Denominator** is wall clock, from the first token to now (live) or to the
- *   end of the call (settled). Gaps between chunks count — a stalled provider is
- *   slow, and hiding that would flatter it. TTFT is excluded and reported on
- *   its own. There is deliberately **no floor** on the window: 321 tokens in
- *   0.43s is 746 T/s, and pi prints exactly that. The only guard on a
- *   sub-second window is the debounce below.
- * - **Debounce**: below {@link LIVE_TPS_DEBOUNCE_MS} the sample is one burst,
- *   not a measurement, so the value is absent — "not measurable yet", not 0.
- * - **Live** is the running average over the generation so far: the final
- *   value's intermediate form. An "instantaneous" per-chunk rate would measure
- *   transport buffering, not the model.
+ * - **Denominator is the whole call, TTFT included.** Lumo used to copy pi's
+ *   status line line for line and open the rate at the first delta. That reads
+ *   a transport artifact as model speed: a provider or gateway that holds the
+ *   stream for three seconds and then flushes five thousand tokens in a single
+ *   chunk measured as thousands of T/s, even though no one ever received those
+ *   tokens at that pace. Total output over total wait — first token and
+ *   streaming together — is the average the user actually lived through: a slow
+ *   first token can only pull it down, and a long reply amortises it away.
+ *   Gaps between chunks count too — a stalled provider is slow, and hiding that
+ *   would flatter it. There is deliberately **no floor** on the window, only
+ *   the debounce below: a call that really produced 321 tokens in 0.43s from
+ *   the request onward reads 746 T/s, and that is the truth about that call.
+ * - **Debounce**: below {@link RATE_MIN_WINDOW_MS} the whole call is one
+ *   burst, not a measurement, so the value is absent — "not measurable yet",
+ *   not 0.
+ * - **Live** is the running average over the call so far — the same window,
+ *   `request start → now` — and the final value's intermediate form. An
+ *   "instantaneous" per-chunk rate would measure transport buffering, not the
+ *   model.
  *
  * Every streamed output counts — text, reasoning, **and tool-call argument
  * deltas** — because pi's `extractDelta` accepts any non-empty
@@ -55,7 +60,8 @@
  * tokens by the tool's runtime. An earlier version ended the window at the last
  * observed delta and reported a held-open call as an instant burst.
  *
- * Three intentional differences, all in what is displayed, none in the math:
+ * Beyond that denominator, three intentional differences from pi, all of them
+ * in what is displayed:
  *
  * 1. Values are **per step**, so the settled ledger can list every model call;
  *    pi's footer keeps a single session-wide value and averages TTFT over the
@@ -65,9 +71,9 @@
  *    that same call's speed.
  * 3. TTFT also opens on a tool call that arrives as one complete part, with no
  *    streamed argument delta. pi's `firstTokenMs` can only start on a delta, so
- *    it shows nothing for such a call. A *rate* still needs a decode sample:
- *    the window has to start at a delta, so a whole-call tool step gets TTFT
- *    and no TPS, exactly like pi.
+ *    it shows nothing for such a call. Lumo reports its TTFT, and — once the
+ *    call settles — its rate like any other call: the window is the whole call,
+ *    so nothing about the measurement depends on how the output arrived.
  *
  * This module deliberately does **not** reuse `lib/prompt-size.ts`'s estimator:
  * that one prices a prompt for a context budget (plain chars/4), while this one
@@ -77,8 +83,8 @@
 
 import type { ChatMessagePart, TokenUsageStep } from '@/types';
 
-/** Minimum decode window before a live rate is worth showing. */
-export const LIVE_TPS_DEBOUNCE_MS = 250;
+/** Minimum generation window before a rate is worth showing. */
+export const RATE_MIN_WINDOW_MS = 250;
 
 /** Minimum gap between live metric emissions (UI refresh budget). */
 export const LIVE_METRICS_INTERVAL_MS = 100;
@@ -113,14 +119,14 @@ export interface StepMetrics {
   /** Milliseconds from request start to the first output chunk. */
   ttftMs: number | null;
   /**
-   * Running average of output tokens per second over the call's decode window;
-   * `null` before it is measurable.
+   * Running average of output tokens per second over the call so far, from the
+   * request start (TTFT included); `null` before it is measurable.
    */
   tps: number | null;
 }
 
 /** Timings persisted on a completed usage step. */
-export type StepTiming = Pick<TokenUsageStep, 'ttftMs' | 'decodeMs'>;
+export type StepTiming = Pick<TokenUsageStep, 'ttftMs' | 'generationMs'>;
 
 /** Monotonic clock for durations; `Date.now()` can jump with system time. */
 export function nowMs(): number {
@@ -153,29 +159,39 @@ export function formatTps(tps: number): string {
   return `${tps.toFixed(1)} T/s`;
 }
 
-/** Output speed over a decode window; the single formula for live and final. */
+/** Output speed over a generation window; the single formula for live and final. */
 export function tokensPerSecond(
   tokens: number,
-  decodeMs: number | undefined,
+  windowMs: number | undefined,
 ): number | null {
-  if (!decodeMs || decodeMs <= 0 || tokens <= 0) return null;
-  return tokens / (decodeMs / 1000);
+  if (!windowMs || windowMs <= 0 || tokens <= 0) return null;
+  return tokens / (windowMs / 1000);
+}
+
+/**
+ * The window a rate may be derived from, or `undefined` when the call is one
+ * burst. The single statement of the debounce policy: the live value, the
+ * settled value and the ledger all read it here.
+ */
+function rateWindow(windowMs: number | null | undefined): number | undefined {
+  return windowMs != null && windowMs >= RATE_MIN_WINDOW_MS
+    ? windowMs
+    : undefined;
 }
 
 /**
  * Final output speed of a completed step, derived from the timings stored on
- * it: the provider's whole output token count over the call's decode window.
+ * it: the provider's whole output token count over the whole call, TTFT
+ * included.
  *
- * The debounce still applies below {@link LIVE_TPS_DEBOUNCE_MS}, so a call that
- * ended within one burst has no rate — same rule as the live value and pi's
- * `message_end` path. There is no floor on the window: a short window reports a
- * high rate, because that is what the tokens-per-second arithmetic says.
+ * There is no floor on the window beyond {@link rateWindow}'s debounce: a short
+ * window reports a high rate, because that is what the tokens-per-second
+ * arithmetic says.
  */
 export function stepThroughput(
-  step: Pick<TokenUsageStep, 'outputTokens' | 'decodeMs'>,
+  step: Pick<TokenUsageStep, 'outputTokens' | 'generationMs'>,
 ): number | null {
-  if (!step.decodeMs || step.decodeMs < LIVE_TPS_DEBOUNCE_MS) return null;
-  return tokensPerSecond(step.outputTokens, step.decodeMs);
+  return tokensPerSecond(step.outputTokens, rateWindow(step.generationMs));
 }
 
 /**
@@ -274,8 +290,6 @@ export class StepTimingRecorder {
   private readonly startedAt: number;
   /** First output of any kind — opens the TTFT measurement. */
   private firstOutputAt: number | null = null;
-  /** First *delta* — opens the decode window a rate can be derived from. */
-  private firstDeltaAt: number | null = null;
   /** Latest delta, and the conservative fallback for the window's end. */
   private lastDeltaAt: number | null = null;
   /** The AI SDK's model-call end — pi's assistant `message_end`. */
@@ -310,90 +324,82 @@ export class StepTimingRecorder {
     const now = this.clock();
 
     if (this.firstOutputAt === null) {
-      // pi's `addDelta` opens its clock on a non-empty delta. A tool call that
-      // arrives as one complete part never produces one, so it would have no
-      // TTFT at all; its arrival is still an output, so TTFT opens here. It is
-      // deliberately *not* a decode sample — see `firstDeltaAt`.
+      // A tool call that arrives as one complete part never produces a delta,
+      // so a delta-only clock would show no TTFT at all. Its arrival is still
+      // an output, so TTFT opens here.
       const wholeToolCall = added === 0 && parts.some(isCompleteToolInput);
       if (added === 0 && !wholeToolCall) return;
 
       this.firstOutputAt = now;
-      if (added > 0) {
-        this.firstDeltaAt = now;
-        this.lastDeltaAt = now;
-      }
-      this.publish({ ttftMs: Math.round(now - this.startedAt), tps: null });
+      if (added > 0) this.lastDeltaAt = now;
+      // The first sample already carries the running average: its window is the
+      // TTFT just spent, so a burst that lands here is divided by the wait that
+      // preceded it. A whole tool call contributes no characters to estimate
+      // from, so `runningTps` returns null for it without a special case.
+      this.publish({
+        ttftMs: Math.round(now - this.startedAt),
+        tps: this.runningTps(now),
+      });
       this.lastEmitAt = now;
       return;
     }
 
-    if (added > 0) {
-      this.firstDeltaAt ??= now;
-      this.lastDeltaAt = now;
-    }
-    if (added > 0 && now - this.lastEmitAt >= LIVE_METRICS_INTERVAL_MS) {
-      this.publish({
-        ttftMs: Math.round(this.firstOutputAt - this.startedAt),
-        tps: this.runningTps(now),
-      });
-      this.lastEmitAt = now;
-    }
+    if (added === 0) return;
+    this.lastDeltaAt = now;
+    if (now - this.lastEmitAt < LIVE_METRICS_INTERVAL_MS) return;
+
+    this.publish({
+      ttftMs: Math.round(this.firstOutputAt - this.startedAt),
+      tps: this.runningTps(now),
+    });
+    this.lastEmitAt = now;
   }
 
   /**
    * Close the step and publish its final values.
    *
-   * The window is `first delta → model-call end`, exactly like pi's
-   * `firstTokenMs → message_end`. The end is the timestamp taken by
+   * The rate's window is the whole call: the recorder's start (before the
+   * request goes out) → the model-call end. TTFT is therefore part of the
+   * denominator, not an excluded prologue. The end is the timestamp taken by
    * {@link markModelCallEnd}; the last delta is only the fallback for a call
    * whose end callback never fired. The numerator is the provider's exact
    * output count when there is one, otherwise the character estimate.
+   *
+   * How the output arrived does not enter the arithmetic: a call whose
+   * arguments landed in one part has the same window as one that streamed every
+   * delta.
    */
   finish(outputTokens: number): StepTiming {
     const end = this.modelCallEndedAt ?? this.lastDeltaAt;
     const ttftMs =
-      this.firstOutputAt !== null ? this.firstOutputAt - this.startedAt : null;
-    const decodeMs =
-      this.firstDeltaAt !== null && end !== null
-        ? Math.round(end - this.firstDeltaAt)
+      this.firstOutputAt !== null
+        ? Math.round(this.firstOutputAt - this.startedAt)
         : null;
+    const generationMs = end !== null ? Math.round(end - this.startedAt) : null;
 
     const tokens =
       outputTokens > 0
         ? outputTokens
         : estimateDecodeTokens(this.meter.totalChars, this.meter.cjkChars);
-    // Same debounce as the live value and as pi's `message_end` path: a window
-    // this short is a single burst, not a rate, so the value is absent rather
-    // than astronomically large.
-    const tps =
-      decodeMs !== null && decodeMs >= LIVE_TPS_DEBOUNCE_MS
-        ? tokensPerSecond(tokens, decodeMs)
-        : null;
+    const tps = tokensPerSecond(tokens, rateWindow(generationMs));
 
-    if (ttftMs !== null || tps !== null) {
-      this.publish({
-        ttftMs: ttftMs === null ? null : Math.round(ttftMs),
-        tps,
-      });
-    }
+    if (ttftMs !== null || tps !== null) this.publish({ ttftMs, tps });
 
     return {
-      ...(ttftMs !== null ? { ttftMs: Math.round(ttftMs) } : {}),
-      ...(decodeMs !== null && decodeMs > 0 ? { decodeMs } : {}),
+      ...(ttftMs !== null ? { ttftMs } : {}),
+      ...(generationMs !== null && generationMs > 0 ? { generationMs } : {}),
     };
   }
 
   /**
-   * Running-average speed over the generation so far: the same formula as the
-   * settled value, with `now` standing in for the call's end.
+   * Running-average speed over the call so far: the same formula as the settled
+   * value with `now` standing in for the call's end, so the window starts at
+   * the request and includes whatever TTFT has been spent.
    */
   private runningTps(now: number): number | null {
-    if (this.firstDeltaAt === null) return null;
-    const elapsed = now - this.firstDeltaAt;
-    if (elapsed < LIVE_TPS_DEBOUNCE_MS) return null;
     return tokensPerSecond(
       estimateDecodeTokens(this.meter.totalChars, this.meter.cjkChars),
-      elapsed,
+      rateWindow(now - this.startedAt),
     );
   }
 
@@ -412,8 +418,8 @@ function isToolPart(part: ChatMessagePart): boolean {
  *
  * `rawInput` is only present while the arguments are streaming, so a part that
  * reached `input-available` without it never contributed characters to the
- * meter. Its arrival still counts as the first output (for TTFT), because pi's
- * format would otherwise show nothing at all for that call.
+ * meter — and left no delta to read the clock from. Its arrival still counts as
+ * the first output, so such a call gets a TTFT like any other.
  */
 function isCompleteToolInput(part: ChatMessagePart): boolean {
   if (!isToolPart(part)) return false;

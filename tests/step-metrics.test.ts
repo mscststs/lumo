@@ -89,27 +89,36 @@ describe('formatting', () => {
 });
 
 describe('stepThroughput', () => {
-  it('derives output speed from exact tokens and the decode window', () => {
-    expect(stepThroughput({ outputTokens: 200, decodeMs: 4000 })).toBe(50);
+  it('divides the exact output tokens by the whole call', () => {
+    expect(stepThroughput({ outputTokens: 200, generationMs: 4000 })).toBe(50);
   });
 
-  it('is unavailable without a decode window or output tokens', () => {
-    expect(stepThroughput({ outputTokens: 200, decodeMs: 0 })).toBeNull();
-    expect(stepThroughput({ outputTokens: 0, decodeMs: 1000 })).toBeNull();
+  it('is unavailable without a generation window or output tokens', () => {
+    expect(stepThroughput({ outputTokens: 200, generationMs: 0 })).toBeNull();
+    expect(stepThroughput({ outputTokens: 0, generationMs: 1000 })).toBeNull();
     expect(stepThroughput({ outputTokens: 10 })).toBeNull();
   });
 
-  it('does not floor the decode window, exactly like pi', () => {
+  it('does not floor the window', () => {
     // A single burst is debounced away, not rescaled.
-    expect(stepThroughput({ outputTokens: 40, decodeMs: 200 })).toBeNull();
+    expect(stepThroughput({ outputTokens: 40, generationMs: 200 })).toBeNull();
     // Past the debounce the real window is used, however short it is.
-    expect(stepThroughput({ outputTokens: 40, decodeMs: 250 })).toBe(160);
-    expect(stepThroughput({ outputTokens: 321, decodeMs: 427 })).toBeCloseTo(
+    expect(stepThroughput({ outputTokens: 40, generationMs: 250 })).toBe(160);
+    expect(stepThroughput({ outputTokens: 321, generationMs: 427 })).toBeCloseTo(
       751.76,
       2,
     );
-    expect(stepThroughput({ outputTokens: 40, decodeMs: 1_000 })).toBe(40);
-    expect(stepThroughput({ outputTokens: 40, decodeMs: 2_000 })).toBe(20);
+    expect(stepThroughput({ outputTokens: 40, generationMs: 1_000 })).toBe(40);
+    expect(stepThroughput({ outputTokens: 40, generationMs: 2_000 })).toBe(20);
+  });
+
+  it('averages a buffered burst over the wait that preceded it', () => {
+    // 5000 tokens handed over in one chunk after a 3s wait is not 20000 T/s:
+    // the denominator is the whole call, so it reads ~1538 T/s.
+    expect(stepThroughput({ outputTokens: 5000, generationMs: 3_250 })).toBeCloseTo(
+      1538.46,
+      2,
+    );
   });
 });
 
@@ -157,7 +166,7 @@ describe('StepTimingRecorder', () => {
 
     expect(r.events).toEqual([{ step: 0, ttftMs: 120, tps: null }]);
 
-    r.advance(130); // 130ms of decode: still under the 250ms debounce
+    r.advance(100); // 220ms from the request: still under the 250ms debounce
     r.instance.observe([text('abcd')]);
     expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 120, tps: null });
   });
@@ -168,45 +177,53 @@ describe('StepTimingRecorder', () => {
     r.instance.observe([text('a')]); // first output at 100ms
     expect(r.events).toHaveLength(1);
 
-    // 130ms after the first output: the debounce window is still open, so the
+    // 230ms from the request start: the debounce window is still open, so the
     // sample reports no speed.
     r.advance(130);
     r.instance.observe([text('abcdefg')]);
 
-    // 400ms of decode: 8 chars → 2 tokens → 2 / 0.4s = 5 T/s.
+    // 500ms from the request start: 8 chars → 2 tokens → 2 / 0.5s = 4 T/s.
     r.advance(270);
     r.instance.observe([text('abcdefgh')]);
-    expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 100, tps: 5 });
+    expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 100, tps: 4 });
   });
 
-  it('counts the whole output, including the burst that arrives at TTFT', () => {
+  it('charges the wait before the burst to the live average', () => {
     const r = recorder();
     r.advance(400);
-    // A reasoning model that flushes 400 CJK tokens in its opening chunk: the
-    // numerator is the whole generation, exactly as pi counts it.
+    // A provider that holds the stream for 400ms and then flushes 400 CJK
+    // tokens in its opening chunk: the numerator is the whole generation, and
+    // the denominator is the whole call — the wait is charged, not skipped.
     r.instance.observe([text('思'.repeat(400))]);
+    // The very first sample is already honest: 400 tokens over the 400ms that
+    // preceded them, not over the duration of the chunk.
+    expect(r.events[0]).toEqual({ step: 0, ttftMs: 400, tps: 400 / 0.4 });
     r.advance(300);
-    r.instance.observe([text('思'.repeat(404))]); // 404 tokens / 0.3s
+    r.instance.observe([text('思'.repeat(404))]); // 404 tokens / 0.7s
 
-    expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 400, tps: 404 / 0.3 });
+    expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 400, tps: 404 / 0.7 });
 
     const timing = r.instance.finish(410);
-    expect(timing).toEqual({ ttftMs: 400, decodeMs: 300 });
-    expect(r.events.at(-1)!.tps).toBeCloseTo(410 / 0.3, 5);
+    expect(timing).toEqual({ ttftMs: 400, generationMs: 700 });
+    expect(r.events.at(-1)!.tps).toBeCloseTo(410 / 0.7, 5);
   });
 
-  it('gives a whole tool call a TTFT but no rate', () => {
+  it('rates a whole tool call once its end is known', () => {
     const r = recorder();
     r.advance(80);
-    // `input-available` without `rawInput`: the arguments arrived in one chunk,
-    // so there is no decode sample to divide by — pi's `addDelta` never fires
-    // either. The arrival is still the first output, so TTFT exists.
+    // `input-available` without `rawInput`: the arguments arrived in one chunk.
+    // The arrival is still the first output, so TTFT exists — but it adds no
+    // characters to the meter, so the live average has no numerator.
     r.instance.observe([tool()]);
     expect(r.events).toEqual([{ step: 0, ttftMs: 80, tps: null }]);
 
     r.advance(300);
-    expect(r.instance.finish(40)).toEqual({ ttftMs: 80 });
-    expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 80, tps: null });
+    r.instance.markModelCallEnd();
+
+    // How the output arrived is not part of the arithmetic: 40 tokens over the
+    // whole 380ms call.
+    expect(r.instance.finish(40)).toEqual({ ttftMs: 80, generationMs: 380 });
+    expect(r.events.at(-1)!.tps).toBeCloseTo(40 / 0.38, 5);
   });
 
   it('ends the window at the model call, never at the tool run', () => {
@@ -224,8 +241,12 @@ describe('StepTimingRecorder', () => {
       { ...tool(), state: 'output-available' } as ChatMessagePart,
     ]);
 
-    expect(r.instance.finish(100)).toEqual({ ttftMs: 100, decodeMs: 300 });
-    expect(r.events.at(-1)!.tps).toBeCloseTo(100 / 0.3, 5);
+    expect(r.instance.finish(100)).toEqual({
+      ttftMs: 100,
+      generationMs: 400,
+    });
+    // 100 tokens over the whole 400ms call, TTFT included.
+    expect(r.events.at(-1)!.tps).toBeCloseTo(250, 5);
   });
 
   it('reports a speed for a tool call that streamed past the debounce', () => {
@@ -237,18 +258,18 @@ describe('StepTimingRecorder', () => {
     r.instance.markModelCallEnd();
 
     expect(r.events[0]).toEqual({ step: 0, ttftMs: 50, tps: null });
-    // 4 estimated tokens over 400ms of decode.
-    expect(r.events.at(-1)!.tps).toBeCloseTo(10, 5);
+    // 4 estimated tokens over the 450ms since the request went out.
+    expect(r.events.at(-1)!.tps).toBeCloseTo(4 / 0.45, 5);
 
     const timing = r.instance.finish(40);
 
     // The provider's exact count (which includes the tool arguments) over the
-    // same window: this is the number pi keeps on the footer.
-    expect(timing).toEqual({ ttftMs: 50, decodeMs: 400 });
-    expect(r.events.at(-1)!.tps).toBeCloseTo(100, 5);
+    // same window.
+    expect(timing).toEqual({ ttftMs: 50, generationMs: 450 });
+    expect(r.events.at(-1)!.tps).toBeCloseTo(40 / 0.45, 5);
   });
 
-  it('suppresses the final rate below the debounce, exactly like pi', () => {
+  it('suppresses the final rate below the debounce', () => {
     const r = recorder();
     r.advance(10);
     r.instance.observe([tool('{"a":1}')]);
@@ -257,24 +278,25 @@ describe('StepTimingRecorder', () => {
 
     const timing = r.instance.finish(40);
 
-    // The window is a single burst, not a rate — the ledger must show nothing
-    // rather than 40 tokens / 20ms = 2000 T/s.
-    expect(timing).toEqual({ ttftMs: 10, decodeMs: 20 });
-    expect(stepThroughput({ outputTokens: 40, decodeMs: 20 })).toBeNull();
+    // The whole call is a single burst, not a rate — the ledger must show
+    // nothing rather than 40 tokens / 30ms = 1333 T/s.
+    expect(timing).toEqual({ ttftMs: 10, generationMs: 30 });
+    expect(stepThroughput({ outputTokens: 40, generationMs: 30 })).toBeNull();
     expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 10, tps: null });
   });
 
-  it('has no window when the call ends with the first delta', () => {
+  it('records a sub-debounce window without inventing a rate', () => {
     const r = recorder();
     r.advance(50);
     r.instance.observe([text('all at once')]);
 
-    // The window is first delta → call end; here both are the same instant.
-    expect(r.instance.finish(50)).toEqual({ ttftMs: 50 });
+    // The window is request start → call end; here both are the same instant,
+    // so the whole call is one burst.
+    expect(r.instance.finish(50)).toEqual({ ttftMs: 50, generationMs: 50 });
     expect(r.events.at(-1)).toEqual({ step: 0, ttftMs: 50, tps: null });
   });
 
-  it('divides the exact output tokens by the first delta → end window', () => {
+  it('records the window from the request start, not the first delta', () => {
     const r = recorder();
     r.advance(120);
     r.instance.observe([text('hello')]);
@@ -283,10 +305,12 @@ describe('StepTimingRecorder', () => {
 
     const timing = r.instance.finish(20);
 
-    // TTFT = first delta; decode = first delta → call end (1000ms);
-    // 20 exact tokens / 1s.
-    expect(timing).toEqual({ ttftMs: 120, decodeMs: 1_000 });
-    expect(r.events.at(-1)!.tps).toBeCloseTo(20, 5);
+    // TTFT = 120ms, streaming = 1000ms; the window is the full 1120ms.
+    expect(timing).toEqual({
+      ttftMs: 120,
+      generationMs: 1_120,
+    });
+    expect(r.events.at(-1)!.tps).toBeCloseTo(20 / 1.12, 5);
   });
 
   it('falls back to the character estimate when the provider omits usage', () => {
@@ -298,9 +322,9 @@ describe('StepTimingRecorder', () => {
 
     const timing = r.instance.finish(0);
 
-    // 4 estimated tokens over 400ms of decode.
-    expect(timing).toEqual({ ttftMs: 40, decodeMs: 400 });
-    expect(r.events.at(-1)!.tps).toBeCloseTo(10, 5);
+    // 4 estimated tokens over the 440ms since the request went out.
+    expect(timing).toEqual({ ttftMs: 40, generationMs: 440 });
+    expect(r.events.at(-1)!.tps).toBeCloseTo(4 / 0.44, 5);
   });
 });
 

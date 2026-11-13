@@ -94,17 +94,25 @@ describe('UsagePanel', () => {
 
   it('renders TTFT and output speed on each step row', () => {
     const usage = usageWithSteps(2);
-    usage.steps![0] = { ...usage.steps![0]!, ttftMs: 1200, decodeMs: 2000 };
-    usage.steps![1] = { ...usage.steps![1]!, ttftMs: 850, decodeMs: 4000 };
+    usage.steps![0] = {
+      ...usage.steps![0]!,
+      ttftMs: 1200,
+      generationMs: 3200,
+    };
+    usage.steps![1] = {
+      ...usage.steps![1]!,
+      ttftMs: 850,
+      generationMs: 4850,
+    };
     render(<UsagePanel usage={usage} />);
 
     const ledger = screen.getByTestId('token-usage-steps');
-    // Step 0: 90 tokens over 2s = 45 T/s.
+    // Step 0: 90 tokens over the whole 3.2s call = 28.1 T/s.
     expect(ledger.textContent).toContain('1.2s');
-    expect(ledger.textContent).toContain('45.0 T/s');
-    // Step 1: 91 tokens over 4s = 22.75 → 22.8 T/s.
+    expect(ledger.textContent).toContain('28.1 T/s');
+    // Step 1: 91 tokens over the whole 4.85s call = 18.76 → 18.8 T/s.
     expect(ledger.textContent).toContain('850ms');
-    expect(ledger.textContent).toContain('22.8 T/s');
+    expect(ledger.textContent).toContain('18.8 T/s');
 
     // The timings share the token row and the row refuses to wrap; the panel
     // widens instead, which is what keeps them from dropping to a second line.
@@ -116,7 +124,11 @@ describe('UsagePanel', () => {
 
   it('hides each metric independently, leaving the token ledger', () => {
     const usage = usageWithSteps(2);
-    usage.steps![0] = { ...usage.steps![0]!, ttftMs: 1200, decodeMs: 2000 };
+    usage.steps![0] = {
+      ...usage.steps![0]!,
+      ttftMs: 1200,
+      generationMs: 3200,
+    };
 
     const { unmount } = render(
       <UsagePanel usage={usage} showTtft={false} showThroughput={false} />,
@@ -130,7 +142,7 @@ describe('UsagePanel', () => {
     render(<UsagePanel usage={usage} showTtft={false} />);
     ledger = screen.getByTestId('token-usage-steps');
     expect(ledger.textContent).not.toContain('1.2s');
-    expect(ledger.textContent).toContain('45.0 T/s');
+    expect(ledger.textContent).toContain('28.1 T/s');
   });
 
   it('omits timings on legacy steps that carry none', () => {
