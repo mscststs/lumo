@@ -74,6 +74,7 @@ import {
 } from '@/lib/turn-notification';
 import { normalizeLanguage } from '@/i18n/locales';
 import { DEFAULT_BUSY_SEND, normalizeBusySend } from '@/lib/busy-send';
+import { DEFAULT_CHAT_SCROLL_MODE, normalizeChatScrollMode } from '@/lib/chat-scroll';
 import {
   DEFAULT_MESSAGE_TOOLBAR,
   normalizeMessageToolbar,
@@ -205,6 +206,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   maxSplitPanels: 1,
   sendKey: 'enter',
   busySend: DEFAULT_BUSY_SEND,
+  chatScrollMode: DEFAULT_CHAT_SCROLL_MODE,
   pasteThreshold: DEFAULT_PASTE_THRESHOLD,
   maxSteps: DEFAULT_MAX_STEPS,
   autoCollapseReasoning: true,
@@ -251,6 +253,10 @@ export const STORAGE_FIELDS: { [K in StorageKey]: StorageFieldDef<K> } = {
       // A config written before this setting existed must land on the
       // non-destructive mode, not on one that discards a half-written reply.
       busySend: normalizeBusySend(raw.busySend),
+      // A config written before this setting existed must keep following the
+      // output (the behaviour every existing install already has), never adopt
+      // the anchored transcript silently.
+      chatScrollMode: normalizeChatScrollMode(raw.chatScrollMode),
       // A config written before this setting existed, or one carrying a value a
       // hand-edited export made non-numeric, must land on the default rather
       // than on `0` — which would read as "never attach a paste".

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useStickToBottom } from 'use-stick-to-bottom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ChevronDown } from 'lucide-react';
@@ -23,6 +22,13 @@ export function Conversation({ className, children, ...props }: ConversationProp
 interface ConversationContentProps extends React.HTMLAttributes<HTMLDivElement> {
   scrollRef?: React.Ref<HTMLElement | null>;
   contentRef?: React.Ref<HTMLElement | null>;
+  /**
+   * Optional trailing filler, rendered inside the scroll viewport but *outside*
+   * the content element. It reserves scroll room without participating in the
+   * content's own height — which is what lets a controller resize it from a
+   * `ResizeObserver` callback without re-triggering that observer.
+   */
+  spacerRef?: React.Ref<HTMLDivElement | null>;
 }
 
 export function ConversationContent({
@@ -30,6 +36,7 @@ export function ConversationContent({
   children,
   scrollRef,
   contentRef,
+  spacerRef,
   ...props
 }: ConversationContentProps) {
   return (
@@ -44,6 +51,7 @@ export function ConversationContent({
       <div ref={contentRef as React.Ref<HTMLDivElement>} className="flex flex-col gap-4 px-3 py-3">
         {children}
       </div>
+      {spacerRef && <div ref={spacerRef} aria-hidden />}
     </div>
   );
 }
@@ -88,8 +96,7 @@ export function ConversationScrollButton({
 }
 
 // ─── useConversationScroll hook ─────────────────────────────────────────────
-
-export function useConversationScroll() {
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
-  return { scrollRef, contentRef, isAtBottom, scrollToBottom };
-}
+//
+// Moved to `components/chat/useChatScroll.ts`: the transcript now picks between
+// a bottom-following controller and an anchored one, so this scaffold only owns
+// the markup.

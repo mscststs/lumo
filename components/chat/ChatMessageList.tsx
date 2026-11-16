@@ -1,15 +1,20 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Conversation as ConversationContainer,
   ConversationContent,
   ConversationScrollButton,
-  useConversationScroll,
 } from '@/components/ai-elements/conversation';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { CompactionDivider } from '@/components/chat/CompactionDivider';
 import { ChatError } from '@/components/chat/ChatError';
+import {
+  useAnchorChatScroll,
+  useAutoChatScroll,
+  type ChatScrollApi,
+} from '@/components/chat/useChatScroll';
+import { useChatScrollMode } from '@/components/chat/useChatScrollMode';
 import { MAX_RETRIES } from '@/lib/retry-policy';
 import { useMessageDisplaySettings } from '@/components/chat/useMessageDisplaySettings';
 import type { ChatErrorInfo } from '@/lib/provider-error';
@@ -35,7 +40,36 @@ interface ChatMessageListProps {
   onSwitchVariant?: (variantIndex: number) => void;
 }
 
-export function ChatMessageList({
+/**
+ * The two scroll modes are two different *components*, not a flag inside one.
+ *
+ * Their scroll controllers own different hooks (`use-stick-to-bottom` vs. the
+ * anchored controller), and calling both from one component would mount both
+ * controllers at once — the bottom-follower would fight the anchor. Splitting
+ * them keeps each mode's hook order intact; switching the mode in
+ * Personalization therefore remounts the transcript, which is the right thing
+ * to do anyway (the scroll position of one mode is meaningless in the other).
+ */
+export function ChatMessageList(props: ChatMessageListProps) {
+  const mode = useChatScrollMode();
+  return mode === 'anchor' ? <AnchorChatMessageList {...props} /> : <AutoChatMessageList {...props} />;
+}
+
+function AutoChatMessageList(props: ChatMessageListProps) {
+  const scroll = useAutoChatScroll();
+  return <ChatMessageListBody {...props} scroll={scroll} />;
+}
+
+function AnchorChatMessageList(props: ChatMessageListProps) {
+  const scroll = useAnchorChatScroll();
+  return <ChatMessageListBody {...props} scroll={scroll} />;
+}
+
+interface ChatMessageListBodyProps extends ChatMessageListProps {
+  scroll: ChatScrollApi;
+}
+
+function ChatMessageListBody({
   currentConversation,
   isStreaming,
   isCompacting = false,
@@ -49,9 +83,10 @@ export function ChatMessageList({
   onDeleteMessage,
   onRegenerateMessage,
   onSwitchVariant,
-}: ChatMessageListProps) {
+  scroll,
+}: ChatMessageListBodyProps) {
   const { t } = useTranslation();
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useConversationScroll();
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = scroll;
 
   const { toolbar, autoCollapseReasoning, showTtft, showThroughput } =
     useMessageDisplaySettings();
@@ -67,17 +102,16 @@ export function ChatMessageList({
   const compactionAnchorId =
     compaction?.triggeredAtMessageId ?? compaction?.firstKeptMessageId;
 
-  // ─── Auto-scroll to bottom when the user sends a new message ────────────
-  // When the user is scrolled up reviewing history and then sends a message,
+  // ─── Follow the newest content when the user sends ──────────────────────
+  // When the reader is scrolled up reviewing history and then sends a message,
   // `use-stick-to-bottom` correctly does NOT auto-follow (it respects the
-  // scroll position). But the user expectation after sending is to see their
-  // new message and the incoming reply, so we force-scroll on:
-  //   1. A new user message appearing (last message switches to role 'user')
-  //   2. Streaming starts (isStreaming flips true → assistant turn begins)
+  // scroll position). But the expectation after sending is to see the new
+  // message and the incoming reply, so both modes react here:
+  //   auto   → scroll to the bottom
+  //   anchor → hold the question at the top of the viewport
   const prevMessageCountRef = useRef(persisted.length);
-  const prevIsStreamingRef = useRef(isStreaming);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const prevCount = prevMessageCountRef.current;
     prevMessageCountRef.current = persisted.length;
 
@@ -85,20 +119,23 @@ export function ChatMessageList({
     if (persisted.length > prevCount) {
       const lastMsg = persisted[persisted.length - 1];
       if (lastMsg?.role === 'user') {
-        scrollToBottom();
+        scroll.onUserMessageSent(lastMsg.id);
       }
     }
-  }, [persisted.length, scrollToBottom]);
+  }, [persisted.length, scroll]);
 
-  useEffect(() => {
+  const prevIsStreamingRef = useRef(isStreaming);
+
+  useLayoutEffect(() => {
     const wasStreaming = prevIsStreamingRef.current;
     prevIsStreamingRef.current = isStreaming;
 
-    // Streaming just started — scroll so the user sees the thinking indicator
+    // Streaming just started — the reply begins, not every render of it.
     if (isStreaming && !wasStreaming) {
-      scrollToBottom();
+      scroll.onStreamStart();
     }
-  }, [isStreaming, scrollToBottom]);
+  }, [isStreaming, scroll]);
+
   // The streamed turn is persisted under the id it streamed under, so once the
   // conversation contains it the live copy must step aside — otherwise the reply
   // would briefly appear twice.
@@ -116,9 +153,48 @@ export function ChatMessageList({
   // both in one list makes the hand-off a plain in-place update.
   const rendered = pending ? [...persisted, pending] : persisted;
 
+  // ─── Hold the question that is on screen ────────────────────────────────
+  // The newest question is the transcript's reading anchor. Deriving it from
+  // the rendered list (rather than from "a send happened") is what makes
+  // opening a saved conversation in `anchor` mode start at that question
+  // instead of at the bottom.
+  //
+  // Only two things hand the anchor over: a new question (reported by the send
+  // effect above) and a transcript being shown for the first time / after a
+  // conversation switch. Edits to older history — a delete, a variant swap —
+  // must not yank the reader somewhere else.
+  const anchorMessageId = useMemo(() => {
+    for (let i = rendered.length - 1; i >= 0; i -= 1) {
+      const candidate = rendered[i];
+      if (candidate?.role === 'user') return candidate.id;
+    }
+    return null;
+  }, [rendered]);
+
+  const shownConversationId = currentConversation?.id ?? '';
+  const shownConversationRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (shownConversationRef.current === shownConversationId) return;
+    shownConversationRef.current = shownConversationId;
+    // `null` when the conversation has no question yet: the anchored mode uses
+    // it to release the room a previous question reserved.
+    scroll.onTranscriptShown(anchorMessageId);
+  }, [shownConversationId, anchorMessageId, scroll]);
+
   return (
     <ConversationContainer className="flex-1">
-      <ConversationContent scrollRef={scrollRef} contentRef={contentRef}>
+      <ConversationContent
+        scrollRef={scrollRef}
+        contentRef={contentRef}
+        // The anchored controller owns the offset; a silent browser correction
+        // would look exactly like a reader's gesture to it.
+        className={scroll.disableScrollAnchoring ? '[overflow-anchor:none]' : undefined}
+        // Reserved room so a question can be pinned to the top of the viewport
+        // before its reply has grown tall enough to allow it. Only the anchored
+        // mode asks for it; it must stay outside the measured content element.
+        spacerRef={scroll.spacerRef ?? undefined}
+      >
         {!hasModels && (
           <div className="text-center text-muted-foreground text-sm py-8">
             {t('sidebar.noModels')}
@@ -126,20 +202,25 @@ export function ChatMessageList({
         )}
         {rendered.map((msg, idx) => (
           <Fragment key={msg.id}>
-            <MessageBubble
-              message={msg}
-              isStreaming={isStreaming && msg.id === pending?.id}
-              onDelete={onDeleteMessage}
-              onRegenerate={onRegenerateMessage}
-              onSwitchVariant={onSwitchVariant}
-              isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
-              deleteCount={rendered.length - idx}
-              toolbar={toolbar}
-              autoCollapseReasoning={autoCollapseReasoning}
-              showTtft={showTtft}
-              showThroughput={showThroughput}
-              liveMetrics={isStreaming && msg.id === pending?.id ? liveMetrics : null}
-            />
+            {/* A layout-only wrapper: `MessageBubble` animates itself in with a
+                transform, and a transformed box reports a rect that moves. The
+                anchor has to be measured on a box the animation cannot shift. */}
+            <div data-message-id={msg.id}>
+              <MessageBubble
+                message={msg}
+                isStreaming={isStreaming && msg.id === pending?.id}
+                onDelete={onDeleteMessage}
+                onRegenerate={onRegenerateMessage}
+                onSwitchVariant={onSwitchVariant}
+                isLastAssistant={msg.role === 'assistant' && idx === rendered.length - 1}
+                deleteCount={rendered.length - idx}
+                toolbar={toolbar}
+                autoCollapseReasoning={autoCollapseReasoning}
+                showTtft={showTtft}
+                showThroughput={showThroughput}
+                liveMetrics={isStreaming && msg.id === pending?.id ? liveMetrics : null}
+              />
+            </div>
             {compaction && compactionAnchorId === msg.id && (
               <CompactionDivider compaction={compaction} />
             )}

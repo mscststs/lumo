@@ -18,6 +18,12 @@ import {
   type BusySendBehavior,
 } from '@/lib/busy-send';
 import { DEFAULT_MESSAGE_TOOLBAR, normalizeMessageToolbar } from '@/lib/message-toolbar';
+import {
+  CHAT_SCROLL_MODES,
+  DEFAULT_CHAT_SCROLL_MODE,
+  normalizeChatScrollMode,
+  type ChatScrollMode,
+} from '@/lib/chat-scroll';
 import { cn, isMacPlatform } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
@@ -86,6 +92,7 @@ export function UISettingsPage() {
   const [maxSplitPanels, setMaxSplitPanels] = useState<UISettings['maxSplitPanels']>(1);
   const [sendKey, setSendKey] = useState<UISettings['sendKey']>('enter');
   const [busySend, setBusySend] = useState<BusySendBehavior>(DEFAULT_BUSY_SEND);
+  const [chatScrollMode, setChatScrollMode] = useState<ChatScrollMode>(DEFAULT_CHAT_SCROLL_MODE);
   const [pasteThreshold, setPasteThreshold] = useState(DEFAULT_PASTE_THRESHOLD);
   const [autoCollapseReasoning, setAutoCollapseReasoning] = useState(true);
   const [ttftVisibility, setTtftVisibility] = useState<MetricVisibility>('streaming');
@@ -102,6 +109,7 @@ export function UISettingsPage() {
       setMaxSplitPanels(settings.maxSplitPanels ?? 1);
       setSendKey(settings.sendKey ?? 'enter');
       setBusySend(settings.busySend ?? DEFAULT_BUSY_SEND);
+      setChatScrollMode(normalizeChatScrollMode(settings.chatScrollMode));
       setPasteThreshold(settings.pasteThreshold);
       setAutoCollapseReasoning(settings.autoCollapseReasoning);
       setTtftVisibility(settings.ttftVisibility ?? 'streaming');
@@ -147,6 +155,13 @@ export function UISettingsPage() {
     setBusySend(behavior);
     const settings = await storage.getUISettings();
     await storage.setUISettings({ ...settings, busySend: behavior });
+  };
+
+  const handleChatScrollModeChange = async (val: string) => {
+    const mode = normalizeChatScrollMode(val);
+    setChatScrollMode(mode);
+    const settings = await storage.getUISettings();
+    await storage.setUISettings({ ...settings, chatScrollMode: mode });
   };
 
   const handlePasteThresholdChange = async (threshold: number) => {
@@ -273,6 +288,24 @@ export function UISettingsPage() {
                 {BUSY_SEND_BEHAVIORS.map((behavior) => (
                   <SelectItem key={behavior} value={behavior}>
                     {t(`options.ui.busySend_${behavior}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow
+            label={t('options.ui.chatScrollMode')}
+            description={t('options.ui.chatScrollModeDesc')}
+          >
+            <Select value={chatScrollMode} onValueChange={handleChatScrollModeChange}>
+              <SelectTrigger className="w-52" aria-label={t('options.ui.chatScrollMode')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHAT_SCROLL_MODES.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {t(`options.ui.chatScrollMode${mode === 'auto' ? 'Auto' : 'Anchor'}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
