@@ -32,6 +32,9 @@ interface LanguagePickerProps {
  * viewport and has no way to search. This keeps the same trigger geometry as
  * every other setting (so it reads as one system) but opens a searchable list —
  * the pattern Chrome, VS Code and macOS all use once a language list gets long.
+ * The trigger shares the column's one width (`w-40`), and a long native name
+ * truncates rather than widening the row: the full name is one click away, and a
+ * control that is wider than its neighbours is the thing users notice first.
  *
  * The list is ordered by native name in the *active* language's collation, with
  * the current language and English pinned: users looking for their own language
@@ -118,7 +121,7 @@ export function LanguagePicker({ value, onChange, className }: LanguagePickerPro
         onClick={() => setOpen(true)}
         aria-label={t('options.ui.language')}
         className={cn(
-          'h-10 w-56 justify-between gap-2 px-3 font-normal',
+          'h-10 w-40 justify-between gap-2 px-3 font-normal',
           className
         )}
       >

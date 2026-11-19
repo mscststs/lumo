@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CornerDownLeft } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -24,10 +23,10 @@ import {
   normalizeChatScrollMode,
   type ChatScrollMode,
 } from '@/lib/chat-scroll';
-import { cn, isMacPlatform } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { storage } from '@/store/storage';
 import { PasteThresholdField } from './components/PasteThresholdField';
+import { SendKeyBadge } from './components/SendKeyBadge';
 import { LanguagePicker } from '@/components/ui/language-picker';
 import { SettingRow } from './components/SettingRow';
 import { SettingsGroup } from './components/SettingsGroup';
@@ -43,46 +42,6 @@ import type {
   MetricVisibility,
 } from '@/types';
 import { applyLanguage } from '@/i18n';
-
-function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <kbd
-      className={cn(
-        'inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-border bg-muted px-1 font-mono text-[0.6875rem] leading-none text-foreground',
-        className,
-      )}
-    >
-      {children}
-    </kbd>
-  );
-}
-
-function SendKeyBadge({ value }: { value: SendKey }) {
-  const mac = isMacPlatform();
-  const enterKey = (
-    <Kbd>
-      <CornerDownLeft className="h-3 w-3" />
-    </Kbd>
-  );
-  if (value === 'enter') {
-    return <span className="flex items-center gap-1">{enterKey}</span>;
-  }
-  // "Meta" is a loose shorthand: any modifier key triggers send.
-  // Show the platform-appropriate modifiers: ⌘/⌥/⇧ on macOS, Ctrl/Alt/⇧ elsewhere.
-  const modifiers = mac ? ['⌘', '⌥', '⇧'] : ['Ctrl', 'Alt', '⇧'];
-  return (
-    <span className="flex items-center gap-1">
-      {modifiers.map((m, i) => (
-        <span key={m} className="flex items-center gap-1">
-          {i > 0 && <span className="text-muted-foreground">/</span>}
-          <Kbd>{m}</Kbd>
-        </span>
-      ))}
-      <span className="text-muted-foreground">+</span>
-      {enterKey}
-    </span>
-  );
-}
 
 export function UISettingsPage() {
   const { t, i18n } = useTranslation();
@@ -262,7 +221,7 @@ export function UISettingsPage() {
 
           <SettingRow label={t('options.ui.sendKey')} description={t('options.ui.sendKeyDesc')}>
             <Select value={sendKey} onValueChange={handleSendKeyChange}>
-              <SelectTrigger className="w-52" aria-label={t('options.ui.sendKey')}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.sendKey')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -281,7 +240,7 @@ export function UISettingsPage() {
             description={t('options.ui.busySendDesc')}
           >
             <Select value={busySend} onValueChange={handleBusySendChange}>
-              <SelectTrigger className="w-52" aria-label={t('options.ui.busySend')}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.busySend')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -299,7 +258,7 @@ export function UISettingsPage() {
             description={t('options.ui.chatScrollModeDesc')}
           >
             <Select value={chatScrollMode} onValueChange={handleChatScrollModeChange}>
-              <SelectTrigger className="w-52" aria-label={t('options.ui.chatScrollMode')}>
+              <SelectTrigger className="w-40" aria-label={t('options.ui.chatScrollMode')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
