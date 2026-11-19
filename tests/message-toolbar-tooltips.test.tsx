@@ -133,4 +133,19 @@ describe('message toolbar tooltips', () => {
     movePointer(trigger('sidebar.copy'), trigger('sidebar.delete'));
     await expectSoleTooltip('sidebar.delete');
   });
+
+  it('clamps the token ledger to the height Radix actually left on that side', async () => {
+    renderBubble();
+
+    fireEvent.pointerMove(trigger('sidebar.tokenUsage'));
+    const panel = await waitFor(() => screen.getByRole('tooltip'));
+
+    // The panel is written once for both surfaces, so it clamps to
+    // `--hint-available-height`; `Hint` has to map that to the tooltip's own
+    // namespaced variable, or the ledger grows off the top of the sidepanel.
+    expect(panel.className).toContain('max-h-[var(--hint-available-height)]');
+    expect(panel.style.getPropertyValue('--hint-available-height')).toBe(
+      'var(--radix-tooltip-content-available-height)',
+    );
+  });
 });

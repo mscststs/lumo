@@ -316,6 +316,19 @@
   }
 }
 
+/* The muted sibling of `reveal-on-hover`, for a secondary glyph rather than a
+   control — the withdraw icon on a queued message. It rests at partial opacity
+   where hover is absent (so a touch user can see the row is dismissible) and
+   stays out of the way on a fine pointer until the row is hovered or focused. */
+@utility reveal-faint-on-hover {
+  opacity: 0.6;
+  transition: opacity 150ms ease-out;
+
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
+  }
+}
+
 /* CodeMirror scroller inherits the unified scrollbar */
 .cm-scroller {
   @apply scrollbar-lumo;

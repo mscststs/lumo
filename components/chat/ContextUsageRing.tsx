@@ -1,10 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Hint } from '@/components/ui/hint';
 import type { ContextUsage } from '@/lib/context-usage';
 import { cn } from '@/lib/utils';
 import { ContextUsagePanel } from '@/components/chat/ContextUsagePanel';
@@ -28,9 +23,14 @@ interface ContextUsageRingProps {
  * A glanceable context-window gauge for the composer footer.
  *
  * The arc and its tone are the whole message at rest; the breakdown lives in a
- * hover tooltip, so the composer keeps its information density without a single
- * line of explanatory text. Color is the only escalation: muted under 70%,
- * warning past 70%, destructive past 90%.
+ * hover/tap panel, so the composer keeps its information density without a
+ * single line of explanatory text. Color is the only escalation: muted under
+ * 70%, warning past 70%, destructive past 90%.
+ *
+ * The panel goes through `Hint`: on a fine pointer it is the same 300ms
+ * tooltip as before, and on a touchscreen it is a popover the gauge opens by
+ * tap. Without that second path the ring was a button whose only behaviour —
+ * showing what the arc measures — needed a mouse.
  *
  * When no provider usage has anchored the number, the gauge draws only its
  * track: an empty ring. The arc has one meaning — measured progress — so it is
@@ -53,64 +53,64 @@ export function ContextUsageRing({ usage, pendingTokens = 0 }: ContextUsageRingP
         ? 'text-amber-500'
         : 'text-muted-foreground';
 
+  // One string names both the control and the panel it opens: the gauge is the
+  // entry point to its own breakdown, and an unmeasured ring says only what it
+  // is, not a percentage it does not have.
+  const label = estimated
+    ? t('sidebar.contextUsage')
+    : t('sidebar.contextUsageLabel', { percent: `${Math.round(usage.percent)}%` });
+
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'grid h-7 w-7 place-items-center rounded-lg transition-colors hover:bg-accent',
-              tone,
-            )}
-            aria-label={
-              estimated
-                ? t('sidebar.contextUsage')
-                : t('sidebar.contextUsageLabel', { percent: `${Math.round(usage.percent)}%` })
-            }
-          >
-            <span className="relative grid place-items-center">
-              <svg
-                width={SIZE}
-                height={SIZE}
-                viewBox={`0 0 ${SIZE} ${SIZE}`}
-                className="-rotate-90"
-                aria-hidden="true"
-              >
+    <Hint
+      side="top"
+      align="end"
+      sideOffset={6}
+      contentLabel={label}
+      panelClassName="rounded-lg px-3 py-2.5 shadow-md"
+      trigger={
+        <button
+          type="button"
+          className={cn(
+            'grid h-7 w-7 place-items-center rounded-lg transition-colors hover:bg-accent',
+            tone,
+          )}
+          aria-label={label}
+        >
+          <span className="relative grid place-items-center">
+            <svg
+              width={SIZE}
+              height={SIZE}
+              viewBox={`0 0 ${SIZE} ${SIZE}`}
+              className="-rotate-90"
+              aria-hidden="true"
+            >
+              <circle
+                cx={SIZE / 2}
+                cy={SIZE / 2}
+                r={RADIUS}
+                fill="none"
+                strokeWidth={STROKE}
+                className="stroke-muted-foreground/20"
+              />
+              {!estimated && (
                 <circle
                   cx={SIZE / 2}
                   cy={SIZE / 2}
                   r={RADIUS}
                   fill="none"
                   strokeWidth={STROKE}
-                  className="stroke-muted-foreground/20"
+                  strokeLinecap="round"
+                  strokeDasharray={CIRCUMFERENCE}
+                  strokeDashoffset={offset}
+                  className="stroke-current transition-[stroke-dashoffset] duration-200 ease-out"
                 />
-                {!estimated && (
-                  <circle
-                    cx={SIZE / 2}
-                    cy={SIZE / 2}
-                    r={RADIUS}
-                    fill="none"
-                    strokeWidth={STROKE}
-                    strokeLinecap="round"
-                    strokeDasharray={CIRCUMFERENCE}
-                    strokeDashoffset={offset}
-                    className="stroke-current transition-[stroke-dashoffset] duration-200 ease-out"
-                  />
-                )}
-              </svg>
-            </span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          align="end"
-          sideOffset={6}
-          className="rounded-lg px-3 py-2.5 shadow-md"
-        >
-          <ContextUsagePanel usage={usage} pendingTokens={pendingTokens} />
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+              )}
+            </svg>
+          </span>
+        </button>
+      }
+    >
+      <ContextUsagePanel usage={usage} pendingTokens={pendingTokens} />
+    </Hint>
   );
 }

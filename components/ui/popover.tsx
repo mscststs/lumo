@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
  */
 
 const Popover = PopoverPrimitive.Root;
+const PopoverTrigger = PopoverPrimitive.Trigger;
 const PopoverAnchor = PopoverPrimitive.Anchor;
 
 const PopoverContent = React.forwardRef<
@@ -64,4 +65,4 @@ const PopoverContent = React.forwardRef<
 ));
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
-export { Popover, PopoverAnchor, PopoverContent };
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent };

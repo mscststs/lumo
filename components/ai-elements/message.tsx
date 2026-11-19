@@ -109,6 +109,11 @@ export function MessageActions({ className, children, ...props }: MessageActions
     // the provider while the pointer is "in flight" — out of the row entirely.
     // A hoverable neighbour (the token panel) owns its own provider for exactly
     // that reason; see `TokenUsageTooltip`.
+    //
+    // This provider is for *labels* only. A control that reveals information
+    // rather than naming itself goes through `components/ui/hint`, which swaps
+    // the tooltip for a tap-openable popover on touch devices — a bare tooltip
+    // there is a button that does nothing on a phone.
     <TooltipProvider disableHoverableContent>
       <div
         className={cn(

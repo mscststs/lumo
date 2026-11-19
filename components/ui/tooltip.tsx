@@ -37,6 +37,18 @@ export function TooltipProvider(
   return <TooltipPrimitive.Provider delayDuration={DEFAULT_DELAY_MS} {...props} />;
 }
 
+/**
+ * The one-line floating surface, minus its motion layer.
+ *
+ * Split out because `Hint` renders the same chrome through two different
+ * Radix primitives: a tooltip on hover pointers and a popover on touch ones.
+ * Only the `data-state` vocabulary of their keyframes differs (`tooltip-panel`
+ * vs `popover-panel`), so the paint lives here and each surface adds its own
+ * motion class.
+ */
+export const tooltipSurfaceClass =
+  'z-50 rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm';
+
 export const Tooltip = TooltipPrimitive.Root;
 export const TooltipTrigger = TooltipPrimitive.Trigger;
 
@@ -50,10 +62,7 @@ export const TooltipContent = React.forwardRef<
       side={side}
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
-      className={cn(
-        'tooltip-panel z-50 rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm',
-        className,
-      )}
+      className={cn('tooltip-panel', tooltipSurfaceClass, className)}
       {...props}
     />
   </TooltipPrimitive.Portal>

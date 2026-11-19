@@ -481,7 +481,16 @@ export function SplitView() {
 
   // ─── Divider dragging ─────────────────────────────────────────────────────
 
-  const handleDividerMouseDown = useCallback((position: number, e: React.MouseEvent) => {
+  /**
+   * The divider is driven by pointer events, not mouse events.
+   *
+   * It used to listen for `mousedown` + document `mousemove`, which meant the
+   * two panels of a split view could not be resized on a touchscreen at all —
+   * the gesture simply did not exist. Pointer events unify mouse, touch and pen,
+   * and the divider carries `touch-action: none` so the browser does not claim
+   * the drag as a pan before the first move arrives.
+   */
+  const handleDividerPointerDown = useCallback((position: number, e: React.PointerEvent) => {
     e.preventDefault();
     // Cancel any active transition timer to ensure no transition during drag
     if (transitionTimerRef.current) {
@@ -497,7 +506,7 @@ export function SplitView() {
   useEffect(() => {
     if (draggingDivider === null) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       const avail = containerWidth - (visibleCount - 1) * DIVIDER_WIDTH;
       if (avail <= 0) return;
 
@@ -529,15 +538,20 @@ export function SplitView() {
       setRatios((prev) => ({ ...prev, [leftSlot]: newLeft, [rightSlot]: newRight }));
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setDraggingDivider(null);
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    // Listeners on `document`, not the divider: a touch pointer is implicitly
+    // captured by the element it started on, but its moves still bubble here, so
+    // a drag that leaves the 8px strip keeps tracking either way.
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', handlePointerUp);
+    document.addEventListener('pointercancel', handlePointerUp);
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [draggingDivider, containerWidth, visibleCount, visibleOrder]);
 
@@ -833,9 +847,13 @@ export function SplitView() {
               </div>
               {!isRightmost && (
                 <div
-                  className="h-full flex items-center justify-center shrink-0 group cursor-col-resize hover:bg-muted/60 active:bg-muted transition-colors"
+                  // The visible rail is 2px inside an 8px column, and the pseudo
+                  // element widens the *hit* area by 4px on each side without
+                  // touching the layout math (`DIVIDER_WIDTH` is part of every
+                  // panel's width). 8px is a mouse target, not a finger one.
+                  className="relative h-full flex items-center justify-center shrink-0 group cursor-col-resize touch-none hover:bg-muted/60 active:bg-muted transition-colors before:absolute before:inset-y-0 before:-inset-x-1 before:content-['']"
                   style={{ width: `${DIVIDER_WIDTH}px` }}
-                  onMouseDown={(e) => handleDividerMouseDown(position, e)}
+                  onPointerDown={(e) => handleDividerPointerDown(position, e)}
                 >
                   <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-foreground/30 group-active:bg-foreground/50 transition-colors" />
                 </div>

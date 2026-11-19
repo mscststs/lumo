@@ -793,7 +793,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                         <span className="sr-only">{t('sidebar.withdrawQueued')}</span>
                         <X
                           aria-hidden
-                          className="h-3 w-3 shrink-0 -me-0.5 opacity-0 group-hover:opacity-60 group-focus-visible:opacity-60 transition-opacity"
+                          className="h-3 w-3 shrink-0 -me-0.5 reveal-faint-on-hover group-hover:opacity-60 group-focus-visible:opacity-60"
                         />
                       </motion.button>
                     );

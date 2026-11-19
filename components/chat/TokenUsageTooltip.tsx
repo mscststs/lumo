@@ -7,12 +7,7 @@ import {
   formatTtft,
   stepThroughput,
 } from '@/lib/step-metrics';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Hint } from '@/components/ui/hint';
 import { Button } from '@/components/ui/button';
 import { messageToolbarTriggerClass } from '@/components/ai-elements/message';
 import { cn } from '@/lib/utils';
@@ -27,32 +22,38 @@ interface TokenUsageTooltipProps {
 }
 
 /**
- * A small dashboard-style button that shows token usage stats on hover.
- * Renders as an icon button inside MessageActions, with a rich tooltip
- * displaying the full breakdown.
+ * A small dashboard-style button that shows token usage stats.
  *
  * The trigger wears `messageToolbarTriggerClass` (the row's shared chrome) and
  * shares the row's 300ms delay, so this is a *rich* flavour of the same
- * tooltip, not a second system: only the content differs.
+ * disclosure, not a second system: only the content differs.
  *
- * It keeps a provider of its own, though. Radix's hoverable-content support
- * works with a pointer "grace area" that lets the pointer travel from trigger
- * to content without closing; while that area is active the provider sets
- * `isPointerInTransitRef`, and every trigger in that provider ignores movement
- * until the pointer leaves the hull. This panel is tall and wide, so its hull
- * covers the neighbouring buttons: sharing the row's provider made hovering
- * usage and then sliding to delete/time leave the panel open and swallow the
- * next label. A separate provider scopes the grace area to this panel; when a
- * label does open, Radix's `tooltip.open` event closes this one, so only one
- * tooltip is ever visible.
+ * It goes through `Hint`, which is what makes the panel reachable on a
+ * touchscreen at all. Radix's tooltip ignores touch pointers and closes on the
+ * click that follows a tap, so a hover-only trigger was a button that did
+ * nothing on the one device where the numbers are hardest to get to. On touch
+ * the same content opens as a popover by tapping the icon and stays open while
+ * the ledger is scrolled.
+ *
+ * `provider: 'own'` is kept for the hover path. Radix's hoverable-content
+ * support works with a pointer "grace area" that lets the pointer travel from
+ * trigger to content without closing; while that area is active the provider
+ * sets `isPointerInTransitRef`, and every trigger in that provider ignores
+ * movement until the pointer leaves the hull. This panel is tall and wide, so
+ * its hull covers the neighbouring buttons: sharing the row's provider made
+ * hovering usage and then sliding to delete/time leave the panel open and
+ * swallow the next label. A separate provider scopes the grace area to this
+ * panel; when a label does open, Radix's `tooltip.open` event closes this one,
+ * so only one tooltip is ever visible.
  *
  * The agent loop is uncapped by default (`lib/max-steps.ts`), so a browsing turn
  * routinely runs dozens — sometimes hundreds — of steps. Radix's popper only
  * shifts and flips its content, it never resizes it, so an unclamped step list
  * simply grows past the top of the sidepanel. The content therefore takes its
- * `max-height` from `--radix-tooltip-content-available-height` (the real space
- * left on the chosen side, after `collisionPadding`) and lets the step list —
- * not the summary — absorb the deficit as a scroll area.
+ * `max-height` from `--hint-available-height` (the real space left on the
+ * chosen side, after `collisionPadding`, resolved by `Hint` for whichever
+ * primitive is in use) and lets the step list — not the summary — absorb the
+ * deficit as a scroll area.
  *
  * Portalled to `body` so the fixed position cannot be captured by an animating
  * ancestor (`motion.div` sets a transform) and clipped by the message scroller.
@@ -63,30 +64,28 @@ export function TokenUsageTooltip({
   showThroughput = true,
 }: TokenUsageTooltipProps) {
   const { t } = useTranslation();
+  const label = t('sidebar.tokenUsage');
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(messageToolbarTriggerClass, 'w-6')}
-            aria-label={t('sidebar.tokenUsage')}
-          >
-            <Activity className="size-3" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          align="end"
-          sideOffset={6}
-          className="flex max-h-[var(--radix-tooltip-content-available-height)] flex-col overflow-hidden rounded-lg px-3 py-2.5 shadow-md"
+    <Hint
+      side="top"
+      align="end"
+      sideOffset={6}
+      contentLabel={label}
+      panelClassName="flex max-h-[var(--hint-available-height)] flex-col overflow-hidden rounded-lg px-3 py-2.5 shadow-md"
+      trigger={
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(messageToolbarTriggerClass, 'w-6')}
+          aria-label={label}
         >
-          <UsagePanel usage={usage} showTtft={showTtft} showThroughput={showThroughput} />
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+          <Activity className="size-3" />
+        </Button>
+      }
+    >
+      <UsagePanel usage={usage} showTtft={showTtft} showThroughput={showThroughput} />
+    </Hint>
   );
 }
 
