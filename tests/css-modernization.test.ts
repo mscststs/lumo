@@ -98,11 +98,19 @@ describe('size-aware layout', () => {
   });
 
   it('collapses the options navigation to an icon rail instead of overflowing', () => {
-    const app = readFileSync(join(ROOT, 'entrypoints/options/App.tsx'), 'utf8');
+    // The rail lives in its own module now so its hover labels can be tested
+    // without mounting every settings page behind the router.
+    const app = readFileSync(join(ROOT, 'entrypoints/options/OptionsNav.tsx'), 'utf8');
     expect(app).toContain('w-14 lg:w-56');
     // The icon rail hides the label, so the name has to survive elsewhere.
     expect(app).toMatch(/aria-label=\{label\}/);
     expect(app).toMatch(/aria-current=\{active \? 'page' : undefined\}/);
+    // ...and it comes back on hover, in place of the unstyled native tooltip
+    // that could not be shown on its own schedule.
+    expect(app).not.toMatch(/title=\{label\}/);
+    expect(app).toMatch(/<TooltipContent side="right"/);
+    // The query has to be the same 64rem breakpoint that hides the labels.
+    expect(app).toMatch(/NAV_RAIL_QUERY = '\(width < 64rem\)'/);
   });
 
   it('reserves the scrollbar gutter on the transcript', () => {
