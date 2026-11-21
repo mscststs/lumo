@@ -1,14 +1,18 @@
-name: Publish to Chrome Web Store
+name: Publish to Chrome Web Store and Microsoft Edge Add-ons
 
 # 只在「打 tag」时自动发布；普通 push 仍由 build.yml 负责构建产物。
 # 手动 dispatch 用于重试或只查状态，不会因为合并 PR 反复提交审核。
+#
+# 一个包、两个商店：同一份 chrome zip 先提交 Chrome Web Store，再提交
+# Microsoft Edge Add-ons。两个脚本都是幂等的，失败后可以直接重跑同一 tag：
+# Chrome 侧发现版本已在审核中会跳过上传，Edge 侧可用 skip_upload 只重新提交。
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       mode:
-        description: 'publish = upload + submit for review; upload = upload only; status = read-only'
+        description: 'publish = upload + submit for review; upload = upload only; status = read-only check (Edge has no read-only status API, so it only verifies the local package)'
         type: choice
         options: [publish, upload, status]
         default: publish
@@ -23,7 +27,7 @@ on:
 
 # 手动连点或 tag 连发时排队执行，避免并发上传同一个 item。
 concurrency:
-  group: cws-publish
+  group: store-publish
   cancel-in-progress: false
 
 permissions:
@@ -32,8 +36,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # 构建 + 上传 + 轮询的兜底上限，避免网络挂起把 job 拖到默认的 6 小时。
-    timeout-minutes: 20
+    # 构建 + 两个商店的上传/轮询的兜底上限，避免网络挂起把 job 拖到默认的 6 小时。
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
@@ -79,11 +83,13 @@ jobs:
           fi
 
       # 本地校验：tag == package.json == zip 内 manifest.json。
-      # 不调用商店 API，不会消耗发布次数。
+      # 不调用商店 API，不会消耗发布次数；两个商店用同一份校验逻辑（各自脚本的 check 模式）。
       - name: Verify package version
         env:
           VALUE: ${{ steps.version.outputs.value }}
-        run: node scripts/release/cws-publish.mjs --mode check --expected-version "$VALUE"
+        run: |
+          node scripts/release/cws-publish.mjs --mode check --expected-version "$VALUE"
+          node scripts/release/edge-publish.mjs --mode check --expected-version "$VALUE"
 
       # 换 token、上传、轮询处理状态、提交审核、回读状态都在脚本里完成。
       # token 只存在于该进程内，不会被写到日志或 output。
@@ -105,12 +111,40 @@ jobs:
           fi
           node scripts/release/cws-publish.mjs "${args[@]}"
 
+      # Edge 用 v1.1 API key 认证（Authorization: ApiKey + X-ClientID），没有只读状态接口，
+      # 所以 dispatch 的 status 模式在这里降级为本地包校验，不碰任何 API。
+      # EDGE_PRODUCT_ID 是 Partner Center 的产品 GUID，不是商店里 32 位的扩展 ID；
+      # 没配 EDGE_PRODUCT_ID 时回退读 EDGE_CRX_ID，两者都不合规脚本会直接报错退出。
+      - name: Publish to Microsoft Edge Add-ons
+        env:
+          REQUESTED_MODE: ${{ github.event_name == 'push' && 'publish' || inputs.mode }}
+          VALUE: ${{ steps.version.outputs.value }}
+          SKIP_UPLOAD: ${{ inputs.skip_upload }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID || secrets.EDGE_CRX_ID }}
+        shell: bash
+        run: |
+          mode="$REQUESTED_MODE"
+          if [ "$mode" = "status" ]; then
+            mode=check
+          fi
+          notes=""
+          if [ -n "$VALUE" ]; then
+            notes="v$VALUE"
+          fi
+          args=(--mode "$mode" --expected-version "$VALUE" --notes "$notes")
+          if [ "$SKIP_UPLOAD" = "true" ]; then
+            args+=(--skip-upload)
+          fi
+          node scripts/release/edge-publish.mjs "${args[@]}"
+
       # 留下本次实际提交的 zip，方便回溯「这个版本到底传了什么」。
       - name: Upload package artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: lumo-chrome-webstore-${{ steps.version.outputs.value || github.run_number }}
+          name: lumo-store-package-${{ steps.version.outputs.value || github.run_number }}
           path: .output/*-chrome.zip
           if-no-files-found: warn
           retention-days: 30

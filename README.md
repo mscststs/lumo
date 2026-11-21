@@ -298,7 +298,7 @@ Publishing is tag-driven and does not run on ordinary pushes to `main`:
 2. Commit the change.
 3. Push a matching tag, e.g. `git tag v1.0.24 && git push origin v1.0.24`.
 
-The [Publish to Chrome Web Store](../../actions/workflows/publish.yml) workflow then builds the package, verifies that the tag, `package.json`, and the zip manifest all agree, uploads it, and submits it for review. The version must also be greater than the one already published on the store.
+The [Publish workflow](../../actions/workflows/publish.yml) then builds the package once, verifies that the tag, `package.json`, and the zip manifest all agree, and publishes that same zip to both the Chrome Web Store and the Microsoft Edge Add-ons listing. The version must also be greater than the one already published on each store.
 
 Manual runs from the Actions tab support `publish`, `upload` (no review submission), and `status` (read-only); `skip_upload` is a recovery switch for retrying only the publish step after an upload succeeded. The same checks are available locally without consuming a submission:
 
@@ -307,6 +307,33 @@ npm run zip
 node scripts/release/cws-publish.mjs --mode check
 node scripts/release/cws-publish.mjs --mode status   # needs the CHROME_* env vars
 node scripts/release/cws-publish.mjs --mode publish --skip-upload  # recovery only
+```
+
+### Releasing to the Microsoft Edge Add-ons
+
+The same tag publishes the same zip to Microsoft Edge Add-ons right after the
+Chrome submission, through the Edge Add-ons v1.1 API (`ApiKey` + `X-ClientID`).
+It reads three more repository secrets:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `EDGE_API_KEY` | Partner Center → Microsoft Edge → **Publish API** → API keys |
+| `EDGE_CLIENT_ID` | Same page, the Client ID shown next to the keys |
+| `EDGE_PRODUCT_ID` | Partner Center → Microsoft Edge → **Overview** → Product ID (a GUID). Falls back to `EDGE_CRX_ID` |
+
+`EDGE_PRODUCT_ID` must be the Partner Center product GUID; the 32-character id
+in the store URL is the extension id and makes every call return 404. Edge has
+no read-only status endpoint, so the manual `status` mode degrades to the local
+package check there. `skip_upload` still applies: it re-submits the draft the
+store already holds.
+
+```bash
+npm run zip
+node scripts/release/edge-publish.mjs --mode check
+EDGE_API_KEY=… EDGE_CLIENT_ID=… EDGE_PRODUCT_ID=… \
+  node scripts/release/edge-publish.mjs --mode upload --expected-version v1.0.29
+EDGE_API_KEY=… EDGE_CLIENT_ID=… EDGE_PRODUCT_ID=… \
+  node scripts/release/edge-publish.mjs --mode publish --skip-upload  # recovery only
 ```
 
 ### Type Check
