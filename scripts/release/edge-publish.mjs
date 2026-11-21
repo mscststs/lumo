@@ -160,18 +160,23 @@ function resolveProductId() {
   if (!raw) {
     fatal(
       'Missing required environment variable EDGE_PRODUCT_ID. ' +
-        'Use the product ID (GUID) from Partner Center → Microsoft Edge → Overview.',
+        'Use the product ID (GUID) from Partner Center → Microsoft Edge → Overview. ' +
+        describeEdgeSecrets(),
     );
   }
   if (STORE_EXTENSION_ID_PATTERN.test(raw)) {
     fatal(
       `EDGE_PRODUCT_ID "${raw}" is a store extension ID, but the Add-ons API needs the ` +
         'product ID GUID from Partner Center → Microsoft Edge → Overview (for example ' +
-        'd34f98f5-f9b7-42b1-bebb-98707202b21d). Add it as the EDGE_PRODUCT_ID secret.',
+        'd34f98f5-f9b7-42b1-bebb-98707202b21d). Add it as the EDGE_PRODUCT_ID secret. ' +
+        describeEdgeSecrets(),
     );
   }
   if (!PRODUCT_ID_PATTERN.test(raw)) {
-    fatal(`EDGE_PRODUCT_ID "${raw}" is not a GUID. Copy the product ID from Partner Center.`);
+    fatal(
+      `EDGE_PRODUCT_ID "${raw}" is not a GUID. Copy the product ID from Partner Center. ` +
+        describeEdgeSecrets(),
+    );
   }
   if (!PRODUCT_ID_PATTERN.test(clientId)) {
     console.warn(
@@ -455,8 +460,25 @@ async function writeSummary(lines) {
 
 function requireEnv(name) {
   const value = process.env[name];
-  if (!value) fatal(`Missing required environment variable ${name}.`);
+  if (!value || !value.trim()) {
+    fatal(`Missing required environment variable ${name}. ${describeEdgeSecrets()}`);
+  }
   return value;
+}
+
+/**
+ * 只报告「有没有配、多长」，不打印值：私有仓库的日志不该出现 secret，
+ * 但「secret 根本没传到这个 job」和「secret 内容不对」必须能一眼区分。
+ */
+function describeEdgeSecrets() {
+  const names = ['EDGE_API_KEY', 'EDGE_CLIENT_ID', 'EDGE_PRODUCT_ID', 'EDGE_CRX_ID'];
+  const state = names
+    .map((name) => {
+      const value = (process.env[name] ?? '').trim();
+      return `${name}=${value ? `${value.length} chars` : 'missing'}`;
+    })
+    .join(', ');
+  return `(secret state: ${state})`;
 }
 
 function normalizeTagVersion(value) {

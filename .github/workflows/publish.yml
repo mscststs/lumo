@@ -147,4 +147,6 @@ jobs:
           name: lumo-store-package-${{ steps.version.outputs.value || github.run_number }}
           path: .output/*-chrome.zip
           if-no-files-found: warn
+          # WXT 写在隐藏目录 `.output/`：不加这一行会「成功」但一个文件都没传。
+          include-hidden-files: true
           retention-days: 30
